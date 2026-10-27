@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>llm-d EPP Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00; --bar:#dce6f4;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.62 "IBM Plex Sans",system-ui,sans-serif;padding:24px 16px 72px}
+.wrap{max-width:900px;margin:0 auto}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.88em}
+code{background:var(--zebra);border:1px solid var(--rule);border-radius:2px;padding:.5px 4px}
+.blue{color:var(--blue)} .red{color:var(--red)} .amber{color:var(--amber)} .muted{color:var(--muted)}
+
+/* masthead */
+header{border:1.5px solid var(--line);margin-bottom:30px}
+header .t{padding:18px 22px 14px}
+header h1{margin:0;font-size:29px;font-weight:600;letter-spacing:-.01em}
+header .sub{color:var(--muted);margin-top:5px;font-size:15px}
+header .g{display:grid;grid-template-columns:repeat(4,1fr);border-top:1.5px solid var(--line)}
+header .g>div{padding:7px 12px;border-left:1px solid var(--rule)}
+header .g>div:first-child{border-left:0}
+header .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+header .v{font-size:13px;font-weight:500}
+
+/* table of contents */
+nav{background:var(--zebra);border:1px solid var(--rule);padding:14px 20px;margin-bottom:34px}
+nav b{display:block;font:10.5px "IBM Plex Mono",monospace;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+nav ol{margin:0;padding-left:20px;columns:2;column-gap:28px;font-size:13.5px}
+nav li{padding:2px 0;break-inside:avoid}
+
+h2{font-size:21px;font-weight:600;margin:42px 0 4px;padding-top:14px;border-top:1.5px solid var(--line);letter-spacing:-.01em}
+h2 .n{font:12px "IBM Plex Mono",monospace;color:var(--muted);display:block;font-weight:400;margin-bottom:3px}
+h3{font-size:16.5px;font-weight:600;margin:28px 0 6px}
+h4{font-size:14px;font-weight:600;margin:20px 0 4px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:11.5px}
+p{margin:11px 0}
+ul,ol{margin:11px 0;padding-left:22px}
+li{margin:5px 0}
+.lead{font-size:16.5px;line-height:1.6}
+
+/* callouts */
+.call{border:1px solid var(--rule);border-left:3px solid var(--boxline);background:var(--zebra);padding:12px 16px;margin:18px 0;font-size:14px}
+.call.warn{border-left-color:var(--amber)}
+.call.bad{border-left-color:var(--red)}
+.call b{display:block;margin-bottom:4px}
+blockquote{margin:16px 0;padding:10px 0 10px 18px;border-left:3px solid var(--rule);color:var(--muted);font-size:14.5px;font-style:italic}
+
+/* tables */
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+th{font:10.5px "IBM Plex Mono",monospace;color:var(--muted);font-weight:400;text-align:left;padding:6px 9px;border-bottom:1.5px solid var(--line);text-transform:uppercase;letter-spacing:.04em}
+td{padding:8px 9px;vertical-align:top;border-bottom:1px solid var(--rule)}
+tbody tr:nth-child(odd){background:var(--zebra)}
+.tw{overflow-x:auto;margin:16px 0}
+.tw table{margin:0}
+.ok,.no,.wa{white-space:nowrap;font-size:12.5px}
+.ok{color:var(--blue)} .no{color:var(--red)} .wa{color:var(--amber)}
+.ok:before{content:"✓ "} .no:before{content:"✕ "} .wa:before{content:"~ "}
+
+/* code block / tree */
+pre{background:var(--zebra);border:1px solid var(--rule);padding:13px 16px;overflow-x:auto;font:12.5px/1.55 "IBM Plex Mono",monospace;margin:16px 0}
+pre b{font-weight:500;color:var(--blue)}
+pre i{font-style:normal;color:var(--muted)}
+
+/* diagram */
+figure{margin:22px 0}
+figure svg{width:100%;height:auto;display:block}
+figcaption{font-size:12px;color:var(--muted);margin-top:8px;text-align:center}
+.dg-box{fill:var(--paper);stroke:var(--line);stroke-width:1.5}
+.dg-box.hl{fill:var(--box);stroke:var(--boxline)}
+.dg-t{font:500 12px "IBM Plex Mono",monospace;fill:var(--ink)}
+.dg-s{font:11px "IBM Plex Sans",sans-serif;fill:var(--muted)}
+.dg-l{stroke:var(--line);stroke-width:1.4;fill:none}
+.dg-l.d{stroke:var(--blue);stroke-dasharray:4 3}
+.dg-cap{font:10.5px "IBM Plex Mono",monospace;fill:var(--blue)}
+
+/* definition list */
+.dl{margin:14px 0}
+.dl>div{padding:9px 0;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:168px 1fr;gap:18px}
+.dl dt{font-weight:600;font-size:14px}
+.dl dd{margin:0;font-size:14px;color:var(--ink)}
+
+footer{margin-top:52px;padding-top:16px;border-top:1.5px solid var(--line);font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-between}
+
+@media (max-width:640px){
+  body{font-size:14.5px;padding:14px 12px 48px}
+  header h1{font-size:23px}
+  header .g{grid-template-columns:1fr 1fr}
+  header .g>div:nth-child(3){border-left:0}
+  header .g>div:nth-child(n+3){border-top:1px solid var(--rule)}
+  nav ol{columns:1}
+  .dl>div{grid-template-columns:1fr;gap:3px}
+  h2{font-size:19px}
+}
+sup a{font:10.5px "IBM Plex Mono",monospace}
+ol.src{font-size:13px;color:var(--muted)}
+ol.src a{color:var(--ink)}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="t">
+    <h1>llm-d&#x27;s Endpoint Picker (EPP): What It Is and How It Works</h1>
+    <div class="sub">How the llm-d Endpoint Picker chooses a model-server pod for each inference request, and where it is still weak.</div>
+  </div>
+  <div class="g">
+    <div><span class="k">Scope</span><span class="v">llm-d v0.9 · dev docs</span></div>
+    <div><span class="k">Sources cited</span><span class="v">21</span></div>
+    <div><span class="k">Reviewed</span><span class="v">2026-10-26</span></div>
+    <div><span class="k">One-page sheet</span><span class="v"><a href="http://jpnas.parkjiyoung.com/static/research/202610/llm-d-epp-sheet.html">llm-d-epp-sheet.html</a></span></div>
+  </div>
+</header>
+
+<nav>
+  <b>Contents</b>
+  <ol>
+    <li><a href="#s1">What EPP Is and Where It Sits</a></li>
+    <li><a href="#s2">Relationship to Gateway API Inference Extension and Envoy</a></li>
+    <li><a href="#s3">Scheduling Architecture: Profiles, Filters, Scorers, Pickers</a></li>
+    <li><a href="#s4">Routing Signals: Prefix-Cache, Load, LoRA, and Disaggregation</a></li>
+    <li><a href="#s5">Configuration, Deployment, and Reported Results</a></li>
+    <li><a href="#s6">Limitations and Open Questions</a></li>
+    <li><a href="#sources">Sources</a></li>
+  </ol>
+</nav>
+
+<p class="lead">The Endpoint Picker (EPP) is the part of llm-d that decides which model-server replica handles each inference request. It is not a proxy. It is a service the proxy calls on every request. The proxy handles connections, TLS and forwarding. The EPP looks at live model-server state and returns the address of one pod: the one that already holds the most relevant KV-cache, has the shortest queue, or best meets a latency target. The llm-d docs call it the "brains" of an llm-d deployment <sup><a href="#src-1">[1]</a></sup>.</p>
+<p>The project moves fast, and the sources describe llm-d around release v0.9 and the dev branch of mid-to-late 2026.</p>
+<h2 id="s1"><span class="n">01</span>What EPP Is and Where It Sits</h2>
+<p><strong>A short primer.</strong> A large language model (LLM) server such as vLLM keeps a <em>KV-cache</em> in GPU memory. The KV-cache holds the attention keys and values already computed for a prompt. When a later request starts with the same text (the same <em>prefix</em>), the server can reuse those values and skip the expensive <em>prefill</em> step. That only works if the request reaches the same replica that holds the cache. An ordinary load balancer, using round-robin or least-connections, cannot see any of this. It spreads related requests across pods and throws away the cache benefit <sup><a href="#src-2">[2]</a></sup>. The EPP exists to make this routing decision with that information in hand.</p>
+<p><strong>The llm-d Router = Proxy + EPP.</strong> llm-d calls its request entry point the <em>llm-d Router</em>. The Router has two parts <sup><a href="#src-3">[3]</a></sup>:</p>
+<ul>
+<li><strong>Proxy</strong>: "Any conformant industry-grade L7 proxy". Examples are Istio, agentgateway, Envoy AI Gateway, or a cloud load balancer such as Google Cloud's Application Load Balancer. It owns the data plane.</li>
+<li><strong>Endpoint Picker (EPP)</strong>: "A specialized service that the proxy consults for every request". It holds the routing logic.</li>
+</ul>
+<p>The docs fix the terms <sup><a href="#src-3">[3]</a></sup>:</p>
+<ul>
+<li><strong>llm-d Router</strong>: the whole entry point.</li>
+<li><strong>EPP</strong>: the component that makes routing decisions.</li>
+<li><strong>Inference Gateway</strong>: a synonym for the Router when it runs in Gateway Mode.</li>
+<li><strong>Request Scheduler</strong>: a sub-component inside the EPP.</li>
+</ul>
+<p>Older material calls the whole thing the "inference scheduler", and Red Hat's container image is still named <code>odh-llm-d-inference-scheduler</code> <sup><a href="#src-4">[4]</a></sup>.</p>
+<p><strong>What the EPP is responsible for.</strong> The docs give it two jobs <sup><a href="#src-1">[1]</a></sup>:</p>
+<ol>
+<li><strong>Intelligent routing</strong>: choosing which model-server pod in an InferencePool serves a request, based on "KV-cache utilization, prefix cache locality, request queue depth, and active request counts".</li>
+<li><strong>Fairness and prioritization</strong>: choosing which requests run at any given moment, so workloads with different priorities can share one set of model servers.</li>
+</ol>
+<p><strong>The request lifecycle.</strong> A request passes through six stages <sup><a href="#src-1">[1]</a></sup>:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Stage</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Request arrival</td>
+<td>Client request hits the proxy (gateway).</td>
+</tr>
+<tr>
+<td>2</td>
+<td>External processing</td>
+<td>Proxy calls the EPP over Envoy's ext-proc protocol, passing headers and body.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Request handling</td>
+<td>A Parser plugin converts the request (OpenAI HTTP, vLLM gRPC, or a custom format) into the EPP's internal structure.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Flow control</td>
+<td>If enabled, the request is queued by priority and tenant, and held while the pool is saturated.</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Scheduling</td>
+<td>The Request Scheduler filters and scores candidate endpoints and picks one.</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Proxying</td>
+<td>The EPP returns the chosen address. The proxy forwards the original request there.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A <strong>Data Layer</strong> runs alongside this pipeline, asynchronously. It watches the Kubernetes API for InferencePool and Pod changes, scrapes model-server metrics, and maintains in-memory structures such as a prefix-cache tree. It also talks to "consultant" sidecars: a latency predictor, a KV-cache indexer, or a tokenizer <sup><a href="#src-1">[1]</a></sup>. The other stages read this pre-built state. They do not query servers while a request is waiting.</p>
+<p><strong>A concrete deployment.</strong> Red Hat's walkthrough of llm-d on Amazon EKS shows the EPP running as a scheduler pod with two containers. The main container runs the EPP, serves gRPC on port 9002, and uses <code>queue-scorer</code>, <code>prefix-cache-scorer</code> and <code>max-score-picker</code>. A second container tracks prefix-cache state across vLLM replicas and shares it with the main container over ZeroMQ <sup><a href="#src-4">[4]</a></sup>.</p>
+<h2 id="s2"><span class="n">02</span>Relationship to Gateway API Inference Extension and Envoy</h2>
+<p>The EPP did not begin in llm-d. Its history explains why the APIs live in one place and the code in another.</p>
+<p><strong>Gateway API Inference Extension (GIE).</strong> GIE is a Kubernetes SIG project that extends the standard Gateway API (Gateways and HTTPRoutes) for inference traffic. It adds an inference-aware step between matching a route and sending to a pod <sup><a href="#src-5">[5]</a></sup>. Its core API object is the <strong>InferencePool</strong>, which became GA (v1) in v1.0.0. An InferencePool is a group of pods that share "the same compute configuration, accelerator type, base language model, and model server". You can think of it as a Kubernetes Service built for model serving <sup><a href="#src-6">[6]</a></sup>.</p>
+<p>The spec has three parts: a <code>selector</code> for the pods, <code>targetPorts</code>, and an <code>endpointPickerRef</code> that points at the EPP service. One EPP serves exactly one InferencePool, but an HTTPRoute can reference several pools <sup><a href="#src-6">[6]</a></sup>. Since GIE v1.5.0, <code>endpointPickerRef</code> is optional, so a pool can be used without a user-managed EPP if the gateway implementation supports that <sup><a href="#src-6">[6]</a></sup>.</p>
+<p><strong>The Endpoint Picker Protocol.</strong> GIE proposal 004 defines how a proxy talks to an EPP. The EPP "MUST implement the Envoy external processing service protocol" and "MUST support streaming mode", so tokens can stream back through the gateway <sup><a href="#src-7">[7]</a></sup>. The protocol has been versioned since February 2025:</p>
+<ul>
+<li><strong>v0.3.0</strong> added subsetting and fallback.</li>
+<li><strong>v0.4.0</strong> added multiple fallback endpoints.</li>
+<li><strong>v1.0.0</strong> (July 2025) added a status metadata field for picked endpoints.</li>
+</ul>
+<p>A data plane can also restrict the EPP to a subset of endpoints through filter metadata (<code>x-gateway-destination-endpoint-subset</code>). If none of those endpoints is eligible, the EPP must return an immediate error response rather than pick outside the subset <sup><a href="#src-7">[7]</a></sup>. llm-d's docs add one practical constraint: the only supported Envoy <code>request_body_mode</code> / <code>response_body_mode</code> is <code>FULL_DUPLEX_STREAMED</code> <sup><a href="#src-1">[1]</a></sup>.</p>
+<p><strong>What ext-proc means.</strong> <em>External processing</em> is an Envoy filter that pauses a request and sends it to an outside gRPC service, which can inspect it and return instructions. llm-d describes the result as the proxy parking the request while it calls back to the EPP <sup><a href="#src-3">[3]</a></sup>. Because of this split, llm-d does not have to build its own proxy. Any gateway that speaks the protocol can use the EPP. At the time of the 2026 move proposal, conformant gateways included GKE Gateway, Istio, kGateway and NGINX Gateway Fabric <sup><a href="#src-8">[8]</a></sup>.</p>
+<p><strong>The 2026 move of EPP code into llm-d.</strong> Until early 2026 there were two EPP images. GIE shipped a reference EPP, and llm-d's <code>llm-d-inference-scheduler</code> used that EPP as a library and added plugins. In February 2026, GIE maintainers proposed moving the EPP implementation into llm-d. Their reason was that advanced plugins, "like P/D and precise kv-cache aware scheduling", were mostly being built in llm-d, which led to "fragmented code and duplicate maintenance" <sup><a href="#src-8">[8]</a></sup>.</p>
+<p>Under the proposal, the InferencePool API, the EPP protocol and the conformance tests stay in Kubernetes, and a lightweight EPP is kept there for conformance testing. The full EPP moves to llm-d <sup><a href="#src-8">[8]</a></sup>. The EPP code now lives in the <code>llm-d/llm-d-router</code> repository under <code>pkg/epp/</code> <sup><a href="#src-9">[9]</a></sup>. The split works like Gateway API itself: Kubernetes defines the standard and its conformance tests, and implementations such as the llm-d EPP compete on top of it.</p>
+<h2 id="s3"><span class="n">03</span>Scheduling Architecture: Profiles, Filters, Scorers, Pickers</h2>
+<p>The Request Scheduler is the EPP's decision engine. Each part of it is a plugin, so you can change the routing policy without changing EPP code.</p>
+<p><strong>The basic loop: Filter → Score → Pick.</strong> For each request, a <em>scheduling profile</em> runs three stages <sup><a href="#src-10">[10]</a></sup>:</p>
+<ol>
+<li><strong>Filters</strong> run in sequence and remove ineligible endpoints. Examples: keep only pods with a given label, or keep only prefill-role pods.</li>
+<li><strong>Scorers</strong> give each remaining endpoint a score from 0.0 to 1.0. Each scorer has a weight. The endpoint's final score is the weighted sum.</li>
+<li><strong>A Picker</strong> chooses the final endpoint or endpoints from the scored list.</li>
+</ol>
+<p>The docs give a worked example. If Scorer A (weight 2.0) returns 0.8 and Scorer B (weight 1.0) returns 0.5, the endpoint scores (0.8 × 2.0) + (0.5 × 1.0) = <strong>2.1</strong> <sup><a href="#src-10">[10]</a></sup>. Weights are how an operator trades off goals. Red Hat OpenShift AI's default, for example, weights prefix-cache hits at 3 and queue depth at 2, which "prioritizes KV cache reuse over even load distribution" <sup><a href="#src-11">[11]</a></sup>.</p>
+<p><strong>Profiles and profile handlers.</strong> A request may need more than one Filter → Score → Pick pass. The <strong>ProfileHandler</strong> plugin first decides which profiles to run (<code>Pick</code>), then merges their results (<code>ProcessResults</code>) <sup><a href="#src-10">[10]</a></sup>. The default <code>single-profile-handler</code> runs one profile. The <code>disagg-profile-handler</code> runs separate prefill and decode profiles (see Section 4). Its predecessor, <code>pd-profile-handler</code>, still appears in older write-ups, and the deprecated <code>data-parallel-profile-handler</code> should be replaced with <code>single-profile-handler</code> <sup><a href="#src-10">[10]</a></sup> <sup><a href="#src-12">[12]</a></sup>.</p>
+<p><strong>The built-in plugin catalog.</strong> Not every plugin is enabled by default. The catalog in the current docs <sup><a href="#src-10">[10]</a></sup> includes:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Plugin</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Filter</td>
+<td><code>prefix-cache-affinity-filter</code></td>
+<td>Probabilistically narrows candidates to "sticky" pods with high prefix-cache scores. A TTFT load gate breaks stickiness if those pods are much slower.</td>
+</tr>
+<tr>
+<td>Filter</td>
+<td>label-selector / <code>prefill-endpoints-filter</code> / decode filter</td>
+<td>Keep endpoints matching a label, or only prefill-role or decode-role pods.</td>
+</tr>
+<tr>
+<td>Filter</td>
+<td>SLO headroom filter</td>
+<td>Keeps endpoints by SLO headroom tier.</td>
+</tr>
+<tr>
+<td>Scorer</td>
+<td><code>prefix-cache-scorer</code></td>
+<td>Scores by length of prefix-cache match. Reads data from an approximate or precise producer.</td>
+</tr>
+<tr>
+<td>Scorer</td>
+<td><code>queue-scorer</code></td>
+<td>Prefers shorter request queues.</td>
+</tr>
+<tr>
+<td>Scorer</td>
+<td><code>kv-cache-utilization-scorer</code></td>
+<td>Prefers lower KV-cache utilization.</td>
+</tr>
+<tr>
+<td>Scorer</td>
+<td><code>running-requests-size-scorer</code></td>
+<td>Scores by number of active requests.</td>
+</tr>
+<tr>
+<td>Scorer</td>
+<td>token-load scorer</td>
+<td>Scores by total input+output tokens in flight.</td>
+</tr>
+<tr>
+<td>Scorer</td>
+<td>LoRA affinity scorer</td>
+<td>Prefers pods with the requested LoRA adapter already loaded, or room to load it.</td>
+</tr>
+<tr>
+<td>Scorer</td>
+<td>latency scorer</td>
+<td>Scores by predicted latency headroom against the user's SLO.</td>
+</tr>
+<tr>
+<td>Scorer</td>
+<td>session-affinity scorer</td>
+<td>Max score to the pod that served the session's previous requests.</td>
+</tr>
+<tr>
+<td>Scorer</td>
+<td>no-hit LRU scorer</td>
+<td>For cold requests, spreads prefill load to pods that have never, or least recently, served one.</td>
+</tr>
+<tr>
+<td>Picker</td>
+<td><code>max-score-picker</code></td>
+<td>Highest score wins. <strong>Default</strong>, auto-injected when a profile names no picker.</td>
+</tr>
+<tr>
+<td>Picker</td>
+<td>random picker</td>
+<td>Uniform random choice.</td>
+</tr>
+<tr>
+<td>Picker</td>
+<td>weighted-random picker</td>
+<td>Random choice with scores as probabilities ("lottery scheduling").</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Request-control plugins outside the scheduler.</strong> Some plugins run before or after scheduling, not inside a profile. <em>DataProducers</em> prepare per-endpoint data before the scheduler runs. For example, the approximate and precise prefix producers attach a <code>PrefixCacheMatchInfo</code> attribute to every candidate pod, which <code>prefix-cache-scorer</code> then reads <sup><a href="#src-13">[13]</a></sup>. <em>PreRequest</em> hooks run after a pick. The prefix producers use one to record that the chosen pod now holds the prefix <sup><a href="#src-14">[14]</a></sup>. This separation keeps scorers simple. A scorer reads attributes, and the work of maintaining indexes lives in the producers.</p>
+<p><strong>Flow control.</strong> Flow control comes before scheduling, as an admission layer. It holds requests in an in-memory queue when a <em>saturation detector</em> reports the pool is full. It groups traffic into <strong>priority bands</strong>, for example chat ahead of batch summarization. Within a band, it shares dispatch turns among tenants using a pluggable <code>FairnessPolicy</code> (such as round-robin) and orders requests within a flow using an <code>OrderingPolicy</code> (such as FIFO or SLO-based) <sup><a href="#src-1">[1]</a></sup>. Red Hat describes the order of operations: when pool saturation is at or above a band's configured ceiling, the dispatch gate "keeps requests in that band queued in the Endpoint Picker" until the band may dispatch, and only then does scheduling choose a pod <sup><a href="#src-15">[15]</a></sup>. Red Hat reports this feature as GA in Red Hat AI Inference 3.5 (a vendor product claim) <sup><a href="#src-15">[15]</a></sup>. In short, flow control decides when a request is sent and scheduling decides where it goes.</p>
+<h2 id="s4"><span class="n">04</span>Routing Signals: Prefix-Cache, Load, LoRA, and Disaggregation</h2>
+<h3>Load signals</h3>
+<p>The basic signals come from model-server metrics scraped by the Data Layer: queue depth, KV-cache utilization and running-request count <sup><a href="#src-1">[1]</a></sup>. GIE defines a model-server protocol that pods must follow to join an InferencePool, so the EPP can get these numbers in a consistent form <sup><a href="#src-6">[6]</a></sup>. Load-only scheduling avoids hot spots. It does not see the cache.</p>
+<h3>Prefix-cache affinity: approximate vs precise</h3>
+<p>This is the EPP's main feature, and it comes in two versions <sup><a href="#src-16">[16]</a></sup>:</p>
+<ul>
+<li><strong>Approximate</strong> (<code>approx-prefix-cache-producer</code>): the EPP keeps its own record of where it sent which prefixes. It hashes the prompt's tokens into fixed-size blocks and keeps an in-memory LRU index of which pods recently served which block hashes <sup><a href="#src-13">[13]</a></sup>. It needs no model-server integration. If no tokenizer is configured, the framework auto-creates a tokenizer-free <code>estimate</code> backend, so it "works without extra setup" <sup><a href="#src-13">[13]</a></sup>. The cost is drift: the index is a guess about cache contents and can diverge from reality once pods evict blocks <sup><a href="#src-16">[16]</a></sup>.</li>
+<li><strong>Precise</strong> (<code>precise-prefix-cache-producer</code>): the model servers report what they cache. vLLM (and SGLang) emit <strong>KV-events</strong> over ZeroMQ when blocks are added or evicted. A KV-block index in the EPP's Data Layer turns these events into a cluster-wide block-to-pod map <sup><a href="#src-16">[16]</a></sup> <sup><a href="#src-14">[14]</a></sup>. On each request, the producer hashes the tokenized prompt into block keys, looks them up, and writes per-pod match info. Optionally, it adds speculative entries for the chosen pod right away, with a TTL, so a burst of follow-ups does not wait for the real event <sup><a href="#src-14">[14]</a></sup>.</li>
+</ul>
+<p>The costs are more moving parts: a tokenization endpoint (vLLM's render endpoint), ZMQ connectivity, and engine support for KV-events <sup><a href="#src-16">[16]</a></sup>. Engine support is uneven. vLLM emits the <code>extra_keys</code> needed for multimodal and <code>cache_salt</code> correlation, but SGLang does not, so salted SGLang requests are precise-cache misses <sup><a href="#src-14">[14]</a></sup>.</p>
+<p>Both producers feed the same <code>prefix-cache-scorer</code>. You choose one by setting the scorer's <code>prefixMatchInfoProducerName</code>. If it is unset, the scorer falls back to the approximate producer, and the older single-plugin <code>precise-prefix-cache-scorer</code> is deprecated <sup><a href="#src-10">[10]</a></sup>.</p>
+<p><strong>What difference does it make?</strong> The llm-d project's own benchmark compares four schedulers on a prefix-heavy workload whose total cache demand was sized at about six times a single pod's capacity <sup><a href="#src-2">[2]</a></sup>:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Scheduler</th>
+<th>Output tok/s</th>
+<th>TTFT p90 (s)</th>
+<th>TTFT mean (s)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>precise prefix + load</td>
+<td>8,730</td>
+<td>0.542</td>
+<td>0.298</td>
+</tr>
+<tr>
+<td>approximate prefix + load</td>
+<td>6,944</td>
+<td>31.08</td>
+<td>13.32</td>
+</tr>
+<tr>
+<td>load only (queue + KV util)</td>
+<td>4,429</td>
+<td>94.87</td>
+<td>46.99</td>
+</tr>
+<tr>
+<td>random</td>
+<td>4,429</td>
+<td>92.55</td>
+<td>45.28</td>
+</tr>
+</tbody>
+</table></div>
+<p>The project summarizes this as precise scheduling being "57x faster" in p90 TTFT than approximate, with about 25% more throughput <sup><a href="#src-2">[2]</a></sup>. Two cautions apply. This is the project measuring itself, and the workload was built to stress cache placement. The upstream GIE launch blog is more modest. Compared with a plain Kubernetes Service on 10 Llama2 replicas, it found "roughly on par" throughput and "significantly lower" p90 latency only above about 400–500 QPS <sup><a href="#src-5">[5]</a></sup>. Both results point the same way: the EPP helps most when the cache is under pressure and the workload shares prefixes, as in multi-turn chat or agent loops, and helps less otherwise.</p>
+<h3>LoRA adapters</h3>
+<p>When many fine-tuned LoRA adapters share a base model, a LoRA affinity scorer prefers pods that already have the requested adapter loaded, or have room to load it <sup><a href="#src-10">[10]</a></sup>. Adapter-aware routing was one of GIE's original goals <sup><a href="#src-5">[5]</a></sup>.</p>
+<h3>Predicted latency</h3>
+<p>For workloads where prompt and output lengths vary widely, queue depth is a poor stand-in for load. llm-d offers a path where an XGBoost model, trained online on observed traffic, predicts each pod's TTFT and TPOT. A <code>latency-scorer</code> then picks the pod with the most headroom against a per-request SLO. The training and prediction servers run as EPP sidecars <sup><a href="#src-17">[17]</a></sup>. The docs warn that this path does not suit <strong>heterogeneous</strong> pools (mixed GPUs, or prefill and decode pods in one pool), "because the predictor assumes a single pod shape" <sup><a href="#src-17">[17]</a></sup>.</p>
+<h3>Prefill/decode disaggregation</h3>
+<p><em>Disaggregated serving</em> runs prefill (compute-bound) and decode (memory-bandwidth-bound) on different pods, so long prefills do not stall ongoing decodes. Each side can then be tuned separately, for example with a different tensor-parallel size <sup><a href="#src-18">[18]</a></sup>. The EPP coordinates this through the <code>disagg-profile-handler</code> <sup><a href="#src-18">[18]</a></sup>:</p>
+<ol>
+<li>Run the <strong>decode profile</strong> (filter → score → pick) to choose a decode pod.</li>
+<li>Ask a <strong>decider</strong> whether, given how much of the prompt is already cached on that decode pod, disaggregation is worthwhile.</li>
+<li>If not, return only the decode pod. If so (a large uncached suffix), also run the <strong>prefill profile</strong> to choose a prefill pod.</li>
+<li>Return the decode pod as the primary destination and put the prefill pod's address in a request header <sup><a href="#src-10">[10]</a></sup>.</li>
+</ol>
+<p>A routing sidecar next to the decode worker reads that header. It sends the prompt to the prefill worker with <code>max_tokens=1</code>, gets back KV-transfer parameters, and the decode worker pulls the KV-cache over NIXL (RDMA) <sup><a href="#src-18">[18]</a></sup>. Without RDMA, NIXL falls back to TCP, which the docs call suitable only for testing <sup><a href="#src-18">[18]</a></sup>. Prefill/decode roles are assigned by pod label, and dedicated filters keep each profile on the right pods <sup><a href="#src-10">[10]</a></sup>. In Red Hat's OpenShift AI example, the prefill profile used only a queue scorer, while the decode profile added a cache scorer <sup><a href="#src-12">[12]</a></sup>.</p>
+<h2 id="s5"><span class="n">05</span>Configuration, Deployment, and Reported Results</h2>
+<p><strong>The <code>EndpointPickerConfig</code> file.</strong> The EPP is configured with one YAML document whose <code>apiVersion</code> is <code>llm-d.ai/v1alpha1</code> and whose <code>kind</code> is <code>EndpointPickerConfig</code>. It is passed with <code>--config-file</code> (usually a mounted ConfigMap) or <code>--config-text</code> <sup><a href="#src-19">[19]</a></sup>. It looks like a Kubernetes custom resource but is <strong>not a CRD</strong>. No controller reconciles it, and it is "only read on startup", so any change needs an EPP restart <sup><a href="#src-19">[19]</a></sup>.</p>
+<p>The docs suggest reading the config as a <strong>graph</strong> <sup><a href="#src-19">[19]</a></sup>:</p>
+<ul>
+<li><strong>Nodes</strong>: the top-level <code>plugins:</code> list creates named plugin instances with their parameters.</li>
+<li><strong>Edges</strong>: sections such as <code>schedulingProfiles:</code> and <code>flowControl:</code> refer to those plugins by name and give them a role.</li>
+<li><strong>Auto-wiring</strong>: plugins that implement certain interfaces (DataProducer, PreRequest, response processors, Admitter) are bound to their role automatically, without an explicit edge.</li>
+<li><strong>Validation</strong>: every reference must resolve, profile names must be unique, and metric extractors must form a DAG with no cycles.</li>
+</ul>
+<p>Other top-level sections are <code>featureGates</code> (for example, enabling flow control), <code>requestHandler</code>, <code>flowControl</code>, and <code>dataLayer</code> <sup><a href="#src-19">[19]</a></sup>. A minimal aggregated-serving config combines these pieces. In the sketch below, plugin type names come from the docs, and the weights are illustrative, matching the OpenShift AI default described above:</p>
+<pre><code class="language-yaml">apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+plugins:
+  - type: approx-prefix-cache-producer
+  - type: prefix-cache-scorer
+  - type: queue-scorer
+  - type: max-score-picker
+schedulingProfiles:
+  - name: default
+    plugins:
+      - pluginRef: prefix-cache-scorer
+        weight: 3
+      - pluginRef: queue-scorer
+        weight: 2
+      - pluginRef: max-score-picker
+</code></pre>
+<p>You can declare a plugin more than once with different names. For example, two approximate prefix producers with different block sizes can model GPU and CPU cache tiers, each feeding its own scorer <sup><a href="#src-13">[13]</a></sup>.</p>
+<p><strong>Plugin maturity.</strong> Each in-tree plugin has a stability level:</p>
+<ul>
+<li><strong>Alpha</strong> plugins need the <code>--allow-experimental-plugins</code> flag and carry no compatibility guarantee.</li>
+<li><strong>Beta</strong> plugins are on by default, with a two-minor-release deprecation policy.</li>
+<li><strong>Stable</strong> is reserved for later: "all in-tree plugins are classified as Alpha or Beta" until the project nears 1.0 <sup><a href="#src-9">[9]</a></sup>.</li>
+</ul>
+<p>Some plugins also have multicluster variants, where a cluster-scoped EPP treats whole clusters as its candidate endpoints and scores them on pool-aggregate metrics <sup><a href="#src-9">[9]</a></sup>.</p>
+<p><strong>Deployment surfaces.</strong> The EPP is deployed differently on each platform:</p>
+<ul>
+<li><strong>Plain Kubernetes</strong>: the EPP runs as a Deployment that an InferencePool's <code>endpointPickerRef</code> points to <sup><a href="#src-6">[6]</a></sup>.</li>
+<li><strong>Red Hat OpenShift AI</strong>: KServe's <code>LLMInferenceService</code> resource generates the EPP. Scheduler settings can be inline or in a ConfigMap (the two are mutually exclusive) <sup><a href="#src-11">[11]</a></sup>.</li>
+<li><strong>AKS</strong>: Microsoft's reference design uses the GIE Endpoint Picker as the third of three routing decisions. The semantic router decides which model, the AI gateway enforces policy, and the EPP decides only "which replica" <sup><a href="#src-20">[20]</a></sup>.</li>
+</ul>
+<p><strong>Observability.</strong> The EPP exports pool-level Prometheus metrics, including <code>llm_d_epp_ready_endpoints</code>, <code>llm_d_epp_average_kv_cache_utilization</code>, <code>llm_d_epp_average_queue_size</code>, and the standard deviations of KV utilization and queue size <sup><a href="#src-10">[10]</a></sup>. The standard deviations are a direct way to check whether load is actually balanced across the pool.</p>
+<p><strong>Reported results, labeled by source.</strong></p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Claim</th>
+<th>Source type</th>
+<th>Setting</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>p90 TTFT 0.54 s vs 31 s (approx) vs ~93 s (random); 8,730 vs 4,429 tok/s</td>
+<td>llm-d project benchmark</td>
+<td>Prefix-heavy workload, cache demand ~6× one pod <sup><a href="#src-2">[2]</a></sup></td>
+</tr>
+<tr>
+<td>Throughput on par with K8s Service; lower p90 latency at 400–500+ QPS</td>
+<td>GIE maintainers (Google, Solo.io, ByteDance)</td>
+<td>10 Llama2 replicas on H100, ShareGPT <sup><a href="#src-5">[5]</a></sup></td>
+</tr>
+<tr>
+<td>A 10k-token prompt's TTFT drops from 4.3 s to 0.6 s on a cache hit</td>
+<td>llm-d project</td>
+<td>Single vLLM instance, Qwen3-32B <sup><a href="#src-2">[2]</a></sup></td>
+</tr>
+<tr>
+<td>Flow control GA, priority-aware admission for shared pools</td>
+<td>Red Hat (vendor)</td>
+<td>Red Hat AI Inference 3.5 <sup><a href="#src-15">[15]</a></sup></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="s6"><span class="n">06</span>Limitations and Open Questions</h2>
+<p><strong>Bursty load can herd onto one pod.</strong> An llm-d contributor found a case where the EPP did worse than Knative's simple request-count balancing. Eight Llama-3.3-70B replicas received concurrency-mode traffic with fixed 1,000/1,000-token requests, scored only with queue and KV-utilization scorers. The result was slightly lower throughput and "significantly worse TTFT", because "when many requests arrive simultaneously they get routed to the same Pod" <sup><a href="#src-21">[21]</a></sup>. A maintainer attributed this to metric staleness. Metrics refresh about every 50 ms, so a burst all sees the same best pod until its numbers update <sup><a href="#src-21">[21]</a></sup>.</p>
+<p>The reporter called it a corner case chosen to favor Knative and said llm-d "significantly outperforms" Knative when lengths vary or prefix caching applies. The discussion produced a weighted-random picker, which adds randomness in proportion to score <sup><a href="#src-21">[21]</a></sup>. The underlying point holds for any picker that scores on lagging metrics: the default <code>max-score-picker</code> is deterministic, and that becomes a weakness when the data is stale.</p>
+<p><strong>Approximate vs precise is a real trade-off.</strong> Approximate routing is free to deploy but can drift from the true cache contents <sup><a href="#src-16">[16]</a></sup>. Precise routing is accurate but depends on the engine (KV-events, <code>extra_keys</code> support) and adds a tokenizer and a ZMQ event stream, whose events "arrive at many times the inference request rate" <sup><a href="#src-14">[14]</a></sup>. Long prompts also raise EPP CPU usage when the match caps are lifted <sup><a href="#src-13">[13]</a></sup>.</p>
+<p><strong>Operational rough edges.</strong> Several practical issues remain:</p>
+<ul>
+<li><strong>Config reloads</strong>: config changes need a restart, because the config is read once at startup <sup><a href="#src-19">[19]</a></sup>.</li>
+<li><strong>Maturity</strong>: no plugin is yet Stable <sup><a href="#src-9">[9]</a></sup>.</li>
+<li><strong>Naming churn</strong>: names change often. <code>pd-profile-handler</code> became <code>disagg-profile-handler</code>, and <code>precise-prefix-cache-scorer</code> became a producer + scorer pair <sup><a href="#src-10">[10]</a></sup>. Microsoft's AKS guide warns that field names "drift between releases" and tells readers to pin versions <sup><a href="#src-20">[20]</a></sup>.</li>
+<li><strong>Hardware and topology fit</strong>: predicted-latency routing does not suit mixed-hardware or mixed-role pools <sup><a href="#src-17">[17]</a></sup>, and disaggregation needs RDMA to be worthwhile <sup><a href="#src-18">[18]</a></sup>.</li>
+</ul>
+<p><strong>Governance: whose EPP is it?</strong> Moving the EPP into llm-d was contested. One GIE contributor argued that GIE's value was "neutral governance". Other frameworks, such as NVIDIA Dynamo (which already had an EPP derived from the GIE library) or Ray Serve, would now have to import "a competitor's (i.e llm-d's) EPP" <sup><a href="#src-8">[8]</a></sup>. The proposers answered that the standard is the InferencePool API and the protocol, not the implementation: "why should k8s pick a winning EPP?" They committed to keeping a lightweight conformance EPP in Kubernetes <sup><a href="#src-8">[8]</a></sup>.</p>
+<p>The evidence favors the proposers' framing. Gateway API itself standardizes interfaces and leaves implementations to others, and the EPP protocol is open to any implementer. Whether other EPP implementations actually emerge is still an open question.</p>
+<p><strong>Open questions worth watching:</strong></p>
+<ul>
+<li>Independent benchmarks. The large published gains come from the project or its sponsors. No third-party comparison of EPP scheduling against least-request balancing on realistic mixed traffic turned up in this research.</li>
+<li>How the deterministic default picker and the weighted-random picker compare across workloads, given the herding issue.</li>
+<li>Whether the predicted-latency path can handle heterogeneous pools, which disaggregated deployments create by design.</li>
+<li>How the EPP protocol evolves now that its main implementation sits outside the standards body.</li>
+</ul>
+
+<h2 id="sources"><span class="n">07</span>Sources</h2>
+<ol class="src">
+  <li id="src-1"><a href="https://llm-d.ai/docs/dev/architecture/core/router/epp">Endpoint Picker (EPP) | llm-d</a></li>
+  <li id="src-2"><a href="https://llm-d.ai/blog/kvcache-wins-you-can-see">KV-Cache Wins You Can See: From Prefix Caching in vLLM to Distributed Scheduling with llm-d | llm-d</a></li>
+  <li id="src-3"><a href="https://llm-d.ai/docs/dev/architecture/core/router">llm-d Router | llm-d</a></li>
+  <li id="src-4"><a href="https://developers.redhat.com/articles/2026/08/13/how-llm-d-routes-model-inference-traffic-amazon-eks">How llm-d routes model inference traffic on Amazon EKS | Red Hat Developer</a></li>
+  <li id="src-5"><a href="https://kubernetes.io/blog/2025/06/05/introducing-gateway-api-inference-extension/">Introducing Gateway API Inference Extension | Kubernetes</a></li>
+  <li id="src-6"><a href="https://gateway-api-inference-extension.sigs.k8s.io/api-types/inferencepool/">InferencePool - Kubernetes Gateway API Inference Extension</a></li>
+  <li id="src-7"><a href="https://github.com/kubernetes-sigs/gateway-api-inference-extension/tree/main/docs/proposals/004-endpoint-picker-protocol">gateway-api-inference-extension/docs/proposals/004-endpoint-picker-protocol at main · kubernetes-sigs/gateway-api-inference-extension · GitHub</a></li>
+  <li id="src-8"><a href="https://github.com/kubernetes-sigs/gateway-api-inference-extension/issues/2430">Proposal to Move EPP and BBR to the llm-d Repo · Issue #2430 · kubernetes-sigs/gateway-api-inference-extension</a></li>
+  <li id="src-9"><a href="https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/framework/plugins/README.md">llm-d-router/pkg/epp/framework/plugins/README.md at main · llm-d/llm-d-router · GitHub</a></li>
+  <li id="src-10"><a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/scheduling">Request Scheduler | llm-d</a></li>
+  <li id="src-11"><a href="https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/deploy_models_using_distributed_inference_with_llm-d/configuring-llm-scheduler">Chapter 7. Configuring scheduler settings for LLM inference services | Deploy models using Distributed Inference with llm-d | Red Hat OpenShift AI Self-Managed | 3.4 | Red Hat Documentation</a></li>
+  <li id="src-12"><a href="https://pub.towardsai.net/running-disaggregated-llm-inference-on-ibm-fusion-hci-96c4b7b9d895">Running Disaggregated LLM Inference on IBM Fusion HCI | by Harichandana Kotha | Towards AI</a></li>
+  <li id="src-13"><a href="https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/README.md">llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/README.md at main · llm-d/llm-d-router · GitHub</a></li>
+  <li id="src-14"><a href="https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/README.md">llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/README.md at main · llm-d/llm-d-router · GitHub</a></li>
+  <li id="src-15"><a href="https://developers.redhat.com/articles/2026/08/27/llm-d-flow-control-priority-queuing-for-shared-gpu-inference">llm-d flow control: Priority queuing for shared GPU inference | Red Hat Developer</a></li>
+  <li id="src-16"><a href="https://llm-d.ai/docs/architecture/advanced/kv-management/prefix-cache-aware-routing">Prefix-Cache Aware Routing | llm-d</a></li>
+  <li id="src-17"><a href="https://llm-d.ai/docs/well-lit-paths/foundations/predicted-latency">Predicted Latency-Based Scheduling | llm-d</a></li>
+  <li id="src-18"><a href="https://llm-d.ai/docs/architecture/advanced/disaggregation">Disaggregated Serving | llm-d</a></li>
+  <li id="src-19"><a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/configuration">Configuration | llm-d</a></li>
+  <li id="src-20"><a href="https://blog.aks.azure.com/2026/06/29/llm-routing-on-aks">Routing agent traffic is really three decisions | AKS Engineering Blog</a></li>
+  <li id="src-21"><a href="https://github.com/llm-d/llm-d-router/issues/298">Poor performance with bursty workloads · Issue #298 · llm-d/llm-d-router</a></li>
+</ol>
+
+<footer>
+  <span>llm-d EPP report · reviewed 2026-10-26 · <a href="http://jpnas.parkjiyoung.com/static/research/202610/llm-d-epp-sheet.html">one-page sheet</a></span>
+  <span><a href="https://github.com/llm-d/llm-d-router">github.com/llm-d/llm-d-router</a></span>
+</footer>
+
+</div>
+</body>
+</html>
