@@ -1,0 +1,841 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>How Kubernetes Manages the Lifecycle of Pods and
+ReplicaSets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>How Kubernetes Manages the Lifecycle of Pods and ReplicaSets</h1>
+<div class="byline">Research report · 22 cited sources · reviewed 2026-10-27</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#the-control-loop-model-who-manages-pods-and-replicasets"
+id="toc-the-control-loop-model-who-manages-pods-and-replicasets">1. The
+Control Loop Model: Who Manages Pods and ReplicaSets</a></li>
+<li><a href="#pod-lifecycle-phases-conditions-and-container-states"
+id="toc-pod-lifecycle-phases-conditions-and-container-states">2. Pod
+Lifecycle: Phases, Conditions and Container States</a></li>
+<li><a href="#restarts-and-probes-how-pods-stay-healthy"
+id="toc-restarts-and-probes-how-pods-stay-healthy">3. Restarts and
+Probes: How Pods Stay Healthy</a></li>
+<li><a href="#pod-termination-and-graceful-shutdown"
+id="toc-pod-termination-and-graceful-shutdown">4. Pod Termination and
+Graceful Shutdown</a></li>
+<li><a href="#the-replicaset-controller-reconciling-replica-count"
+id="toc-the-replicaset-controller-reconciling-replica-count">5. The
+ReplicaSet Controller: Reconciling Replica Count</a></li>
+<li><a href="#ownership-adoption-and-garbage-collection"
+id="toc-ownership-adoption-and-garbage-collection">6. Ownership,
+Adoption and Garbage Collection</a></li>
+<li><a href="#deployments-rollouts-and-replicaset-lifecycle"
+id="toc-deployments-rollouts-and-replicaset-lifecycle">7. Deployments,
+Rollouts and ReplicaSet Lifecycle</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>Kubernetes splits lifecycle management between two layers
+that never do each other’s job. On the node, the kubelet drives a single
+Pod through its phases: it starts containers, restarts them according to
+<code>restartPolicy</code>, runs probes, and shuts them down gracefully
+when the Pod is deleted. In the control plane, the ReplicaSet controller
+never restarts or moves anything. It counts the Pods that match its
+selector, compares that count with <code>spec.replicas</code>, and
+creates or deletes whole Pods to close the gap. A Pod is bound to one
+node for life and is never rescheduled; healing means a controller
+creates a new Pod with a new UID. Owner references tie each Pod to its
+ReplicaSet and each ReplicaSet to its Deployment, so the garbage
+collector can cascade deletions, and a Deployment rollout is nothing
+more than a controlled scale-up of a new ReplicaSet and scale-down of
+the old one.</strong></p>
+</div>
+<h2 id="the-control-loop-model-who-manages-pods-and-replicasets">1. The
+Control Loop Model: Who Manages Pods and ReplicaSets</h2>
+<p>Every lifecycle behavior below comes from the same pattern: a
+controller is a control loop that watches the cluster’s state and makes
+or requests changes to move the current state toward the desired state
+[1]. The Kubernetes API-machinery guidelines describe a controller as
+“an active reconciliation process” that watches both the desired state
+and the actual state of the world [2]. Two design rules from those
+guidelines explain much of the behavior covered below. Controllers are
+level-driven rather than edge-driven: they act on the current state of
+an object, not on the sequence of events that produced it, so a missed
+event is corrected on the next pass [2, 3]. And controllers react to
+changes in <em>related</em> objects by mapping them back to the owner:
+the ReplicaSet controller reacts to a Pod being deleted “by finding the
+related ReplicaSets and queuing references to those” [2].</p>
+<p>The machinery behind this is shared informers plus a work queue.
+Informers keep a local cache of watched objects and deliver add, update
+and delete notifications; the work queue guarantees that no two worker
+goroutines process the same key at the same time and supports
+rate-limited requeueing with backoff; informers can also resync
+periodically as a safety net [2, 3]. The ReplicaSet controller in
+<code>pkg/controller/replicaset</code> is built exactly this way: Pod
+and ReplicaSet events enqueue a ReplicaSet key, and
+<code>syncReplicaSet</code> reconciles that one key [4].</p>
+<p>Pods themselves are not meant to be managed by hand. The Pods
+documentation states that you will rarely create individual Pods
+directly, “even singleton Pods”, because Pods are “relatively ephemeral,
+disposable entities”; workload resources such as Deployments create them
+from a Pod template and manage them for you [5].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Actor</th>
+<th>Runs where</th>
+<th>What it owns in the lifecycle</th>
+<th>What it never does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API server</td>
+<td>Control plane</td>
+<td>Stores Pod and ReplicaSet objects, records deletion timestamps and
+grace periods</td>
+<td>Run containers</td>
+</tr>
+<tr>
+<td>Scheduler</td>
+<td>Control plane</td>
+<td>Binds a Pending Pod to a node</td>
+<td>Move a bound Pod</td>
+</tr>
+<tr>
+<td>kubelet</td>
+<td>Each node</td>
+<td>Container start, restart, probes, graceful shutdown, Pod phase and
+conditions</td>
+<td>Create replacement Pods</td>
+</tr>
+<tr>
+<td>ReplicaSet controller</td>
+<td>kube-controller-manager</td>
+<td>Keeps the count of matching Pods equal to
+<code>spec.replicas</code></td>
+<td>Restart a container</td>
+</tr>
+<tr>
+<td>Deployment controller</td>
+<td>kube-controller-manager</td>
+<td>Creates and scales ReplicaSets during rollouts</td>
+<td>Touch Pods directly</td>
+</tr>
+<tr>
+<td>Garbage collector, PodGC</td>
+<td>kube-controller-manager</td>
+<td>Cascading deletion of dependents; cleanup of terminated and orphaned
+Pods</td>
+<td>Decide replica counts</td>
+</tr>
+</tbody>
+</table>
+<h2 id="pod-lifecycle-phases-conditions-and-container-states">2. Pod
+Lifecycle: Phases, Conditions and Container States</h2>
+<h3 id="phases">2.1 Phases</h3>
+<p>A Pod’s <code>status.phase</code> is a coarse summary with five
+values. Pods start in <code>Pending</code>, move to <code>Running</code>
+once at least one primary container starts, and end in
+<code>Succeeded</code> or <code>Failed</code> depending on whether any
+container terminated in failure [6]. <code>Pending</code> covers both
+the time spent waiting to be scheduled and the time spent pulling
+images; <code>Running</code> means the Pod is bound to a node, all
+containers have been created and at least one is running, starting or
+restarting; <code>Unknown</code> usually means the control plane cannot
+reach the node [6]. <code>CrashLoopBackOff</code> and
+<code>Terminating</code> are not phases: they are display strings that
+<code>kubectl</code> shows in its STATUS column, and the documentation
+warns explicitly against confusing that column with the phase in the API
+[6]. Since Kubernetes 1.27 the kubelet moves a deleted Pod to a terminal
+phase (<code>Failed</code> or <code>Succeeded</code>) before removing it
+from the API server, with exceptions for static Pods and force-deleted
+Pods [6].</p>
+<p>The single most important lifecycle fact is that a Pod is bound to
+one node for life. Once scheduled, the Pod runs on that node until it
+stops or is terminated; if the node fails before the Pod starts, that
+Pod never starts [6]. “A given Pod (as defined by a UID) is never
+‘rescheduled’ to a different node; instead, that Pod can be replaced by
+a new, near-identical Pod”, which may reuse the name but always gets a
+new <code>.metadata.uid</code> [6]. Anything with “the same lifetime as
+a Pod”, such as an <code>emptyDir</code> volume, dies with that UID even
+if an identical replacement appears [6].</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Meaning</th>
+<th>Typical next step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pending</td>
+<td>Accepted; waiting for scheduling, image pulls or sandbox setup</td>
+<td>Running</td>
+</tr>
+<tr>
+<td>Running</td>
+<td>Bound to a node; at least one container running, starting or
+restarting</td>
+<td>Succeeded, Failed, or stays Running</td>
+</tr>
+<tr>
+<td>Succeeded</td>
+<td>All containers exited 0 and will not restart</td>
+<td>Kept until garbage-collected</td>
+</tr>
+<tr>
+<td>Failed</td>
+<td>All containers terminated, at least one in failure, and no restart
+is configured</td>
+<td>Kept until garbage-collected</td>
+</tr>
+<tr>
+<td>Unknown</td>
+<td>Node unreachable, state cannot be obtained</td>
+<td>Resolved when the node reports again, or the Pod is deleted</td>
+</tr>
+</tbody>
+</table>
+<h3 id="conditions">2.2 Conditions</h3>
+<p>Conditions give finer-grained, independently timestamped facts. The
+kubelet manages the following conditions [6]:</p>
+<ul>
+<li><code>PodScheduled</code></li>
+<li><code>PodReadyToStartContainers</code>: the sandbox exists,
+networking is configured, volumes are mounted and any dynamic resources
+are allocated</li>
+<li><code>Initialized</code>: all init containers completed</li>
+<li><code>ContainersReady</code></li>
+<li><code>Ready</code>: the Pod can serve and should be added to the
+load-balancing pools of matching Services</li>
+</ul>
+<p><code>DisruptionTarget</code> marks a Pod about to be terminated by
+preemption, eviction or garbage collection [6, 7]. Each condition
+carries <code>status</code>, <code>lastTransitionTime</code>,
+<code>reason</code> and <code>message</code> [6].
+<code>PodReadyToStartContainers</code> was called
+<code>PodHasNetwork</code> during its early development; the current
+documentation lists it as stable [6].</p>
+<h3 id="container-states-and-the-startup-sequence">2.3 Container states
+and the startup sequence</h3>
+<p>Each container has one of three states. <code>Waiting</code> covers
+everything before execution, such as pulling an image or applying Secret
+data, and carries a <code>reason</code>. <code>Running</code> means the
+container is executing and any <code>postStart</code> hook has finished.
+<code>Terminated</code> records an exit code, reason and start and
+finish times; any <code>preStop</code> hook runs before a container
+enters this state [6].</p>
+<p>Inside a Pod, startup is ordered. Init containers run sequentially,
+each to completion, and the main containers do not start until all of
+them succeed [8]. Sidecar containers are init containers declared with
+<code>restartPolicy: Always</code>: they start in init order but keep
+running for the Pod’s whole life, and they can be started, stopped and
+restarted independently of the app containers [9]. The sidecar
+documentation describes the feature as stable since v1.33, first
+available in v1.28 and enabled by default since v1.29 [9].</p>
+<h2 id="restarts-and-probes-how-pods-stay-healthy">3. Restarts and
+Probes: How Pods Stay Healthy</h2>
+<h3 id="restart-policy-and-backoff">3.1 Restart policy and backoff</h3>
+<p>Restarts are a node-local behavior. The Pod’s
+<code>restartPolicy</code> is <code>Always</code> (the default),
+<code>OnFailure</code> or <code>Never</code>, and it governs the app
+containers; sidecars always restart [6]. When a container exits and
+policy allows a restart, the kubelet restarts it in place, in the same
+Pod, with an exponential backoff of 10s, 20s, 40s and so on, capped at
+300 seconds [6]. The kubelet resets the backoff once a container has run
+for 10 minutes without problems [6]. A Pod that keeps failing this way
+shows <code>CrashLoopBackOff</code> in <code>kubectl</code>, but its
+phase is still <code>Running</code> [6]. The design point is that none
+of this involves the ReplicaSet controller. A crash-looping Pod still
+matches its selector and still exists, so from the ReplicaSet’s point of
+view the replica count is satisfied [6, 10].</p>
+<p>Recent releases add knobs to this loop: a per-node
+<code>maxContainerRestartPeriod</code> (feature
+<code>KubeletCrashLoopBackOffMax</code>, beta in v1.35) can lower the
+300-second cap, and the alpha
+<code>ReduceDefaultCrashLoopBackOffDecay</code> gate starts at 1s and
+caps at 60s [6]. Container-level <code>restartPolicyRules</code> can
+restart on specific exit codes, and the
+<code>RestartAllContainers</code> action can restart the entire Pod in
+place while keeping its UID, IP, sandbox and volumes [6].</p>
+<h3 id="probes">3.2 Probes</h3>
+<p>The kubelet runs three kinds of probes using <code>exec</code>,
+<code>httpGet</code>, <code>tcpSocket</code> or <code>grpc</code>
+checks; gRPC probes have been stable since v1.27 [6, 11]. Each kind of
+probe triggers a different consequence:</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Probe</th>
+<th>Question it answers</th>
+<th>On failure</th>
+<th>Who acts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Startup</td>
+<td>Has the app finished starting?</td>
+<td>Container is killed and handled by its restart policy; liveness and
+readiness are held off until it succeeds</td>
+<td>kubelet</td>
+</tr>
+<tr>
+<td>Liveness</td>
+<td>Is the process stuck (for example, deadlocked)?</td>
+<td>Container is restarted after exceeding the failure tolerance</td>
+<td>kubelet</td>
+</tr>
+<tr>
+<td>Readiness</td>
+<td>Can it take traffic right now?</td>
+<td>Pod IP is removed from the EndpointSlices of matching Services; no
+restart</td>
+<td>EndpointSlice controller</td>
+</tr>
+</tbody>
+</table>
+<p>Readiness probes run for the container’s whole lifetime, so a Pod can
+drop out of Service traffic during overload and return without being
+restarted [6, 11]. Startup probes exist for slow starters: the
+documented pattern sets <code>failureThreshold * periodSeconds</code>
+long enough to cover the worst-case startup time, after which the
+container is killed if it never succeeds [11]. Default probe timing is
+an initial delay of 0, a period of 10s, a timeout of 1s and a failure
+threshold of 3 [12].</p>
+<p>Liveness probes are where practitioners most often hurt themselves.
+If a liveness endpoint checks external dependencies such as a database,
+a slow dependency triggers restarts across every replica at once, and
+the restarted Pods then pile reconnects onto the already-struggling
+dependency: a cascading failure [12]. A slow cache warm-up that trips
+liveness produces an endless restart loop. Readiness, not liveness, is
+the right tool for a Pod that is temporarily unable to serve [6,
+12].</p>
+<h2 id="pod-termination-and-graceful-shutdown">4. Pod Termination and
+Graceful Shutdown</h2>
+<h3 id="the-termination-sequence">4.1 The termination sequence</h3>
+<p>Deleting a Pod does not kill it. The API server records a deletion
+timestamp and a grace period, 30 seconds by default via
+<code>terminationGracePeriodSeconds</code>, and <code>kubectl</code>
+shows the Pod as <code>Terminating</code> [6]. From there, two
+independent tracks run in parallel:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Step</th>
+<th>Node (kubelet)</th>
+<th>Control plane</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Sees the Pod marked terminating and starts local shutdown</td>
+<td>Pod has a deletion timestamp and grace period</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Runs each container’s <code>preStop</code> hook, if defined</td>
+<td>EndpointSlice controller marks the endpoint terminating
+(<code>ready: false</code>, <code>serving</code> still reported)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Sends SIGTERM (or the image’s <code>STOPSIGNAL</code>) to PID 1 in
+each container, in no guaranteed order</td>
+<td>ReplicaSets stop counting the Pod as a valid in-service replica</td>
+</tr>
+<tr>
+<td>4</td>
+<td>When the grace period expires, sends SIGKILL to remaining processes
+(plus a one-off 2s extension if <code>preStop</code> is still
+running)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Moves the Pod to <code>Failed</code> or <code>Succeeded</code>, then
+force-removes it with grace period 0</td>
+<td>API object disappears</td>
+</tr>
+</tbody>
+</table>
+<p>All of the above is taken from the Pod lifecycle documentation [6].
+Two details matter in practice. First, sidecars shut down last: the
+kubelet delays SIGTERM to sidecar containers until the last main
+container has terminated, then stops them in reverse order of
+definition, so a slow main container also delays the sidecars [6].
+Second, <code>preStop</code> hooks run inside the grace period, not
+before it; if the hook needs longer than the grace period, you must
+raise <code>terminationGracePeriodSeconds</code> [6, 13]. Hooks are
+delivered at least once, and a failing <code>PostStart</code> or
+<code>PreStop</code> hook kills the container [13].</p>
+<p>Force deletion (<code>--grace-period=0 --force</code>) removes the
+API object immediately without waiting for the kubelet to confirm, which
+is why a new Pod with the same name can be created at once; the
+documentation warns that the old process “may continue to run on the
+cluster indefinitely” [6].</p>
+<h3 id="the-endpoint-race">4.2 The endpoint race</h3>
+<p>Because endpoint removal and SIGTERM begin at the same moment, a Pod
+can receive SIGTERM while load balancers, ingress controllers or
+kube-proxy rules on other nodes still route new connections to it.
+Skipper’s documentation states the problem plainly: endpoint updates are
+asynchronous, and “reducing this interval or implementing watch will
+only reduce the timeframe, but not fix the underlying race condition”
+[14]. The standard mitigations are a <code>preStop</code> hook that
+sleeps a few seconds before SIGTERM, or an application that, on SIGTERM,
+fails its readiness check and keeps serving briefly before exiting [14].
+The upstream documentation addresses the same gap from the other side:
+terminating endpoints stay in EndpointSlices with
+<code>ready: false</code> and a separate <code>serving</code> condition,
+so a proxy that wants to drain connections can still see them [6]. This
+is the main place where the documented behavior and real-world behavior
+diverge: Kubernetes guarantees ordering on the node, not across the
+network.</p>
+<h3 id="involuntary-termination-eviction-node-loss-and-pod-gc">4.3
+Involuntary termination: eviction, node loss and Pod GC</h3>
+<p>Not every termination starts with <code>kubectl delete</code>. Four
+other paths end a Pod:</p>
+<ul>
+<li><strong>API-initiated eviction</strong> (for example,
+<code>kubectl drain</code>) is graceful, honors
+<code>terminationGracePeriodSeconds</code>, and respects
+PodDisruptionBudgets [7].</li>
+<li><strong>Node-pressure eviction</strong> is harsher: the kubelet
+watches signals such as <code>memory.available</code>, disk and inode
+availability and PID counts; soft thresholds wait out a grace period
+capped by <code>eviction-max-pod-grace-period</code>, while hard
+thresholds kill Pods immediately, and evicted Pods end in
+<code>Failed</code> for their controller to replace [15].</li>
+<li><strong>Node failure.</strong> When a node fails, Kubernetes treats
+its Pods as unhealthy and eventually deletes them [6].</li>
+<li><strong>Pod garbage collection.</strong> The Pod garbage collector
+(PodGC) deletes terminated Pods once their number exceeds
+<code>terminated-pod-gc-threshold</code>, removes orphan Pods bound to
+nodes that no longer exist and unscheduled terminating Pods, and marks
+any non-terminal Pod it cleans up as <code>Failed</code> [6, 7].</li>
+</ul>
+<h2 id="the-replicaset-controller-reconciling-replica-count">5. The
+ReplicaSet Controller: Reconciling Replica Count</h2>
+<h3 id="what-a-replicaset-is">5.1 What a ReplicaSet is</h3>
+<p>A ReplicaSet has three parts: a selector that identifies the Pods it
+may own, a replica count, and a Pod template for new Pods; it “fulfills
+its purpose by creating and deleting Pods as needed to reach the desired
+number” [10]. It does not care how a Pod came to exist. The ReplicaSet
+identifies Pods by selector, not by template, which has two
+consequences. Changing the template has no effect on running Pods; only
+newly created Pods use the new template, which is why ReplicaSets cannot
+do rolling updates and the docs recommend Deployments instead [10]. And
+a ReplicaSet will adopt bare Pods that happen to match its selector
+[10].</p>
+<h3 id="one-sync-pass">5.2 One sync pass</h3>
+<p>Each sync of a ReplicaSet key in the controller does roughly the
+following [4, 16]:</p>
+<ol type="1">
+<li><strong>Check expectations.</strong> The controller keeps
+per-ReplicaSet <code>ControllerExpectations</code>: counters of creates
+and deletes it has issued but not yet seen in its informer cache.
+<code>syncReplicaSet</code> calls <code>manageReplicas</code> only when
+expectations are satisfied, so it never acts on a stale cache and
+double-creates Pods. Expectations expire after 5 minutes, a safety valve
+the source says exists because “without it the controller could stay
+asleep forever”.</li>
+<li><strong>Claim Pods.</strong> <code>claimPods</code> lists Pods
+matching the selector and calls
+<code>PodControllerRefManager.ClaimPods</code>, which adopts matching
+orphans and releases owned Pods whose labels no longer match.</li>
+<li><strong>Filter to active Pods</strong> (excluding terminal and
+terminating ones) and compute
+<code>diff = len(active) - spec.replicas</code>.</li>
+<li><strong>Create or delete</strong>, capped per sync at
+<code>BurstReplicas = 500</code>, a constant the source ties to
+performance requirements for Kubernetes 1.0.</li>
+<li><strong>Update status</strong> (replicas, ready, available and,
+where enabled, terminating replicas).</li>
+</ol>
+<p>Creation uses slow-start batching. Batches start at
+<code>SlowStartInitialBatchSize = 1</code> and double after each fully
+successful batch; “If there are any failures in a batch, all remaining
+batches are skipped”, and the expectations for the skipped creates are
+decremented [4, 16]. This keeps a ReplicaSet whose Pods are rejected
+(for example by quota or admission) from flooding the API server with
+hundreds of doomed requests.</p>
+<p>Deletion records deletion expectations first, then deletes the Pods
+chosen by <code>getPodsToDelete</code> [4]. Because terminating Pods are
+excluded from the active count, the total number of Pods can briefly
+exceed <code>spec.replicas</code> while old Pods drain; the
+<code>.status.terminatingReplicas</code> field (feature
+<code>DeploymentReplicaSetTerminatingReplicas</code>, beta and on by
+default since v1.35) makes that visible [10].</p>
+<h3 id="which-pods-die-first-on-scale-down">5.3 Which Pods die first on
+scale-down</h3>
+<p>The documentation summarizes the scale-down order as: pending and
+unschedulable Pods first, then lower <code>pod-deletion-cost</code>,
+then Pods on nodes that run more replicas, then newer Pods, then random
+[10]. The source code is more precise. <code>ActivePodsWithRanks</code>
+sorts by eight rules in order [16]:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Rule (earlier = deleted first)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Unassigned to a node before assigned</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Pending before Unknown before Running</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Not ready before ready</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Lower <code>controller.kubernetes.io/pod-deletion-cost</code> before
+higher</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Higher rank (more related Pods on the same node) before lower</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Ready for less time before ready for longer (log scale)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>More container restarts before fewer</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Newer creation time before older (log scale)</td>
+</tr>
+</tbody>
+</table>
+<p>Rules 6 and 8 compare timestamps on a logarithmic scale and break
+ties by UID, giving a pseudorandom choice among Pods of similar age
+[16]. That is the <code>LogarithmicScaleDown</code> behavior from
+KEP-2185, which went stable in v1.31. It exists because the old rule,
+always kill the newest Pod, tended to preserve imbalance across failure
+domains after repeated scale-ups and scale-downs [17].</p>
+<p><code>pod-deletion-cost</code> (KEP-2255) lets an application bias
+the choice, for example by marking idle replicas cheap before a
+scale-down [10, 18]. Two cautions apply. It is explicitly best-effort
+and “does not offer any guarantees on pod deletion order” [10], and its
+maturity label is inconsistent: the KEP page lists v1.24 as its stable
+milestone, while the current ReplicaSet documentation still marks the
+feature beta since v1.22 [10, 18].</p>
+<h2 id="ownership-adoption-and-garbage-collection">6. Ownership,
+Adoption and Garbage Collection</h2>
+<h3 id="owner-references">6.1 Owner references</h3>
+<p>The link between a ReplicaSet and its Pods is not the selector alone;
+it is <code>metadata.ownerReferences</code>. A ReplicaSet is the owner
+of its Pods, which are its dependents, and controllers set owner
+references automatically [19]. A Pod created by a Deployment’s
+ReplicaSet carries an owner reference of <code>kind: ReplicaSet</code>
+with <code>controller: true</code> and
+<code>blockOwnerDeletion: true</code> [20], and
+<code>blockOwnerDeletion</code> is set automatically whenever a
+controller sets the reference [19]. Owner references hold a name and a
+UID and must stay within one namespace; cross-namespace owners are
+disallowed by design [19].</p>
+<h3 id="adoption-release-and-isolation">6.2 Adoption, release and
+isolation</h3>
+<p>Because the controller reconciles by selector and controller
+reference together, ownership can move. A Pod with no owner reference,
+or one whose owner is not a controller, is “immediately acquired” by any
+ReplicaSet whose selector it matches, even if it was created by hand
+from a different template [10]. In the other direction, changing a Pod’s
+labels so it no longer matches releases it: the ReplicaSet drops the
+owner reference and, seeing one replica fewer, creates a replacement.
+This is the documented way to pull a misbehaving Pod out for debugging
+without losing capacity [4, 10]. The documentation warns against
+creating bare Pods whose labels overlap a ReplicaSet’s selector, and
+against overlapping selectors between controllers, for exactly this
+reason [10].</p>
+<h3 id="cascading-deletion">6.3 Cascading deletion</h3>
+<p>Deleting an owner deletes its dependents through the garbage
+collector, in one of three modes [10, 20, 21]:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Mode</th>
+<th>How to request it</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Background (default)</td>
+<td><code>kubectl delete rs x</code></td>
+<td>Owner is deleted immediately; GC deletes Pods afterward</td>
+</tr>
+<tr>
+<td>Foreground</td>
+<td><code>--cascade=foreground</code> or
+<code>propagationPolicy: Foreground</code></td>
+<td>Owner gets a <code>deletionTimestamp</code> and a
+<code>foregroundDeletion</code> finalizer; it stays visible until
+dependents with <code>blockOwnerDeletion: true</code> are gone</td>
+</tr>
+<tr>
+<td>Orphan</td>
+<td><code>--cascade=orphan</code></td>
+<td>Owner is deleted; Pods keep running with their owner reference
+removed</td>
+</tr>
+</tbody>
+</table>
+<p>Kubernetes uses background deletion unless told otherwise [21]. The
+orphan mode is how you replace a ReplicaSet without downtime: delete it
+with <code>--cascade=orphan</code>, create a new ReplicaSet with the
+same selector, and the new one adopts the existing Pods [10]. Adopted
+Pods keep their old template; a new template takes effect only as Pods
+are replaced [10].</p>
+<h2 id="deployments-rollouts-and-replicaset-lifecycle">7. Deployments,
+Rollouts and ReplicaSet Lifecycle</h2>
+<p>In practice most ReplicaSets are created and managed by a Deployment,
+and the documentation says not to manage Deployment-owned ReplicaSets
+directly [22]. The Deployment controller adds a
+<code>pod-template-hash</code> label to every ReplicaSet it creates or
+adopts; the label “ensures that child ReplicaSets of a Deployment do not
+overlap”, which is what keeps two ReplicaSets with otherwise identical
+selectors from fighting over Pods [22].</p>
+<p>A rollout is a change to the Pod template, and only that: scaling a
+Deployment does not trigger one [22]. On a template change, the
+Deployment controller creates a new ReplicaSet and then scales the new
+one up and the old ones down. Each step is just a change to
+<code>spec.replicas</code> that the ReplicaSet controller reconciles.
+With the default <code>RollingUpdate</code> strategy,
+<code>maxUnavailable</code> and <code>maxSurge</code> both default to
+25%, so at least 75% and at most 125% of the desired Pods are up during
+the rollout [22]. Terminating Pods do not count as available, so the
+actual Pod count can exceed <code>replicas + maxSurge</code> while old
+Pods drain [22]. If the template changes again mid-rollout, the
+controller creates yet another ReplicaSet and treats the one it was
+scaling up as old [22]. The <code>Recreate</code> strategy instead kills
+all existing Pods before creating new ones [22].</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Deployment action</th>
+<th>Effect on ReplicaSets</th>
+<th>Effect on Pods</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scale (<code>replicas: 3 → 5</code>)</td>
+<td>Current ReplicaSet scaled (proportionally across ReplicaSets
+mid-rollout)</td>
+<td>Two new Pods from the current template</td>
+</tr>
+<tr>
+<td>Template change</td>
+<td>New ReplicaSet created with a new <code>pod-template-hash</code>;
+old ones scaled toward 0</td>
+<td>Pods replaced within
+<code>maxSurge</code>/<code>maxUnavailable</code></td>
+</tr>
+<tr>
+<td><code>kubectl rollout undo</code></td>
+<td>An older ReplicaSet is scaled back up</td>
+<td>Pods from the older template return</td>
+</tr>
+<tr>
+<td>Revision cleanup</td>
+<td>ReplicaSets beyond <code>revisionHistoryLimit</code> are
+deleted</td>
+<td>Already at 0 replicas</td>
+</tr>
+</tbody>
+</table>
+<p>Old ReplicaSets are kept at zero replicas as rollout history, which
+is what <code>kubectl rollout undo</code> scales back up, and
+<code>.spec.revisionHistoryLimit</code> controls how many are retained
+[22]. When a rollout is scaled mid-flight, the Deployment controller
+spreads the extra replicas across the new and old ReplicaSets in
+proportion to their size, a behavior the docs call proportional scaling
+[22]. <code>progressDeadlineSeconds</code> sets how long the controller
+waits before reporting the rollout as stalled in the Deployment status
+[22].</p>
+<p>Taken together, the lifecycle is a hierarchy of loops, each with one
+job. The Deployment loop decides how many Pods each template version
+should have. The ReplicaSet loop makes the count of matching Pods equal
+that number. The kubelet loop keeps each Pod’s containers running and
+shuts them down cleanly. The garbage collector cleans up whatever loses
+its owner. Most surprising behaviors follow directly from which loop
+owns which decision. Examples include a crash-looping Pod that never
+gets replaced, Pod counts that briefly exceed <code>replicas</code>, a
+stray Pod that suddenly belongs to a ReplicaSet, and 502 errors during
+rollouts.</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<p>[1] Controllers.
+https://kubernetes.io/docs/concepts/architecture/controller/</p>
+<p>[2] Writing Controllers (sig-api-machinery controllers.md).
+https://github.com/kubernetes/community/blob/master/contributors/devel/sig-api-machinery/controllers.md</p>
+<p>[3] Kubernetes Reconcile Loop Explained: Workqueue, Reconcile() &amp;
+Code.
+https://www.golinuxcloud.com/kubernetes-reconcile-loop-explained/</p>
+<p>[4] kubernetes/pkg/controller/replicaset/replica_set.go.
+https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/replicaset/replica_set.go</p>
+<p>[5] Pods. https://kubernetes.io/docs/concepts/workloads/pods/</p>
+<p>[6] Pod Lifecycle.
+https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/</p>
+<p>[7] Disruptions.
+https://kubernetes.io/docs/concepts/workloads/pods/disruptions/</p>
+<p>[8] Init Containers.
+https://kubernetes.io/docs/concepts/workloads/pods/init-containers/</p>
+<p>[9] Sidecar Containers.
+https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/</p>
+<p>[10] ReplicaSet.
+https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/</p>
+<p>[11] Configure Liveness, Readiness and Startup Probes.
+https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/</p>
+<p>[12] Kubernetes Liveness Probes: Examples &amp; Common Pitfalls.
+https://www.vcluster.com/blog/kubernetes-liveness-probes-examples-and-common-pitfalls</p>
+<p>[13] Container Lifecycle Hooks.
+https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/</p>
+<p>[14] Ingress Backends (Skipper).
+https://opensource.zalando.com/skipper/kubernetes/ingress-backends/</p>
+<p>[15] Node-pressure Eviction.
+https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/</p>
+<p>[16] kubernetes/pkg/controller/controller_utils.go.
+https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/controller_utils.go</p>
+<p>[17] KEP-2185: Random Pod Selection on ReplicaSet Downscale.
+https://www.kubernetes.dev/resources/keps/2185/</p>
+<p>[18] KEP-2255: ReplicaSet Pod Deletion Cost.
+https://www.kubernetes.dev/resources/keps/2255/</p>
+<p>[19] Owners and Dependents.
+https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/</p>
+<p>[20] Use Cascading Deletion in a Cluster.
+https://kubernetes.io/docs/tasks/administer-cluster/use-cascading-deletion/</p>
+<p>[21] Garbage Collection.
+https://kubernetes.io/docs/concepts/architecture/garbage-collection/</p>
+<p>[22] Deployments.
+https://kubernetes.io/docs/concepts/workloads/controllers/deployment/</p>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">How Kubernetes
+Manages the Lifecycle of Pods and ReplicaSets</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-10-27</span></div>
+  <div><span class="k">Sources cited</span><span class="v">22</span></div>
+</div>
+</div></div>
+</body>
+</html>
