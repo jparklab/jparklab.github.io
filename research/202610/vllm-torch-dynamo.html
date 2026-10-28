@@ -95,19 +95,22 @@ id="toc-what-dynamo-does-the-parts-that-matter-here">1. What Dynamo does
 in vLLM</a></li>
 <li><a href="#the-pieces-one-by-one" id="toc-the-pieces-one-by-one">3.
 The pieces, one by one</a></li>
-<li><a href="#compilation-modes" id="toc-compilation-modes">4.
+<li><a href="#after-dynamo-splitting-inductor-caching-cuda-graphs"
+id="toc-after-dynamo-splitting-inductor-caching-cuda-graphs">4. After
+Dynamo: splitting, Inductor, caching, CUDA graphs</a></li>
+<li><a href="#compilation-modes" id="toc-compilation-modes">5.
 Compilation modes</a></li>
 <li><a href="#dynamic-shape-modes--cc.dynamic_shapes_config.type"
-id="toc-dynamic-shape-modes--cc.dynamic_shapes_config.type">5.
+id="toc-dynamic-shape-modes--cc.dynamic_shapes_config.type">6.
 Dynamic-shape modes
 (<code>-cc.dynamic_shapes_config.type</code>)</a></li>
 <li><a href="#rules-this-imposes-on-model-code"
-id="toc-rules-this-imposes-on-model-code">6. Rules this imposes on model
+id="toc-rules-this-imposes-on-model-code">7. Rules this imposes on model
 code</a></li>
-<li><a href="#debugging-toolkit" id="toc-debugging-toolkit">7. Debugging
+<li><a href="#debugging-toolkit" id="toc-debugging-toolkit">8. Debugging
 toolkit</a></li>
 <li><a href="#takeaways-open-questions"
-id="toc-takeaways-open-questions">8. Takeaways / open questions</a></li>
+id="toc-takeaways-open-questions">9. Takeaways / open questions</a></li>
 </ul>
 </nav>
 <div class="summary">
@@ -343,7 +346,279 @@ the artifact (<code>_verify_source_unchanged</code>).</li>
 2.12) goes further and stores the split graph plus all piece artifacts
 as one blob, so loading skips re-splitting.</li>
 </ul>
-<h2 id="compilation-modes">4. Compilation modes</h2>
+<h2 id="after-dynamo-splitting-inductor-caching-cuda-graphs">4. After
+Dynamo: splitting, Inductor, caching, CUDA graphs</h2>
+<p>Dynamo hands <code>VllmBackend</code> one FX graph of the model’s
+<code>forward</code>, with the token count as a symbolic size
+<code>s0</code>. These four steps turn that graph into what runs on each
+serving step. All of it happens once, during startup warmup.</p>
+<h3 id="splitting-cut-the-graph-at-attention">4.1 Splitting: cut the
+graph at attention</h3>
+<p><strong>Why it’s needed.</strong> Attention is the only part of a
+layer that depends on the batch’s makeup: KV-cache block tables, prefill
+vs. decode, per-request lengths. Everything else (norms, QKV/MLP
+matmuls, RoPE, activations) works token by token and only cares how many
+tokens there are. Splitting separates the two kinds of work so each can
+be handled differently.</p>
+<p><strong>How it works.</strong> <code>split_graph</code>
+(<code>vllm/compilation/backends.py:576</code>):</p>
+<ul>
+<li>It walks the graph’s nodes in order and starts a new subgraph id at
+every <strong>splitting op</strong>. These are the opaque custom ops in
+<code>CompilationConfig._attention_ops</code>
+(<code>vllm/config/compilation.py:768</code>):
+<code>vllm::unified_attention_with_output</code>, the MLA variant, mamba
+and linear-attention ops, and others. Each splitting op gets a subgraph
+of its own, and consecutive splitting ops stay together.</li>
+<li>Some cleanups keep the pieces compilable.
+<code>_decompose_size_nodes</code> rewrites <code>x.size()</code> into
+one size call per dimension, because AOTAutograd can’t accept a
+<code>torch.Size</code> tuple as an input or output at a cut. A
+<code>getitem</code> stays in the same piece as the tuple it indexes. A
+piece that would hold nothing but a <code>torch.empty</code> is merged
+into the previous piece, so no CUDA graph gets captured for an empty
+piece.</li>
+<li><code>torch.fx.passes.split_module(..., keep_original_order=True)</code>
+then builds a parent graph module that calls <code>submod_0</code>,
+<code>submod_1</code>, … in order. Keeping the original order matters
+because the attention ops write into an output buffer, and reordering
+around those writes would change the results.</li>
+</ul>
+<p><strong>Result for Llama with N layers.</strong> The pieces are:
+everything before the first attention, attention, the inter-attention
+block (o_proj → residual → norm → MLP → norm → QKV → RoPE) repeated N−1
+times, attention, and the final norm. Only 3 of these are distinct
+non-attention graphs, so Inductor reuses one artifact for the middle
+pieces. That’s why the cache log shows the 1st and 15th graphs with the
+same key.</p>
+<p><strong>Alternative.</strong> With
+<code>use_inductor_graph_partition=True</code>, vLLM doesn’t split the
+FX graph itself and leaves the partitioning to Inductor
+(<code>backends.py:1207</code>).</p>
+<h3 id="inductor-compile-each-piece-into-triton-kernels">4.2 Inductor:
+compile each piece into Triton kernels</h3>
+<p><code>PiecewiseCompileInterpreter</code> runs the split graph on fake
+tensors. For each non-attention piece it creates a
+<code>PiecewiseBackend</code>
+(<code>vllm/compilation/piecewise_backend.py</code>), and that backend
+compiles the piece right away.</p>
+<p><strong>Compile ranges.</strong> A piece is compiled once per
+<strong>range</strong> of token counts, not once per batch size.</p>
+<ul>
+<li>The default is a single range,
+<code>[1, max_num_batched_tokens]</code>, compiled with symbolic
+shapes.</li>
+<li>Some fusion passes add extra cut-points. For example,
+all-reduce+RMSNorm fusion only pays off below a token threshold, so it
+adds a boundary at that threshold
+(<code>vllm/config/vllm.py:2643</code>).</li>
+<li>Each entry in <code>compile_sizes</code> adds a single-size range.
+That piece is then compiled with <strong>concrete</strong> shapes, and
+<code>max_autotune</code> / coordinate-descent tuning can be turned on
+for it (<code>set_inductor_config</code>,
+<code>compiler_interface.py:772</code>).</li>
+<li>At runtime, <code>PiecewiseBackend.__call__</code> reads the token
+count from the piece’s inputs and picks the entry: an exact size if
+there is one, otherwise the range that contains it.</li>
+</ul>
+<p><strong>Compiler choice</strong> (<code>make_compiler</code>,
+<code>backends.py:97</code>):</p>
+<ul>
+<li>The default is <code>InductorStandaloneAdaptor</code>, which wraps
+<code>torch._inductor.standalone_compile</code>
+(<code>VLLM_USE_STANDALONE_COMPILE=1</code>). It produces artifacts that
+can be serialized.</li>
+<li><code>InductorAdaptor</code> is the older <code>compile_fx</code>
+path. It hooks Inductor’s FX-graph cache: it swaps in an
+<code>AlwaysHitShapeEnv</code> so cache lookups never fail on guards
+that vLLM drops anyway.</li>
+<li><code>backend=eager</code> → <code>EagerAdaptor</code>, which skips
+Inductor. That’s useful for isolating bugs.</li>
+</ul>
+<p><strong>Inside Inductor:</strong></p>
+<ol type="1">
+<li>AOTAutograd functionalizes the graph: in-place ops become pure ops,
+mutations become explicit copies.</li>
+<li>Ops are decomposed to aten/prims.</li>
+<li><strong>vLLM’s custom passes run.</strong> These are the main reason
+to use vLLM-compile rather than stock <code>torch.compile</code>. The
+pre-grad slot gets <code>VllmIRInplaceFunctionalizationPass</code>. The
+post-grad slot gets <code>PostGradPassManager</code>
+(<code>vllm/compilation/passes/pass_manager.py</code>), which
+pattern-matches multi-op sequences and replaces them with hand-written
+fused CUDA kernels. Fusions include RMSNorm+quant, SiLU-mul+quant,
+all-reduce+RMSNorm (FlashInfer), QK-norm+RoPE, RoPE+KV-cache write, and
+attention+output quant, plus no-op elimination and a functionalization
+fixup. Which passes run is set by <code>pass_config</code> and the
+<code>-O</code> level. Inductor’s own fusion can’t do these, because the
+target kernels are external.</li>
+<li>Inductor schedules the remaining elementwise and reduction ops,
+fuses them, and generates Triton kernels. Matmuls go to cuBLAS by
+default, or to Triton templates when autotuning a fixed size.</li>
+<li>Output is a Python wrapper that launches the kernels in order.</li>
+</ol>
+<p>The whole compile is finished before <code>VllmBackend</code>
+returns. No range is compiled lazily later
+(<code>compile_all_ranges</code>).</p>
+<h3 id="caching-never-compile-the-same-thing-twice">4.3 Caching: never
+compile the same thing twice</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Key</th>
+<th>Location</th>
+<th>What a hit skips</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vLLM compile cache</td>
+<td>sha256(env factors, <code>vllm_config.compute_hash()</code>,
+torch/Inductor config hash, <strong>contents of every file Dynamo
+traced</strong>)</td>
+<td><code>~/.cache/vllm/torch_compile_cache/&lt;hash&gt;/rank_&lt;r&gt;_&lt;dp&gt;/&lt;prefix&gt;/</code></td>
+<td>Inductor for each piece</td>
+</tr>
+<tr>
+<td>AOT artifact</td>
+<td>Same factors minus traced files (unknown before Dynamo runs). Source
+files are checked on load instead
+(<code>_verify_source_unchanged</code>)</td>
+<td><code>…/torch_aot_compile/&lt;hash&gt;/rank_*/model</code></td>
+<td>Dynamo <strong>and</strong> Inductor. Loaded with
+<code>torch.compiler.load_compiled_function</code> +
+<code>disable_guard_check()</code></td>
+</tr>
+<tr>
+<td>Inductor / Triton caches</td>
+<td>Inductor’s own FX-graph hash; Triton kernel hash</td>
+<td><code>inductor_cache/</code> under the vLLM dir,
+<code>TRITON_CACHE_DIR</code></td>
+<td>Kernel codegen and Triton → PTX/cubin compile</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Inside the compile-cache directory:</strong></p>
+<ul>
+<li><code>vllm_compile_cache.py</code>: a Python literal (read with
+<code>ast.literal_eval</code>, never <code>eval</code>) that maps
+<code>(range, graph_index, compiler_name)</code> to an Inductor handle
+(<code>backends.py:176</code>). On startup,
+<code>CompilerManager.compile</code> checks this first and calls
+<code>compiler.load(handle)</code> on a hit.</li>
+<li><code>cache_key_factors.json</code>: the raw factors behind the
+hash. Diff two of these to find out why the cache missed.</li>
+<li><code>computation_graph.py</code> and
+<code>transformed_code.py</code>: debug dumps of the split graph and
+Dynamo’s rewritten bytecode.</li>
+</ul>
+<p><strong>Mega artifact.</strong> On by default with torch ≥ 2.12. It
+bundles the split graph and every piece’s serialized Inductor output
+into one blob, so a warm start doesn’t re-split the graph or rebuild
+each piece’s backend.</p>
+<p><strong>Points to know:</strong></p>
+<ul>
+<li>The cache is per rank, and the hash includes parallel config.
+Changing TP or DP size misses.</li>
+<li>Code that runs only inside a custom op isn’t traced by Dynamo, so
+it’s <strong>not in the key</strong>. Edit an attention backend and you
+may load stale artifacts. Use <code>VLLM_DISABLE_COMPILE_CACHE=1</code>
+in that case.</li>
+<li>You can copy the whole <code>torch_compile_cache</code> directory,
+plus <code>TRITON_CACHE_DIR</code>, to other machines to cut cold-start
+time.</li>
+</ul>
+<h3 id="cuda-graphs-remove-cpu-launch-overhead">4.4 CUDA graphs: remove
+CPU launch overhead</h3>
+<p><strong>The problem.</strong> A decode step for a small batch might
+launch about 1,000 tiny kernels. Python plus the kernel-launch API can
+take longer than the GPU work itself. A CUDA graph records a sequence of
+kernel launches with fixed pointers and shapes, then replays the whole
+sequence with one call.</p>
+<p><strong>The constraint.</strong> A captured graph is frozen: same
+input addresses, same shapes, same control flow. So vLLM:</p>
+<ol type="1">
+<li><strong>Captures one graph per batch size</strong> in
+<code>cudagraph_capture_sizes</code>. The default is
+<code>[1, 2, 4, 8, 16, …, 248]</code> in steps of 8, then steps of 16 up
+to <code>min(2·max_num_seqs·decode_query_len, 512)</code> (1024 on
+datacenter Blackwell) (<code>vllm/config/vllm.py:2392</code>).</li>
+<li><strong>Pads</strong> each batch’s token count up to the next
+captured size. Batches larger than the biggest size run without a CUDA
+graph.</li>
+<li><strong>Uses fixed input buffers.</strong>
+<code>make_copy_and_call</code> (<code>backends.py:59</code>) copies the
+runtime <code>input_ids</code> and <code>positions</code> into
+persistent buffers before each call, so the graph always reads from the
+same addresses. Intermediate buffers live in a shared CUDA-graph memory
+pool.</li>
+</ol>
+<p><strong>Modes</strong> (<code>CUDAGraphMode</code>,
+<code>vllm/config/compilation.py:53</code>):</p>
+<ul>
+<li><strong>PIECEWISE.</strong>
+<code>wrap_with_cudagraph_if_needed</code> wraps each non-attention
+piece in a <code>CUDAGraphWrapper</code>. Attention runs eagerly between
+the replays, so it can handle any mix of prefill and decode. This is why
+attention takes its output buffer as an argument: the allocation stays
+inside a captured piece and only the kernel call runs eagerly.</li>
+<li><strong>FULL.</strong> One wrapper around the whole model captures
+attention too. This is fastest, but only works for attention backends
+that support graph capture, and usually only for
+<strong>uniform</strong> batches (every request has the same query
+length, e.g. pure decode).</li>
+<li><strong>FULL_AND_PIECEWISE</strong> (the default with piecewise
+compilation): full graphs for uniform decode batches, piecewise for
+mixed or prefill batches. <strong>FULL_DECODE_ONLY</strong>: full graphs
+for decode, eager for everything else.</li>
+</ul>
+<p><strong>Dispatch.</strong> The two wrapper levels are nested: the
+outer FULL wrapper sits around the model, and the inner PIECEWISE
+wrappers sit around each piece.</p>
+<ul>
+<li>Before each step, <code>CudagraphDispatcher</code> builds a
+<code>BatchDescriptor(num_tokens, uniform)</code> for the padded
+batch.</li>
+<li>It picks a runtime mode in priority order FULL &gt; PIECEWISE &gt;
+NONE, based on which keys were captured, and writes the choice into the
+forward context.</li>
+<li>Each <code>CUDAGraphWrapper.__call__</code>
+(<code>vllm/compilation/cuda_graph.py:235</code>) checks the forward
+context. If the chosen mode isn’t its own, it just runs the code it
+wraps, so exactly one level is active.</li>
+</ul>
+<p><strong>Capture and replay.</strong></p>
+<ul>
+<li>Capture happens during warmup <code>_dummy_run</code>s, after the
+compile is done. Garbage collection and <code>empty_cache</code> are
+patched to no-ops during capture, because otherwise they’d run once per
+piece (about once per layer) and make capture very slow.</li>
+<li>Outputs are kept as weak references to save memory.</li>
+<li>Replay is <code>entry.cudagraph.replay()</code>, which returns the
+output tensors stored at capture. In debug mode it also asserts that
+input addresses haven’t changed.</li>
+</ul>
+<h3 id="how-the-four-fit-together">4.5 How the four fit together</h3>
+<ul>
+<li><strong>Splitting</strong> decides what can be captured as a CUDA
+graph (everything except attention).</li>
+<li><strong>Inductor</strong> makes those pieces faster.</li>
+<li><strong>Caching</strong> saves the time Dynamo and Inductor
+took.</li>
+<li><strong>CUDA graphs</strong> remove the cost of launching the many
+small kernels left over.</li>
+</ul>
+<p>The design doc’s Llama example shows the split: Inductor compiles 3
+unique pieces, and with piecewise CUDA graphs, roughly one graph is
+captured per piece per capture size.</p>
+<h2 id="compilation-modes">5. Compilation modes</h2>
 <table>
 <colgroup>
 <col style="width: 33%" />
@@ -387,7 +662,7 @@ Inductor, passes, cache, piecewise CUDA graphs.</td>
 <code>-cc.backend=eager</code> keeps Dynamo and splitting but skips
 Inductor, which is the quickest way to tell a Dynamo problem from an
 Inductor problem.</p>
-<h2 id="dynamic-shape-modes--cc.dynamic_shapes_config.type">5.
+<h2 id="dynamic-shape-modes--cc.dynamic_shapes_config.type">6.
 Dynamic-shape modes (<code>-cc.dynamic_shapes_config.type</code>)</h2>
 <table>
 <colgroup>
@@ -433,7 +708,7 @@ clones</td>
 <code>torch._check(...)</code> relations (for example
 <code>input_ids.size(0) == inputs_embeds.size(0)</code>) so unbacked
 mode does not hit data-dependent errors.</p>
-<h2 id="rules-this-imposes-on-model-code">6. Rules this imposes on model
+<h2 id="rules-this-imposes-on-model-code">7. Rules this imposes on model
 code</h2>
 <ol type="1">
 <li><strong>No graph breaks in <code>forward</code>.</strong>
@@ -461,7 +736,7 @@ impl.</strong></li>
 key.</strong> Edit a kernel wrapper and you may need
 <code>VLLM_DISABLE_COMPILE_CACHE=1</code>.</li>
 </ol>
-<h2 id="debugging-toolkit">7. Debugging toolkit</h2>
+<h2 id="debugging-toolkit">8. Debugging toolkit</h2>
 <ul>
 <li><code>TORCH_TRACE=&lt;dir&gt;</code> +
 <code>tlparse &lt;file&gt;</code> gives the full Dynamo/Inductor log,
@@ -479,7 +754,7 @@ the “Dynamo bytecode transform time”.</li>
 <code>-cc.cudagraph_mode=NONE</code> /
 <code>--enforce-eager</code>.</li>
 </ul>
-<h2 id="takeaways-open-questions">8. Takeaways / open questions</h2>
+<h2 id="takeaways-open-questions">9. Takeaways / open questions</h2>
 <ul>
 <li>vLLM uses Dynamo as a <strong>one-shot graph capturer</strong>, not
 as a JIT. Its main value is “turn Python model code into an FX graph
@@ -495,9 +770,10 @@ still has <code>mark_unbacked_dims</code> commented out with
 depends on undocumented Dynamo internals (it walks stack frames to find
 <code>convert_frame._compile</code>). AOT compile looks like the path
 that replaces it.</li>
-<li>Follow-ups worth a separate dig: Inductor custom passes
-(<code>vllm/compilation/passes/</code>), vLLM IR
-(<code>docs/design/vllm_ir.md</code>), and piecewise vs full CUDA graphs
+<li>Follow-ups worth a separate dig: what each fusion pass in
+<code>vllm/compilation/passes/</code> matches and which <code>-O</code>
+level turns it on, vLLM IR (<code>docs/design/vllm_ir.md</code>), and
+attention-backend CUDA-graph support levels
 (<code>docs/design/cuda_graphs.md</code>).</li>
 </ul>
 <h2 class="unlisted" id="sources">References</h2>
