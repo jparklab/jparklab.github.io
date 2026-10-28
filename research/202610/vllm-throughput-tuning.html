@@ -1,0 +1,1047 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Tuning vLLM for Throughput: Mechanisms, Measurement and a Tuning
+Playbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Tuning vLLM for Throughput: Mechanisms, Measurement and a Tuning
+Playbook</h1>
+<div class="byline">Research report · 47 cited sources · reviewed 2026-10-27</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#what-limits-vllm-throughput"
+id="toc-what-limits-vllm-throughput">1. What Limits vLLM
+Throughput</a></li>
+<li><a href="#measuring-throughput-benchmark-method-and-metrics"
+id="toc-measuring-throughput-benchmark-method-and-metrics">2. Measuring
+Throughput: Benchmark Method and Metrics</a></li>
+<li><a href="#scheduler-and-batching-knobs"
+id="toc-scheduler-and-batching-knobs">3. Scheduler and Batching
+Knobs</a></li>
+<li><a href="#gpu-memory-and-kv-cache-configuration"
+id="toc-gpu-memory-and-kv-cache-configuration">4. GPU Memory and KV
+Cache Configuration</a></li>
+<li><a href="#parallelism-and-deployment-layout"
+id="toc-parallelism-and-deployment-layout">5. Parallelism and Deployment
+Layout</a></li>
+<li><a href="#quantization" id="toc-quantization">6.
+Quantization</a></li>
+<li><a href="#prefix-caching-and-speculative-decoding"
+id="toc-prefix-caching-and-speculative-decoding">7. Prefix Caching and
+Speculative Decoding</a></li>
+<li><a href="#compilation-cuda-graphs-and-kernel-backends"
+id="toc-compilation-cuda-graphs-and-kernel-backends">8. Compilation,
+CUDA Graphs and Kernel Backends</a></li>
+<li><a href="#step-by-step-tuning-playbook-and-pitfalls"
+id="toc-step-by-step-tuning-playbook-and-pitfalls">9. Step-by-Step
+Tuning Playbook and Pitfalls</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>vLLM throughput depends mostly on how many sequences decode
+together in each engine step, and that number is capped by the GPU
+memory left for the KV cache (the stored attention keys and values of
+running requests). Current V1 releases already enable most per-step
+efficiency features by default, so tuning is two jobs. First, buy KV
+headroom cheapest-first: raise memory utilization, cap context length,
+move weights to FP8 (NVFP4 on Blackwell where kernels and accuracy
+allow), test an FP8 KV cache for long contexts, and prefer replicas over
+sharding while each replica keeps a full batch. Second, sweep the two
+batching knobs against a latency target on production-like traffic.
+Speculative decoding, KV offload and large token budgets help in some
+regimes and hurt in others, so each is settled by an A/B benchmark, not
+by a rule.</strong></p>
+</div>
+<h2 id="what-limits-vllm-throughput">1. What Limits vLLM Throughput</h2>
+<h3 id="two-phases-one-batch">1.1 Two phases, one batch</h3>
+<p>Every request passes through two phases. Prefill processes the whole
+prompt in one large matrix multiply and is compute-bound. Decode
+produces one token per request per step. Each step streams all weights
+plus the request’s KV cache from high-bandwidth memory (HBM) for very
+little arithmetic, so it is memory-bandwidth-bound [1, 2]. Batching
+fixes this: 64 requests sharing one weight load split its cost 64 ways.
+Because vLLM’s continuous batching admits and retires requests at every
+step, the question is how large the decode batch can grow.
+PagedAttention, the design behind vLLM, found that earlier systems used
+only 20.4-38.2% of reserved KV memory for real tokens [3]. Paging the
+cache in fixed-size blocks removed that waste and gave 2-4x throughput
+at equal latency [3].</p>
+<h3 id="a-worked-memory-budget">1.2 A worked memory budget</h3>
+<p>One token’s KV footprint is 2 (key and value) × layers × KV heads ×
+head size × bytes per element [2]. For Llama-3.1-8B (32 layers, 8 KV
+heads, head size 128, BF16) that is about 128 KiB. An 80 GB H100 at the
+default <code>--gpu-memory-utilization</code> of 0.92 gives vLLM about
+74 GB [4]. Minus 16 GB of weights and a few GB for activations and CUDA
+graphs, roughly 50 GB remains: about 380,000 tokens, or 190 concurrent
+2,000-token requests. An FP8 KV cache roughly doubles that, and FP8
+weights free another 8 GB. This is arithmetic, not a benchmark, but it
+shows why most levers below buy the same KV blocks at different
+prices.</p>
+<h3 id="the-knee-and-the-host">1.3 The knee and the host</h3>
+<p>Past a saturation batch size the step turns compute-bound: step time
+grows with batch, so per-user latency rises while throughput flattens
+[2]. Long contexts and mixture-of-experts (MoE) models, which activate
+only a few experts per token, push this knee later. The CPU host is a
+separate limit. Under vLLM v0.5.x, Llama 3 8B on one H100 spent only 38%
+of its time in GPU execution, against 33% in the HTTP server and 29% in
+scheduling [5]. V1 split the API server from the engine core for up to
+1.7x the throughput of V0 [6]. Asynchronous scheduling (preparing the
+next step on the CPU while the GPU runs the current one) became the
+default in v0.14.0 [7].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Regime</th>
+<th>What dominates a step</th>
+<th>What raises throughput</th>
+<th>What stops helping</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Small batch, short context</td>
+<td>Weight loading (memory-bound)</td>
+<td>Larger batch, weight-only 4-bit, speculative decoding</td>
+<td>Nothing yet</td>
+</tr>
+<tr>
+<td>Large batch, short context</td>
+<td>Arithmetic (compute-bound)</td>
+<td>FP8/FP4 activation formats</td>
+<td>Large-K speculation, weight-only 4-bit</td>
+</tr>
+<tr>
+<td>Large batch, long context</td>
+<td>KV loading (memory-bound again)</td>
+<td>FP8 KV cache, more KV memory</td>
+<td>Anything adding KV pressure</td>
+</tr>
+<tr>
+<td>Small model, fast GPU</td>
+<td>CPU overhead (host-bound)</td>
+<td>Async scheduling, API-server scale-out</td>
+<td>Raising batch knobs</td>
+</tr>
+</tbody>
+</table>
+<p>Throughput is batch size times step efficiency: memory sets the first
+factor, kernels and host overlap the second. Most blanket tuning advice
+holds in one row of this table and fails in another.</p>
+<h2 id="measuring-throughput-benchmark-method-and-metrics">2. Measuring
+Throughput: Benchmark Method and Metrics</h2>
+<h3 id="metrics-and-the-knee">2.1 Metrics and the knee</h3>
+<p>Throughput is reported as output tokens/s, total tokens/s (prompt
+plus output) or requests/s. Latency is reported as time to first token
+(TTFT), time per output token (TPOT, decode time averaged over later
+tokens) or inter-token latency (ITL, the gap between streamed chunks)
+[8]. TPOT and ITL diverge under speculative decoding [8]. Goodput joins
+the two: the rate of requests meeting every target in a latency
+service-level objective (SLO). In NVIDIA’s AIPerf walkthrough (eight
+Qwen3-0.6B replicas on eight H200s, vLLM v0.11.0), the server completed
+26.67 requests/s but only 7.43 met both latency targets [9]. Because the
+peak-throughput point and the best-latency point differ, the vLLM
+Blackwell study warns that “single-point metrics can be misleading”
+[10]. It plots Pareto frontiers (the configurations no other beats on
+both throughput and latency) instead [10].</p>
+<h3 id="a-defensible-protocol">2.2 A defensible protocol</h3>
+<p><code>vllm bench serve</code> offers the three load models in the
+table [8]. <code>vllm bench sweep serve</code> restarts the server per
+configuration, resets the prefix cache between runs and repeats each
+point three times; <code>serve_sla</code> then finds the highest load
+meeting a P99 target [11]. The <code>auto_tune</code> script first finds
+the highest memory utilization that does not crash, starting at 0.98.
+Only then does it search <code>max_num_seqs</code> ×
+<code>max_num_batched_tokens</code> under a P99 cap [12]. In other
+words, claim memory first, then tune the batch. A sound protocol ranks
+structural options offline with <code>vllm bench throughput</code>, then
+measures goodput at the SLO on one dataset whose input/output length
+ratio matches the use case, with caches reset.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Tool or mode</th>
+<th>Answers</th>
+<th>Blind spot</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>vllm bench throughput</code></td>
+<td>Offline ranking of options</td>
+<td>No HTTP or streaming cost</td>
+</tr>
+<tr>
+<td><code>bench serve --request-rate inf</code></td>
+<td>Peak capacity</td>
+<td>Queueing latency is meaningless</td>
+</tr>
+<tr>
+<td><code>bench serve --max-concurrency N</code></td>
+<td>Throughput at fixed in-flight load</td>
+<td>Hides burst tails</td>
+</tr>
+<tr>
+<td>Finite rate with <code>--burstiness</code></td>
+<td>Production-like goodput</td>
+<td>Needs a rate sweep</td>
+</tr>
+<tr>
+<td><code>bench sweep serve_sla</code>, <code>auto_tune</code></td>
+<td>Maximum load within P99 targets</td>
+<td>Only as realistic as the dataset; <code>auto_tune</code> uses one
+fixed input/output length</td>
+</tr>
+</tbody>
+</table>
+<p>Three traps outweigh any knob.</p>
+<ul>
+<li><strong>Stale caches and cold graphs.</strong> A warm prefix cache
+inflates repeat runs [8], and an under-warmed CUDA-graph baseline
+distorts A/B deltas (section 8).</li>
+<li><strong>Unrepresentative workloads.</strong> Workload shape can
+reverse a verdict: on an A100 serving Qwen2.5-1.5B, CPU offload through
+LMCache (an external KV-cache store) was neutral on a prefix-repetition
+dataset but cut ShareGPT output from 4,924 to 3,719 tokens/s, a 24% loss
+[13]. That is why Red Hat builds test sets matching production shapes
+[14].</li>
+<li><strong>Untuned engine comparisons.</strong> Engine shoot-outs
+mostly measure configuration and version: an LMSYS post showing SGLang
+at up to 3.1x vLLM used “vLLM 0.5.2 with default arguments” against
+tuned rivals [15]. That release line also carried the real host overhead
+described above, which vLLM v0.6.0 cut for 2.7x over v0.5.3 [5].</li>
+</ul>
+<h2 id="scheduler-and-batching-knobs">3. Scheduler and Batching
+Knobs</h2>
+<p>Each engine step has a token budget,
+<code>max_num_batched_tokens</code>, and a cap on running requests,
+<code>max_num_seqs</code>. The V1 scheduler gives every running decode
+one token, then fills the rest of the budget with prompt chunks. This
+chunked prefill is on by default wherever the model supports it [16]. It
+descends from Sarathi-Serve, which let prefill chunks ride along on
+arithmetic-idle decode steps and raised serving capacity 2.6x for
+Mistral-7B on an A100 [1]. Larger budgets favor TTFT and throughput,
+smaller ones ITL, and the docs recommend a budget above 8,192 for
+optimal throughput, especially for smaller models on large GPUs
+[16].</p>
+<h3 id="defaults-are-chosen-per-gpu">3.1 Defaults are chosen per
+GPU</h3>
+<p>When these knobs are unset, vLLM picks them from the detected GPU
+[17].</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>GPU class (detected)</th>
+<th>Token budget: offline <code>LLM</code> / API server</th>
+<th><code>max_num_seqs</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>≥160 GB (B200, B300)</td>
+<td>16,384 / 16,384</td>
+<td>1,024</td>
+</tr>
+<tr>
+<td>≥70 GB, not A100 or GB10 (H100, H200)</td>
+<td>16,384 / 8,192</td>
+<td>1,024</td>
+</tr>
+<tr>
+<td>A100, smaller GPUs, GB10</td>
+<td>8,192 / 2,048</td>
+<td>256</td>
+</tr>
+<tr>
+<td><code>--performance-mode throughput</code></td>
+<td>Doubles each unset value</td>
+<td>Doubles if unset</td>
+</tr>
+</tbody>
+</table>
+<p>The small A100 tier is deliberate. A code comment cites PR #17885
+[17], in which Llama-3.1-70B on A100 at TP=2 rose from 1,054 to 1,438
+tokens/s (+36%) with a smaller budget while TP=4 moved −2% [18]. A large
+GPU finishes a big step quickly and spreads fixed overhead over more
+tokens. An A100 saturates compute sooner, so extra tokens only lengthen
+each step. Plausibly (the PR does not say), they also enlarge the
+activation reserve taken from the KV pool.</p>
+<h3 id="where-chunking-and-caps-backfire">3.2 Where chunking and caps
+backfire</h3>
+<p>Too small a budget also costs: PrefillOnly lost 14% throughput
+cutting 20,000-token inputs into 512-token chunks, a 39-way split [19].
+One unreplicated report saw a hybrid state-space model fall from 47 to
+5.7 tokens/s when chunked prefill was forced on [20], a reason not to
+override V1’s per-model choice. <code>max_num_seqs</code> is a ceiling
+that cuts both ways. Below what the KV pool holds, raising it enlarges
+the decode batch, and a throughput plateau exactly at the cap value
+means the cap binds. Above KV capacity it only adds preemptions, and
+above the 512 graph-capture size it also loses full CUDA graphs (section
+8). Red Hat sets it where measured throughput plateaus so that excess
+requests queue instead [14]. Under data parallelism it applies per rank
+[21]. <code>--scheduling-policy priority</code> replaces
+first-come-first-served admission, which changes who waits rather than
+aggregate tokens/s [4].</p>
+<p>The evidence supports starting from the defaults. On H100-class or
+larger servers with long prompts or offline work, try 16,384 and then
+32,768 and stop at the plateau. On A100, sweep downward as well. Try
+<code>--performance-mode throughput</code> early [17]. No published
+V1-era budget sweep exists, so measure this curve locally.</p>
+<h2 id="gpu-memory-and-kv-cache-configuration">4. GPU Memory and KV
+Cache Configuration</h2>
+<p>At startup vLLM profiles memory, loads weights, reserves activation
+and CUDA-graph space, and turns the remainder of its share into 16-token
+KV blocks [2]. Every lever here enlarges that pool or shrinks each
+request’s share of it. When the pool runs dry, V1 preempts a request in
+RECOMPUTE mode, discarding its KV to recompute later. The documented
+fixes are higher memory utilization, a lower <code>max_num_seqs</code>
+or budget, or more tensor or pipeline parallelism [16].</p>
+<h3 id="claim-memory-and-right-size-context">4.1 Claim memory and
+right-size context</h3>
+<p><code>--gpu-memory-utilization</code> defaults to 0.92 in current
+docs [4]; older guides cite 0.90. Red Hat found the unclaimed remainder
+“often remains unused”, up to 8 GB on an H100, and advises raising the
+value until startup or peak load fails, then backing off [14]. Offline
+batch guides suggest about 0.95 [22]. In the worked example, each extra
+0.03 adds about 18,000 Llama-8B tokens. Pinning the pool with
+<code>--kv-cache-memory-bytes</code> speeds restarts, but “a
+conservative value caps batch concurrency (and therefore throughput)”
+[16]. For context, Anyscale recommends sizing
+<code>--max-model-len</code> to the P95 or P99 of real traffic rather
+than a 128K model maximum [23].</p>
+<h3 id="fp8-kv-cache-and-cpu-offload">4.2 FP8 KV cache and CPU
+offload</h3>
+<p><code>--kv-cache-dtype fp8</code> halves the bytes per cached token.
+In the vLLM team’s April 2026 H100 study, Llama-3.1-8B at concurrency 8
+with inputs of about 20k tokens gained 14.9% output throughput, because
+the saving “allows the scheduler to pack more concurrent requests” [24].
+The gains are conditional: gpt-oss-20b, which has sliding-window layers,
+gained 2.6% (4.8% with those layers kept in BF16). The single-request
+break-even context, above which FP8 decodes each token faster than BF16,
+fell from 24,889 tokens on v0.10.2 to 7,010 on v0.19.1. Even so, a
+KV-bound server with shorter prompts can still gain from the extra
+capacity.</p>
+<p>Prefill regressed on <code>head_dim=256</code> models (TTFT quadratic
+coefficient about 1.6x larger) [24]. Accuracy mostly held within 1-2
+points, but an earlier FlashAttention-3 FP8 path cut 128k
+needle-in-a-haystack accuracy from 91% to 13% before a fix [24]. For
+that reason, pair KV quantization with automated evaluation [14].</p>
+<p>CPU KV offload (<code>--kv-offloading-size</code>) extends the cache
+into host RAM [4]. vLLM’s up-to-9x result on Llama-3.1-8B/H100 used
+unique prompts, high CPU hit rates and GPU prefix caching disabled [25].
+The 24% ShareGPT loss above came from the LMCache backend, not this
+native connector, and both results are edge cases. Together they suggest
+offload pays only when reusable KV exceeds what the GPU can hold.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>KV-headroom lever (cheapest first)</th>
+<th>Headroom gained</th>
+<th>Price paid</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Raise <code>gpu_memory_utilization</code></td>
+<td>Up to ~8 GB on H100 [14]</td>
+<td>Out-of-memory risk under spikes</td>
+</tr>
+<tr>
+<td>Cap <code>max_model_len</code> and <code>max_tokens</code></td>
+<td>No single request monopolizes the pool</td>
+<td>Longer requests rejected</td>
+</tr>
+<tr>
+<td>FP8 (or NVFP4) weights</td>
+<td>Half (or a quarter) of weight memory</td>
+<td>Accuracy checks, kernel support</td>
+</tr>
+<tr>
+<td>FP8 KV cache</td>
+<td>About 2x tokens per GB</td>
+<td>Slower single-request decode below ~7k context [24]</td>
+</tr>
+<tr>
+<td>More TP per replica</td>
+<td>Weights spread across GPUs</td>
+<td>All-reduce traffic, fewer replicas</td>
+</tr>
+<tr>
+<td>CPU KV offload</td>
+<td>Host RAM as a cache tier</td>
+<td>Transfer cost at low reuse</td>
+</tr>
+</tbody>
+</table>
+<p>The cheapest-first order is reasoned from the mechanism, not measured
+end to end; re-measure after each row.</p>
+<h2 id="parallelism-and-deployment-layout">5. Parallelism and Deployment
+Layout</h2>
+<p>With parallelism basics assumed, the throughput question is how each
+layout spends KV headroom. For dense models, data parallelism (DP) runs
+independent replicas, each with its own KV cache and no cross-GPU
+communication [21]. Tensor parallelism (TP) splits each layer across
+GPUs, leaving each “more memory available for KV cache” but adding an
+all-reduce (a collective sum across GPUs) in every layer [16]. Pipeline
+parallelism (PP) instead splits the layers into stages that pass
+activations once per stage boundary, which suits multi-node or
+weak-interconnect setups. Its stages stay busy only when enough requests
+are in flight, and async scheduling helps it (section 8). Red Hat finds
+the fewest GPUs that hold the model with sufficient KV, deploys as many
+such replicas as fit, then tests fewer, larger ones [14].</p>
+<p>On PCIe (the general bus, far slower than direct NVLink links between
+GPUs), measurements favor replicas under load. On 4× RTX 3090 over PCIe
+(vLLM 0.21), two TP=2 replicas beat one TP=4 instance at every
+concurrency, from +4% at 1 request to +136% at 128 (1,437 against 610
+tokens/s) [26]. KV was not scarce, so all-reduce cost decided the result
+[26]. ScaleLLM found four TP=2 Mixtral replicas ahead above roughly 128
+concurrent requests but a single TP=8 replica best at low concurrency,
+since light traffic cannot fill several replicas [27]. No matched V1
+benchmark compares the two over NVLink, so replicating until KV runs
+short is a procedure to verify, not a measured law.</p>
+<p>Two cases change the default. DeepSeek-style multi-head latent
+attention (MLA, a compressed KV format) duplicates latent projections
+under TP. vLLM therefore pairs data-parallel attention with expert
+parallelism (EP, spreading MoE experts across GPUs), reaching about 2.2k
+tokens/s per H200 with dual-batch overlap of communication and compute
+[28]. Prefill/decode disaggregation “DOES NOT improve throughput”
+according to vLLM’s v0.9-era docs [29]. DistServe, however, serves 7.4x
+more requests within SLO [30]: disaggregation buys goodput, not raw
+throughput.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Layout that tends to win</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model plus ample KV fits one GPU</td>
+<td>DP replicas</td>
+<td>No communication</td>
+</tr>
+<tr>
+<td>PCIe-only GPUs</td>
+<td>Smallest TP that fits (≤2), then replicate</td>
+<td>All-reduce cost dominates [26]</td>
+</tr>
+<tr>
+<td>Low concurrency</td>
+<td>TP across GPUs</td>
+<td>Replicas would sit idle [27]</td>
+</tr>
+<tr>
+<td>Replica preempting, NVLink</td>
+<td>Raise TP one step</td>
+<td>Frees KV per GPU</td>
+</tr>
+<tr>
+<td>Model spans nodes or weak interconnect</td>
+<td>PP across nodes, TP within a node</td>
+<td>One activation transfer per stage, not per-layer all-reduce</td>
+</tr>
+<tr>
+<td>MLA or large MoE</td>
+<td>DP attention plus EP</td>
+<td>TP duplicates latent KV</td>
+</tr>
+<tr>
+<td>Strict TTFT/ITL SLO, multi-node</td>
+<td>Consider disaggregation</td>
+<td>Goodput, not raw throughput</td>
+</tr>
+</tbody>
+</table>
+<h2 id="quantization">6. Quantization</h2>
+<p>Quantization stores numbers in fewer bits. Weight-only formats such
+as W4A16 (4-bit weights, 16-bit activations; GPTQ or AWQ on Marlin,
+vLLM’s optimized 4-bit-weight kernels) cut the bytes loaded per step but
+still compute in 16-bit. Weight-and-activation formats such as W8A8 (FP8
+or INT8) and NVFP4 (NVIDIA’s 4-bit float) also run faster tensor-core
+math. Weight-only formats therefore win while decode is memory-bound and
+fade once it turns compute-bound.</p>
+<p>Kurtic et al., across more than 500,000 evaluations on vLLM, found
+that “W4A16 is the most cost-efficient for synchronous setups, while
+W8A8 dominates in asynchronous continuous batching”, with FP8
+effectively lossless and tuned INT8 losing 1-3% [31]. The crossover
+varies with model and hardware [31]. Much of the gain is capacity.
+Databricks’ 2.2x FP8 result on H100 (TensorRT-LLM, not vLLM) compared
+FP8 at batch 64 with FP16 at batch 32, and per-token speed improved only
+about 10% [32]. Weight-only INT8 was about 30% faster below batch 8 and
+gave “little to no speedup” above it because its arithmetic stayed in
+FP16 [32]. Re-tune the batch knobs after any format change.</p>
+<p>FP8 W8A8 needs Ada, Hopper or newer; INT8 W8A8 runs on Turing and
+Ampere; Marlin weight-only kernels run from Ampere on [33]. On
+MiniMax-M2.5 served with vLLM, B200 NVFP4 gave up to 8.2x the
+performance per dollar of H100 FP8: 2.94x from the GPU and 2.77x from
+NVFP4 [34]. That precision step was “unlocked by” a new MoE kernel (PR
+#36307) [34]. It shrank to 1.65x at 22 tokens/s per user (the high-batch
+end where throughput tuning happens) and came without accuracy data
+[34].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>GPU class</th>
+<th>Throughput default</th>
+<th>Low concurrency or memory-limited</th>
+<th>Accuracy evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ampere (A100, A10G)</td>
+<td>INT8 W8A8</td>
+<td>W4A16 (Marlin)</td>
+<td>INT8 loses 1-3% [31]</td>
+</tr>
+<tr>
+<td>Ada / Hopper (L40S, H100, H200)</td>
+<td>FP8 W8A8; FP8 KV for long contexts</td>
+<td>W4A16</td>
+<td>FP8 effectively lossless [31]</td>
+</tr>
+<tr>
+<td>Blackwell (B200, B300)</td>
+<td>NVFP4 where a tuned kernel exists, else FP8</td>
+<td>W4A16</td>
+<td>NVFP4 unreported; run evaluations</td>
+</tr>
+</tbody>
+</table>
+<h2 id="prefix-caching-and-speculative-decoding">7. Prefix Caching and
+Speculative Decoding</h2>
+<h3 id="prefix-caching">7.1 Prefix caching</h3>
+<p>Automatic prefix caching (APC) reuses the KV blocks of a shared
+prompt prefix, such as a system prompt, instead of recomputing them
+[35]. Cached blocks that no running request references stay in the free
+block queue, keeping their contents until reallocated [2], so they give
+up their space the moment a live request needs it. V1 enables APC by
+default because it costs “less than 1% decrease in throughput even when
+the cache hit rate is 0%” [6]. It saves only prefill work, so its value
+scales with reuse. Offline jobs can sort requests to group shared
+prefixes [22], and each DP rank keeps its own cache [21].</p>
+<h3 id="speculative-decoding">7.2 Speculative decoding</h3>
+<p>Speculative decoding (SD) has a cheap drafter, often an EAGLE head (a
+small network trained on the target model’s hidden states), propose K
+tokens that the target model verifies in one pass. Each accepted token
+saves a decode step, so a low acceptance rate turns a larger K into
+wasted work. At low load this spends idle arithmetic. At high load,
+verification adds batch size × K tokens of work to a GPU that may
+already be compute-bound, and draft tokens occupy KV slots that could
+hold more requests.</p>
+<p>The case for caution at saturation is real. vLLM’s docs target
+medium-to-low QPS, memory-bound workloads, though their method table
+still rates EAGLE-style drafters as gaining at high QPS [36]. A 2024
+vLLM post measured 1.4-1.8x slowdowns at high request rates with fixed K
+[37]. A study inside vLLM found SD beating no-SD in every tested
+workload, but EAGLE’s speedup on Llama3-70B eroding from 1.96x to 1.72x
+between batch 1 and 32 as verification dominated [38]. The Dynamic SD
+docs illustrate K=3 up to 64 concurrent requests, K=1 up to 128 and K=0
+beyond [39].</p>
+<p>The case for it is measured too. Red Hat ran gpt-oss-120b, an MoE
+model, with an Eagle3 drafter at K=3 on an H200 (vLLM 0.13.0) [40]. Peak
+output rose from 2,024 to 2,574 tokens/s (+27.2%) and the geometric mean
+across load levels rose 20.7%, with at most about 100 requests in flight
+[40]. Long prompts at TP=1 cut the gain to +9.5%, and K=4 gave 13% lower
+peak throughput than K=3 [40]. MagicDec reached up to 2.51x on
+Llama-3.1-8B at batch 32-256 once contexts of about 16k tokens or more
+made KV loading dominant [41]. It used a sparse-KV self-drafter rather
+than a stock vLLM drafter [41]. The regime model reconciles both sides:
+sparse MoE activation and long contexts keep decode memory-bound to
+larger batches.</p>
+<p>The evidence supports SD as a load-dependent lever: likely gains for
+MoE models with a native drafter at K=2-3 up to about 100 concurrent
+requests. For dense models at high load, the only measured loss is the
+fixed-K 2024 result. Acceptance explains why small K wins. In PayPal’s
+EAGLE3 study of a dense 8B model on vLLM, K=3 held about 35.5%
+acceptance and gained up to concurrency 32, while K=5 fell to about 25%
+and helped only at concurrency 4 or below [42]. Both were measured
+against an NVIDIA NIM baseline rather than vLLM without SD [42].</p>
+<p>A/B it at the target concurrency with Dynamic SD, which picks K from
+the running-request count and stops speculating above a set threshold
+[39]. Dynamic SD reverts to a fixed K under data parallelism, however
+[39]. Because each speculative decode consumes 1+K tokens of the step
+budget, re-sweep <code>max_num_batched_tokens</code> with SD on; this
+follows from the scheduler’s design and has not been measured.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>SD situation</th>
+<th>Measured effect on throughput</th>
+<th>Setup</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dense 70B, high request rate, fixed K</td>
+<td>1.4-1.8x slowdown</td>
+<td>4×H100, 2024 [37]</td>
+</tr>
+<tr>
+<td>Dense 70B, batch 1 → 32</td>
+<td>EAGLE speedup 1.96x → 1.72x</td>
+<td>vLLM, H100 [38]</td>
+</tr>
+<tr>
+<td>MoE 120B, Eagle3 K=3, ≤~100 in flight</td>
+<td>+27.2% peak, +20.7% geometric mean</td>
+<td>vLLM 0.13, H200 [40]</td>
+</tr>
+<tr>
+<td>Long context, sparse-KV drafter</td>
+<td>Up to 2.51x at batch 32-256</td>
+<td>Llama-3.1-8B, ≥16k context, research prototype [41]</td>
+</tr>
+</tbody>
+</table>
+<h2 id="compilation-cuda-graphs-and-kernel-backends">8. Compilation,
+CUDA Graphs and Kernel Backends</h2>
+<p>A CUDA graph records a sequence of GPU kernel launches once and
+replays it, removing per-launch CPU cost; <code>torch.compile</code>
+fuses operations into fewer kernels. The default <code>-O2</code> level
+enables fusions and <code>FULL_AND_PIECEWISE</code> graphs (a full graph
+for uniform decode batches, piecewise graphs otherwise). Level
+<code>-O3</code> currently equals <code>-O2</code>, and <code>-O0</code>
+and <code>-O1</code> trade speed for faster startup [43]. The docs call
+<code>FULL_AND_PIECEWISE</code> “generally the most performant setting”
+[44], so the main risk is opting out: a leftover
+<code>--enforce-eager</code> costs “steady-state decode performance”
+[16].</p>
+<p>No published source compares <code>-O</code> levels, but the
+eager-versus-graph gap is measured. On a 4B model on an H100 (vLLM
+0.21), compiled CUDA graphs cut p95 ITL from 24.2 to 6.5 ms and raised
+throughput from about 5,000 to 8,700 streamed chunks/s in a run where
+launch overhead dominated [45]. The same study’s under-warmed first
+baseline inflated a +30-50% gain from raising <code>max_num_seqs</code>
+32 to 64 into an apparent +137%, so compare warm runs only [45].</p>
+<p>Graphs are captured up to batch 512 by default (1,024 on data-center
+Blackwell). Larger decode batches run without full graphs unless
+<code>--max-cudagraph-capture-size</code> is raised, which spends KV
+memory [4]. The automatically selected attention backend also limits
+graph support: FlashAttention 3 always, FlashAttention 2 and FlashMLA
+for uniform batches, standard FlashInfer for single-token decode only,
+with silent downgrades otherwise [44]. Check the startup log before and
+after overriding it [44].</p>
+<p>On the host, async scheduling with pipeline parallelism added 30.8%
+end-to-end throughput in v0.16.0 [46], a gain that scales with the
+host’s share of each step. vLLM needs at least 2 + N physical CPU cores
+for N GPUs [16]; <code>--api-server-count</code> scales out the front
+end, and <code>--stream-interval</code> above 1 “may increase
+throughput” [4]. For small host-bound models, the experimental Model
+Runner V2 lifted Qwen3-0.6B on a GB200 from 16K to 25K tokens/s (+56%)
+[47].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Throughput guidance</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-O</code> level</td>
+<td><code>-O2</code></td>
+<td>Keep; lower only for development</td>
+<td>Startup time</td>
+</tr>
+<tr>
+<td>CUDA graph mode</td>
+<td><code>FULL_AND_PIECEWISE</code></td>
+<td>Keep; <code>FULL_DECODE_ONLY</code> on the decode side of a
+disaggregated deployment</td>
+<td>Graph memory</td>
+</tr>
+<tr>
+<td><code>--max-cudagraph-capture-size</code></td>
+<td>512 (1,024 data-center Blackwell)</td>
+<td>Raise if decode batches exceed it</td>
+<td>KV memory</td>
+</tr>
+<tr>
+<td><code>--enforce-eager</code></td>
+<td>Off</td>
+<td>Never for throughput</td>
+<td>Slower decode</td>
+</tr>
+<tr>
+<td>Async scheduling</td>
+<td>On (v0.14+)</td>
+<td>Do not disable</td>
+<td>Auto-disabled for some feature combinations; check the startup
+log</td>
+</tr>
+</tbody>
+</table>
+<h2 id="step-by-step-tuning-playbook-and-pitfalls">9. Step-by-Step
+Tuning Playbook and Pitfalls</h2>
+<h3 id="procedure">9.1 Procedure</h3>
+<p>Structural decisions come first because they change what the fine
+knobs should be. The order is a synthesis to verify, not a measured
+optimum.</p>
+<ol type="1">
+<li><strong>Upgrade and keep the defaults.</strong> Use a current V1
+release with async scheduling, <code>-O2</code> and prefix caching on,
+and no leftover <code>--enforce-eager</code> or hand-set batch flags [7,
+43].</li>
+<li><strong>Fix the workload and SLO.</strong> Capture real length
+distributions and prefix reuse, set P99 targets and record a baseline
+concurrency sweep [14, 11].</li>
+<li><strong>Claim memory.</strong> Raise
+<code>--gpu-memory-utilization</code> until startup or peak load fails,
+then back off [14, 12].</li>
+<li><strong>Right-size context.</strong> Set
+<code>--max-model-len</code> near the real P99 [23].</li>
+<li><strong>Shrink weights, then KV.</strong> Pick the format from the
+section 6 table, A/B an FP8 KV cache and evaluate accuracy after each
+change [31, 24]. Expect gains mainly where freed memory becomes a larger
+batch: FP8 weights gave only about +4% on a 4B model with KV to spare
+[45].</li>
+<li><strong>Choose the layout.</strong> Follow the section 5 table,
+adding replicas only while each still fills its batch; doubling replicas
+at fixed load cut per-GPU throughput about 20% in one H100 study
+[45].</li>
+<li><strong>Sweep the batch knobs.</strong> Run
+<code>max_num_seqs</code> {256, 512, 1024} ×
+<code>max_num_batched_tokens</code> {2,048 … 32,768} through
+<code>serve_sla</code> or <code>auto_tune</code> under the P99 limit,
+and try <code>--performance-mode throughput</code> [11, 12, 17].</li>
+<li><strong>A/B the conditional features.</strong> SD at K=2-3 with
+bucketed K at target concurrency (then re-sweep the budget), and CPU
+offload at real hit rates [40, 25].</li>
+<li><strong>Lock and re-verify.</strong> Discard warmup and report
+goodput from three warm, cache-reset repeats (vLLM’s convention, not an
+evidence-derived count); re-tune after any change of model, version or
+traffic [11, 45].</li>
+</ol>
+<h3 id="knob-reference">9.2 Knob reference</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Effect on throughput</th>
+<th>Tradeoff</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--gpu-memory-utilization</code></td>
+<td>0.92</td>
+<td>More KV, larger batch</td>
+<td>Out-of-memory risk</td>
+</tr>
+<tr>
+<td><code>--max-model-len</code></td>
+<td>Model maximum</td>
+<td>Caps KV per request</td>
+<td>Rejects longer inputs</td>
+</tr>
+<tr>
+<td><code>--max-num-seqs</code></td>
+<td>256 or 1,024 by GPU</td>
+<td>Raise to the KV or graph limit (+30-50% at 32→64 on a 4B model
+[45])</td>
+<td>Preemption beyond KV capacity; graph cap 512</td>
+</tr>
+<tr>
+<td><code>--max-num-batched-tokens</code></td>
+<td>2,048-16,384 by GPU</td>
+<td>More prefill per step</td>
+<td>Higher ITL; large values regress on A100 [18]</td>
+</tr>
+<tr>
+<td><code>--performance-mode</code></td>
+<td><code>balanced</code></td>
+<td><code>throughput</code> doubles unset batch defaults</td>
+<td>Per-user latency</td>
+</tr>
+<tr>
+<td><code>--kv-cache-dtype</code></td>
+<td><code>auto</code></td>
+<td><code>fp8</code>: about 2x tokens per GB</td>
+<td>A/B below ~7k context</td>
+</tr>
+<tr>
+<td><code>-tp</code> / <code>-dp</code> /
+<code>--enable-expert-parallel</code></td>
+<td>1 / 1 / off</td>
+<td>KV per GPU versus communication</td>
+<td>Interconnect-dependent</td>
+</tr>
+<tr>
+<td><code>--speculative-config</code></td>
+<td>Off</td>
+<td>Model- and load-dependent</td>
+<td>Verification cost at high batch × K</td>
+</tr>
+<tr>
+<td><code>--kv-offloading-size</code></td>
+<td>Off</td>
+<td>Gains only at high reuse</td>
+<td>Loss at low reuse (−24% with LMCache [13])</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pitfalls-and-outlook">9.3 Pitfalls and outlook</h3>
+<p>The costliest mistakes are measurement mistakes: quoting
+unlimited-rate peaks as capacity, judging from one synthetic dataset,
+benchmarking on a warm prefix cache or a cold compiled graph, and
+comparing single points instead of frontiers [9, 13, 10, 45]. Next come
+transplanted rules: large token budgets on an A100 [18], TP=4 over PCIe
+[26], FP8 KV for short chats [24], drafts of K≥4 [40], and
+<code>max_num_seqs</code> beyond KV capacity [16]. Version drift is the
+last trap; FP8 KV behavior alone changed sharply between v0.10.2 and
+v0.19.1, so re-benchmark after every upgrade [24].</p>
+<p>Four gaps in the published evidence map onto local experiments:
+replicas against TP over NVLink; every precision format on one machine
+with retuned batch knobs; SD on a dense model at production concurrency;
+and a 2,048-32,768 token-budget sweep on your own prompt mix, with and
+without SD. When defaults shift again, rerun the measurement protocol
+rather than reuse the numbers quoted here.</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<p>[1] Taming Throughput-Latency Tradeoff in LLM Inference with
+Sarathi-Serve. https://arxiv.org/abs/2403.02310</p>
+<p>[2] Inside vLLM: Anatomy of a High-Throughput LLM Inference System.
+https://vllm.ai/blog/anatomy-of-vllm</p>
+<p>[3] Efficient Memory Management for Large Language Model Serving with
+PagedAttention. https://arxiv.org/abs/2309.06180</p>
+<p>[4] Engine Arguments - vLLM.
+https://docs.vllm.ai/en/latest/configuration/engine_args/</p>
+<p>[5] vLLM v0.6.0: 2.7x Throughput Improvement and 5x Latency
+Reduction. https://vllm.ai/blog/2024-09-05-perf-update</p>
+<p>[6] vLLM V1: A Major Upgrade to vLLM’s Core Architecture.
+https://blog.vllm.ai/2025/01/27/v1-alpha-release.html</p>
+<p>[7] Release v0.14.0, vllm-project/vllm.
+https://github.com/vllm-project/vllm/releases/tag/v0.14.0</p>
+<p>[8] Benchmark CLI - vLLM.
+https://docs.vllm.ai/en/latest/benchmarking/cli/</p>
+<p>[9] AIPerf: Comprehensive LLM Benchmarking (NVIDIA).
+https://docs.nvidia.com/aiperf/getting-started/ai-perf-comprehensive-llm-benchmarking.md</p>
+<p>[10] SemiAnalysis InferenceMAX: vLLM and NVIDIA Accelerate Blackwell
+Inference. https://vllm.ai/blog/blackwell-inferencemax</p>
+<p>[11] Parameter Sweeps - vLLM.
+https://docs.vllm.ai/en/v0.14.0/benchmarking/sweeps/</p>
+<p>[12] vllm/benchmarks/auto_tune, vllm-project/vllm.
+https://github.com/vllm-project/vllm/tree/main/benchmarks/auto_tune</p>
+<p>[13] vLLM Prefix Caching vs. LMCache: Benchmarking KV Reuse
+Tradeoffs.
+https://levelup.gitconnected.com/vllm-prefix-caching-vs-lmcache-benchmarking-kv-reuse-tradeoffs-944fbaf98b56</p>
+<p>[14] Practical strategies for vLLM performance tuning (Red Hat
+Developer).
+https://developers.redhat.com/articles/2026/03/03/practical-strategies-vllm-performance-tuning</p>
+<p>[15] Achieving Faster Open-Source Llama3 Serving with SGLang Runtime
+(LMSYS). https://www.lmsys.org/blog/2024-07-25-sglang-llama3</p>
+<p>[16] Optimization and Tuning - vLLM.
+https://docs.vllm.ai/en/latest/configuration/optimization/</p>
+<p>[17] vllm/engine/arg_utils.py, vllm-project/vllm.
+https://github.com/vllm-project/vllm/blob/main/vllm/engine/arg_utils.py</p>
+<p>[18] [Perf] Use small max_num_batched_tokens for A100 (PR #17885).
+https://github.com/vllm-project/vllm/pull/17885</p>
+<p>[19] PrefillOnly: An Inference Engine for Prefill-only Workloads in
+Large Language Model Applications. https://arxiv.org/pdf/2505.07203</p>
+<p>[20] Don’t Add –enable-chunked-prefill to SSM Models (ai-muninn).
+https://ai-muninn.com/en/blog/openclaw-chunked-prefill-ssm-trap</p>
+<p>[21] Data Parallel Deployment - vLLM.
+https://docs.vllm.ai/en/latest/serving/data_parallel_deployment/</p>
+<p>[22] Optimize offline LLM batching and throughput in 2026 (Parasail).
+https://www.parasail.io/blog/offline-llm-inference-batching-throughput</p>
+<p>[23] Optimize throughput for Ray Data LLM batch inference (Anyscale
+Docs).
+https://docs.anyscale.com/llm/batch-inference/throughput-optimization/tuning-strategies</p>
+<p>[24] The State of FP8 KV-Cache and Attention Quantization in vLLM.
+https://vllm.ai/blog/fp8-kvcache</p>
+<p>[25] Inside vLLM’s New KV Offloading Connector: Smarter Memory
+Transfer for Maximizing Inference Throughput.
+https://vllm.ai/blog/kv-offloading-connector</p>
+<p>[26] vllm-topology-bench: Replicas vs tensor parallelism on 4x RTX
+3090. https://github.com/mtecnic/vllm-topology-bench</p>
+<p>[27] ScaleLLM: A Resource-Frugal LLM Serving Framework by Optimizing
+End-to-End Efficiency. https://arxiv.org/abs/2408.00008</p>
+<p>[28] vLLM Large Scale Serving: DeepSeek @ 2.2k tok/s/H200 with
+Wide-EP. https://vllm.ai/blog/large-scale-serving</p>
+<p>[29] Disaggregated Prefilling (experimental) - vLLM.
+https://docs.vllm.ai/en/v0.9.1/features/disagg_prefill.html</p>
+<p>[30] DistServe: Disaggregating Prefill and Decoding for
+Goodput-optimized Large Language Model Serving.
+https://arxiv.org/abs/2401.09670</p>
+<p>[31] “Give Me BF16 or Give Me Death”? Accuracy-Performance Trade-Offs
+in LLM Quantization. https://arxiv.org/abs/2411.02355</p>
+<p>[32] Serving Quantized LLMs on NVIDIA H100 Tensor Core GPUs
+(Databricks).
+https://www.databricks.com/blog/serving-quantized-llms-nvidia-h100-tensor-core-gpus</p>
+<p>[33] Quantization - vLLM.
+https://docs.vllm.ai/en/latest/features/quantization/</p>
+<p>[34] B200 NVFP4 vs H100 FP8 on MiniMax-M2.5: Up to 8.2x Better
+Performance per Dollar with vLLM (InferenceX).
+https://inferencex.semianalysis.com/blog/b200-minimax-m2-5-vllm-nvfp4-vs-h100-fp8-perf-per-dollar</p>
+<p>[35] Automatic Prefix Caching - vLLM.
+https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/</p>
+<p>[36] Speculative Decoding - vLLM.
+https://docs.vllm.ai/en/latest/features/spec_decode/</p>
+<p>[37] How Speculative Decoding Boosts vLLM Performance by up to 2.8x.
+https://blog.vllm.ai/2024/10/17/spec-decode.html</p>
+<p>[38] Speculative Decoding: Performance or Illusion?
+https://arxiv.org/abs/2601.11580</p>
+<p>[39] Dynamic Speculative Decoding - vLLM.
+https://docs.vllm.ai/en/v0.29.0/features/speculative_decoding/dynamic_speculative_decoding/</p>
+<p>[40] Performance improvements with speculative decoding in vLLM for
+gpt-oss (Red Hat Developer).
+https://developers.redhat.com/articles/2026/04/16/performance-improvements-speculative-decoding-vllm-gpt-oss</p>
+<p>[41] MagicDec: Breaking the Latency-Throughput Tradeoff for Long
+Context Generation with Speculative Decoding.
+https://arxiv.org/abs/2408.11049</p>
+<p>[42] Accelerating PayPal’s Commerce Agent with Speculative Decoding:
+An Empirical Study on EAGLE3 with Fine-Tuned Nemotron Models.
+https://arxiv.org/abs/2604.19767</p>
+<p>[43] Optimization Levels - vLLM.
+https://docs.vllm.ai/en/latest/design/optimization_levels/</p>
+<p>[44] CUDA Graphs - vLLM.
+https://docs.vllm.ai/en/latest/design/cuda_graphs/</p>
+<p>[45] A Better Knob Beats More Silicon: 12 vLLM Serving Experiments on
+H100s.
+https://efficientagent.substack.com/p/a-better-knob-beats-more-silicon</p>
+<p>[46] vllm 0.16.0 release notes (PyPI).
+https://newreleases.io/project/pypi/vllm/release/0.16.0</p>
+<p>[47] Model Runner V2: A Modular and Faster Core for vLLM.
+https://vllm.ai/blog/mrv2</p>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Tuning vLLM for
+Throughput: Mechanisms, Measurement and a Tuning Playbook</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-10-27</span></div>
+  <div><span class="k">Sources cited</span><span class="v">47</span></div>
+</div>
+</div></div>
+</body>
+</html>
