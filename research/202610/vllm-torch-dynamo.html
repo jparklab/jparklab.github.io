@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Torch Dynamo in vLLM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Torch Dynamo in vLLM</h1>
+<div class="byline">Research report · 3 cited sources · reviewed 2026-10-27</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#tldr" id="toc-tldr">TL;DR</a></li>
+<li><a href="#what-dynamo-does-the-parts-that-matter-here"
+id="toc-what-dynamo-does-the-parts-that-matter-here">1. What Dynamo does
+(the parts that matter here)</a></li>
+<li><a href="#call-path-in-vllm" id="toc-call-path-in-vllm">2. Call path
+in vLLM</a></li>
+<li><a href="#the-pieces-one-by-one" id="toc-the-pieces-one-by-one">3.
+The pieces, one by one</a></li>
+<li><a href="#compilation-modes" id="toc-compilation-modes">4.
+Compilation modes</a></li>
+<li><a href="#dynamic-shape-modes--cc.dynamic_shapes_config.type"
+id="toc-dynamic-shape-modes--cc.dynamic_shapes_config.type">5.
+Dynamic-shape modes
+(<code>-cc.dynamic_shapes_config.type</code>)</a></li>
+<li><a href="#rules-this-imposes-on-model-code"
+id="toc-rules-this-imposes-on-model-code">6. Rules this imposes on model
+code</a></li>
+<li><a href="#debugging-toolkit" id="toc-debugging-toolkit">7. Debugging
+toolkit</a></li>
+<li><a href="#takeaways-open-questions"
+id="toc-takeaways-open-questions">8. Takeaways / open questions</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p>Source: <code>~/github/vllm-project/vllm</code> at
+<code>71a8275604</code> (2026-10-25). Paths below are relative to that
+repo.</p>
+</div>
+<h2 id="tldr">TL;DR</h2>
+<ul>
+<li>Dynamo is the front end of <code>torch.compile</code>. It reads a
+Python function’s bytecode, records the tensor ops into an FX graph, and
+hands that graph to a backend.</li>
+<li>vLLM uses Dynamo for one thing: <strong>trace the model’s
+<code>forward</code> once, as one full graph, dynamic only in the token
+count.</strong> Everything after that (splitting, Inductor, caching,
+CUDA graphs) is vLLM’s own backend, <code>VllmBackend</code>.</li>
+<li>vLLM turns off the part of Dynamo that makes it safe for general
+code: <strong>guards</strong>. After the first trace, Dynamo never runs
+again. That keeps the serving path free of recompiles, but it means vLLM
+is betting that the traced graph is valid for every batch size.</li>
+<li>The rules model authors must follow (no graph breaks, no branching
+on token count, attention hidden in a custom op, no buffer mutation in
+<code>forward</code>) all fall out of that bet.</li>
+</ul>
+<h2 id="what-dynamo-does-the-parts-that-matter-here">1. What Dynamo does
+(the parts that matter here)</h2>
+<ol type="1">
+<li><strong>Frame hook.</strong> <code>torch.compile(fn)</code> installs
+a CPython frame-evaluation hook (PEP 523). When <code>fn</code>’s code
+object is about to run, Dynamo intercepts it.</li>
+<li><strong>Symbolic bytecode execution.</strong> Dynamo interprets the
+bytecode with fake tensors. Tensor ops go into an FX graph. Python
+control flow, attribute lookups, and calls to other Python functions are
+evaluated at trace time and <em>inlined</em>
+(<code>InliningInstructionTranslator</code>). The result is
+straight-line tensor code.</li>
+<li><strong>Guards.</strong> Every assumption it made while tracing (a
+tensor’s dtype, a dim being ≥ 2, a config attribute’s value,
+<code>x.size(0) &gt; 10</code>) becomes a guard. Next call: guards pass
+→ reuse; any fails → retrace (a <em>recompile</em>).</li>
+<li><strong>Graph breaks.</strong> Code it cannot trace (unsupported
+Python, data-dependent control flow, some C extensions) splits the
+function into several graphs with eager Python in between.
+<code>fullgraph=True</code> turns a graph break into an error.</li>
+<li><strong>Bytecode rewrite.</strong> Dynamo emits new bytecode that
+unpacks the module’s tensors and calls the compiled graph, and caches it
+on the original code object.</li>
+<li><strong>Backend.</strong> The FX graph plus example (fake) inputs go
+to a backend callable
+<code>backend(gm, example_inputs) -&gt; callable</code>. Normally that
+is Inductor. In vLLM it is <code>VllmBackend</code>.</li>
+</ol>
+<p><strong>Dynamic shapes.</strong> <code>mark_dynamic</code> makes a
+dim a <em>backed</em> symbol: it has a real hint, can be guarded on, and
+is specialized for 0/1 (so a backed symbol implies ≥ 2).
+<code>mark_unbacked</code> makes an <em>unbacked</em> symbol: never
+guarded, never 0/1-specialized, but a branch on its value can raise a
+data-dependent error.</p>
+<h2 id="call-path-in-vllm">2. Call path in vLLM</h2>
+<pre><code>@support_torch_compile class LlamaModel(nn.Module)        decorators.py
+  └─ __call__ (first call, from profile_run&#39;s _dummy_run)
+       ├─ mark_dynamic / mark_unbacked on dim 0 of input_ids, positions, …
+       ├─ patch InliningInstructionTranslator.inline_call_  → record traced files
+       └─ TorchCompileWithNoGuardsWrapper.__call__           wrapper.py
+            └─ torch.compile(forward, fullgraph=True, dynamic=False,
+                             backend=VllmBackend, guard_filter_fn=skip all)
+                 └─ Dynamo traces forward → FX graph
+                      └─ VllmBackend(graph, example_inputs)  backends.py
+                           ├─ hash config + env + traced source → cache dir
+                           ├─ split_graph at attention custom ops
+                           ├─ Inductor-compile each piece (PiecewiseBackend)
+                           └─ return VllmSerializableFunction (+ CUDA-graph wrapper)</code></pre>
+<p>The first trace happens during memory profiling
+(<code>vllm/v1/worker/gpu_worker.py:641</code>
+<code>determine_available_memory</code> → <code>profile_run</code> →
+<code>_dummy_run</code>) with <code>max_num_batched_tokens</code>
+tokens. Later warmup and CUDA-graph capture runs reuse the same compiled
+function. No request ever triggers a compile; that is a stated design
+goal in <code>docs/design/torch_compile.md</code>.</p>
+<h2 id="the-pieces-one-by-one">3. The pieces, one by one</h2>
+<h3 id="support_torch_compile-vllmcompilationdecorators.py">3.1
+<code>@support_torch_compile</code>
+(<code>vllm/compilation/decorators.py</code>)</h3>
+<ul>
+<li>It is a class decorator on the <em>inner</em> model
+(e.g. <code>LlamaModel</code>, not <code>LlamaForCausalLM</code>), so
+the LM head and sampler stay outside the graph.</li>
+<li>It appends <code>TorchCompileWithNoGuardsWrapper</code> to the
+class’s bases (<code>decorators.py:367</code>) and wraps
+<code>__init__</code> and <code>__call__</code>.</li>
+<li><strong>Dynamic dims.</strong> <code>dynamic_arg_dims</code> names
+which arguments have a dynamic dim. If omitted, it is inferred from type
+hints: every <code>torch.Tensor</code> /
+<code>Optional[torch.Tensor]</code> / <code>IntermediateTensors</code>
+gets dim 0. Llama declares them all with one shape id,
+<code>{0: "b"}</code>
+(<code>vllm/model_executor/models/llama.py:337</code>), so with unbacked
+shapes they share a single symbol. <code>_mark_dynamic_inputs</code>
+(<code>decorators.py:445</code>) calls <code>mark_dynamic</code> or
+<code>mark_unbacked</code> depending on
+<code>DynamicShapesConfig.type</code>.</li>
+<li><strong>An argument that is <code>None</code> must always be
+<code>None</code>.</strong> With guards dropped, Dynamo will not notice
+it flipping.</li>
+<li><strong>Traced-file tracking.</strong> It monkeypatches
+<code>InliningInstructionTranslator.inline_call_</code> during tracing
+(<code>decorators.py:652</code>) to record every source file Dynamo
+inlines. Those files’ contents go into the compile cache key (see 3.3).
+Editing <code>layernorm.py</code> invalidates the cache; editing a file
+that is only called inside a custom op does not.</li>
+<li><strong>Compile-time trims.</strong> It disables
+<code>enable_cpp_symbolic_shape_guards</code>
+(<code>decorators.py:664</code>) because the guards are thrown away
+anyway.</li>
+<li><strong>Re-entrancy.</strong> If
+<code>torch.compiler.is_compiling()</code> is true (a caller up the
+stack is already compiling, e.g. TPU), it just calls
+<code>forward</code> (<code>decorators.py:537</code>).</li>
+</ul>
+<h3 id="torchcompilewithnoguardswrapper-vllmcompilationwrapper.py">3.2
+<code>TorchCompileWithNoGuardsWrapper</code>
+(<code>vllm/compilation/wrapper.py</code>)</h3>
+<p>This is where vLLM changes how Dynamo behaves.</p>
+<ul>
+<li><code>torch.compile(..., fullgraph=True, dynamic=False, ...)</code>
+(<code>wrapper.py:169</code>). <code>fullgraph=True</code> turns any
+graph break into an error. <code>dynamic=False</code> stops Dynamo from
+making extra dims dynamic on its own after a recompile; only the dims
+marked explicitly are symbolic.</li>
+<li><strong>Guard dropping.</strong> For every mode except
+<code>STOCK_TORCH_COMPILE</code>, <code>guard_filter_fn</code> is set to
+<code>torch.compiler.skip_all_guards_unsafe</code>
+(<code>wrapper.py:143</code>), or a lambda returning all
+<code>False</code> on older torch. The compiled code runs for any input
+without checking anything. The opt-in <code>evaluate_guards</code>
+(requires <code>VLLM_USE_BYTECODE_HOOK=0</code>) keeps only
+<code>SHAPE_ENV</code> guards and wraps later calls in
+<code>set_stance("fail_on_recompile")</code>
+(<code>wrapper.py:216</code>), so a violated shape assumption raises an
+error instead of silently retracing.</li>
+<li><strong>Bytecode hook (<code>VLLM_USE_BYTECODE_HOOK=1</code>, the
+default).</strong> It registers
+<code>torch._dynamo.convert_frame.register_bytecode_hook</code>
+(<code>wrapper.py:179</code>) to capture the bytecode Dynamo emits for
+<code>forward</code>. After the first call it swaps
+<code>forward.__code__</code> for that bytecode
+(<code>_dispatch_to_compiled_code</code>, <code>wrapper.py:294</code>)
+and calls <code>forward</code> directly. This skips Dynamo’s frame hook
+and cache lookup on every step. It relies on Dynamo keeping the
+rewritten code’s args, cell vars, and free vars identical to the
+original.</li>
+<li><strong>Buffer-mutation check.</strong> If the rewritten bytecode
+references <code>update</code> (Dynamo’s way of writing back to
+<code>nn.Module</code> buffers) and CUDA graphs are on, it raises an
+error (<code>wrapper.py:273</code>). A buffer write inside a captured
+CUDA graph would replay stale data.</li>
+<li><code>_compilation_context</code> raises
+<code>cache_size_limit</code> to 2048 (<code>wrapper.py:45</code>). Each
+new backend instance can count as a recompile, and multimodal models
+create several.</li>
+</ul>
+<h3 id="vllmbackend-vllmcompilationbackends.py1048">3.3
+<code>VllmBackend</code>
+(<code>vllm/compilation/backends.py:1048</code>)</h3>
+<p>Dynamo calls this exactly once per compiled module
+(<code>assert not self._called</code>,
+<code>backends.py:1201</code>).</p>
+<ul>
+<li><strong>Cache key</strong> = hash(env factors,
+<code>vllm_config.compute_hash()</code>, compiler/torch config hash,
+contents of every traced file) (<code>backends.py:1083</code>). Output
+goes to
+<code>~/.cache/vllm/torch_compile_cache/&lt;hash&gt;/rank_&lt;r&gt;_&lt;dp&gt;/</code>,
+plus <code>computation_graph.py</code> (the split FX graph) and
+<code>transformed_code.py</code> (Dynamo’s bytecode decompiled with
+<code>depyf</code>).</li>
+<li><strong>Splitting.</strong> <code>split_graph</code>
+(<code>backends.py:576</code>) cuts the FX graph at
+<code>splitting_ops</code>, which default to the attention-like custom
+ops listed in <code>CompilationConfig._attention_ops</code>
+(<code>vllm/config/compilation.py:768</code>). A Llama graph splits into
+three unique pieces (pre-first-attention, the repeated inter-attention
+layer, and post-last-attention). Identical pieces share one Inductor
+artifact.</li>
+<li><strong>Compile everything up front.</strong>
+<code>PiecewiseCompileInterpreter</code> runs the split graph on fake
+inputs and compiles each piece for the general symbolic shape and for
+every <code>compile_sizes</code> / compile range, before returning.</li>
+<li><strong>0/1 specialization patch.</strong> With
+<code>evaluate_guards</code> + backed shapes, it rewrites symbol ranges
+whose lower bound is 2 back to 0 (<code>backends.py:1289</code>), so the
+kept guards do not reject batch size 1.</li>
+</ul>
+<h3 id="custom-ops-how-vllm-keeps-dynamo-out">3.4 Custom ops: how vLLM
+keeps Dynamo out</h3>
+<p>Attention touches the KV cache, block tables, and backend-specific
+metadata, none of which Dynamo should trace. vLLM wraps it in
+<code>torch.ops.vllm.unified_attention_with_output</code>, registered
+with <code>direct_register_custom_op</code>
+(<code>vllm/utils/torch_utils.py:1059</code>) with a fake impl. Dynamo
+treats the op as opaque and only needs the fake impl to know the output
+shape (same as the query). Attention metadata comes from the global
+forward context, not from arguments, so it never becomes a graph
+input.</p>
+<p>This custom-op boundary serves three purposes at once: 1. Dynamo can
+capture the model as one full graph. 2. <code>split_graph</code> uses it
+as the cut point. 3. Piecewise CUDA graphs run the attention op eagerly
+between captured pieces. That is why the op takes its output buffer as
+an argument: the allocation stays inside the captured graph.</p>
+<p>The same trick is the documented fix for a token-count branch you
+cannot remove: move it into a custom op
+(<code>docs/design/debug_vllm_compile.md</code>).</p>
+<h3
+id="aot-compile-vllm_use_aot_compile-default-on-for-torch-2.10-with-the-cache-enabled">3.5
+AOT compile (<code>VLLM_USE_AOT_COMPILE</code>, default on for torch ≥
+2.10 with the cache enabled)</h3>
+<ul>
+<li>Instead of Dynamo tracing at runtime,
+<code>torch._dynamo.config.enable_aot_compile</code> produces a
+serializable compiled function, including Dynamo’s output
+(<code>decorators.py:705</code>). It is saved under
+<code>torch_compile_cache/torch_aot_compile/&lt;hash&gt;/rank_*/model</code>.</li>
+<li>On the next start, <code>_try_load_aot_compiled_fn</code>
+(<code>decorators.py:596</code>) loads it with
+<code>torch.compiler.load_compiled_function</code> and calls
+<code>disable_guard_check()</code>. <strong>Dynamo does not run at all
+on a warm start.</strong> This is the main cold-start win over the older
+cache, which cached only Inductor output and still re-ran Dynamo.</li>
+<li>The AOT hash cannot include traced files (they are unknown until
+Dynamo runs). Instead, on load it checks the source files recorded in
+the artifact (<code>_verify_source_unchanged</code>).</li>
+<li><code>VLLM_USE_MEGA_AOT_ARTIFACT</code> (default on for torch ≥
+2.12) goes further and stores the split graph plus all piece artifacts
+as one blob, so loading skips re-splitting.</li>
+</ul>
+<h2 id="compilation-modes">4. Compilation modes</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th><code>-cc.mode</code></th>
+<th>Name</th>
+<th>What Dynamo does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td><code>NONE</code></td>
+<td>Not used. Eager.</td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>STOCK_TORCH_COMPILE</code></td>
+<td><code>model.compile(fullgraph=True)</code> with normal guards and
+recompiles. The decorator steps aside.</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>DYNAMO_TRACE_ONCE</code></td>
+<td>One trace, guards dropped, but no <code>VllmBackend</code> (plain
+backend).</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>VLLM_COMPILE</code> (default)</td>
+<td>One trace, guards dropped, <code>VllmBackend</code>: split,
+Inductor, passes, cache, piecewise CUDA graphs.</td>
+</tr>
+</tbody>
+</table>
+<p><code>--enforce-eager</code> turns off both compile and CUDA graphs.
+<code>-cc.backend=eager</code> keeps Dynamo and splitting but skips
+Inductor, which is the quickest way to tell a Dynamo problem from an
+Inductor problem.</p>
+<h2 id="dynamic-shape-modes--cc.dynamic_shapes_config.type">5.
+Dynamic-shape modes (<code>-cc.dynamic_shapes_config.type</code>)</h2>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Symbol</th>
+<th>Guard risk</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backed</code> (default)</td>
+<td><code>mark_dynamic</code></td>
+<td>Guards get added and then silently dropped. Fast, but unsound if one
+mattered.</td>
+<td>none</td>
+</tr>
+<tr>
+<td><code>backed_size_oblivious</code></td>
+<td>backed + <code>backed_size_oblivious=True</code></td>
+<td>Fewer 0/1 specializations in framework code. Experimental.</td>
+<td>small</td>
+</tr>
+<tr>
+<td><code>unbacked</code></td>
+<td><code>mark_unbacked</code> with <code>hint_override</code></td>
+<td>No guards by construction. Branches may raise data-dependent errors.
+<code>evaluate_guards</code> is rejected because there are no guards to
+check.</td>
+<td>can miss optimizations, e.g. extra <code>contiguous()</code>
+clones</td>
+</tr>
+</tbody>
+</table>
+<p><code>shape_invariants</code> on the decorator lets a model add
+<code>torch._check(...)</code> relations (for example
+<code>input_ids.size(0) == inputs_embeds.size(0)</code>) so unbacked
+mode does not hit data-dependent errors.</p>
+<h2 id="rules-this-imposes-on-model-code">6. Rules this imposes on model
+code</h2>
+<ol type="1">
+<li><strong>No graph breaks in <code>forward</code>.</strong>
+<code>fullgraph=True</code> makes them errors. Typical causes:
+unsupported Python, <code>print</code>/logging, <code>.item()</code>,
+<code>.tolist()</code>, calling into non-traceable C extensions.</li>
+<li><strong>No Python branching on the token count</strong>
+(<code>if x.size(0) % 128 == 0</code>). With guards dropped, whichever
+branch the profiling-run batch took is baked in for all sizes. Symptoms:
+wrong output, illegal memory access,
+<code>ConstraintViolationError</code>. Check tlparse
+<code>compilation_metrics</code> for constraints on the batch
+symbol.</li>
+<li><strong>Everything that isn’t a dynamic input must stay
+constant</strong> for the model’s lifetime: config values,
+<code>None</code>-ness of optional args, module attributes read in
+<code>forward</code>. Dynamo turned them into constants, and nothing
+re-checks them.</li>
+<li><strong>No writes to <code>nn.Module</code> buffers in
+<code>forward</code></strong> when CUDA graphs are on (enforced by the
+bytecode hook).</li>
+<li><strong>Opaque or stateful kernels go behind a custom op with a fake
+impl.</strong></li>
+<li><strong>Code reached only through custom ops is not in the cache
+key.</strong> Edit a kernel wrapper and you may need
+<code>VLLM_DISABLE_COMPILE_CACHE=1</code>.</li>
+</ol>
+<h2 id="debugging-toolkit">7. Debugging toolkit</h2>
+<ul>
+<li><code>TORCH_TRACE=&lt;dir&gt;</code> +
+<code>tlparse &lt;file&gt;</code> gives the full Dynamo/Inductor log,
+graph breaks, guards, and the split graph
+(<code>vllm_piecewise_split_graph</code>).</li>
+<li><code>&lt;cache&gt;/transformed_code.py</code> holds Dynamo’s
+rewritten <code>forward</code> and
+<code>&lt;cache&gt;/computation_graph.py</code> holds the split FX
+graph. Use <code>compile_cache_save_format=unpacked</code> to get
+readable Inductor code too.</li>
+<li><code>VLLM_LOGGING_LEVEL=DEBUG</code> lists traced files and reports
+the “Dynamo bytecode transform time”.</li>
+<li>To isolate a failure, turn off one layer at a time:
+<code>-cc.mode=0</code> / <code>-cc.backend=eager</code> /
+<code>-cc.cudagraph_mode=NONE</code> /
+<code>--enforce-eager</code>.</li>
+</ul>
+<h2 id="takeaways-open-questions">8. Takeaways / open questions</h2>
+<ul>
+<li>vLLM uses Dynamo as a <strong>one-shot graph capturer</strong>, not
+as a JIT. Its main value is “turn Python model code into an FX graph
+without making people write graph code”. Guards, the recompile cache,
+and the runtime frame hook are all turned off or bypassed.</li>
+<li>The guard-dropping bet is the main correctness risk.
+<code>evaluate_guards</code> and <code>unbacked</code> are the two
+hedges. It is worth watching whether <code>unbacked</code> becomes the
+default as PyTorch reduces data-dependent errors. The Llama decorator
+still has <code>mark_unbacked_dims</code> commented out with
+<code>TODO[#32068]: Investigate recompilation</code>.</li>
+<li>The bytecode-hook trick (swapping <code>forward.__code__</code>)
+depends on undocumented Dynamo internals (it walks stack frames to find
+<code>convert_frame._compile</code>). AOT compile looks like the path
+that replaces it.</li>
+<li>Follow-ups worth a separate dig: Inductor custom passes
+(<code>vllm/compilation/passes/</code>), vLLM IR
+(<code>docs/design/vllm_ir.md</code>), and piecewise vs full CUDA graphs
+(<code>docs/design/cuda_graphs.md</code>).</li>
+</ul>
+<h2 class="unlisted" id="sources">References</h2>
+<ul>
+<li><code>docs/design/torch_compile.md</code>,
+<code>docs/design/debug_vllm_compile.md</code></li>
+<li>vLLM blog: https://blog.vllm.ai/2025/08/20/torch-compile.html</li>
+<li>Dynamo core concepts:
+https://docs.pytorch.org/docs/stable/compile/programming_model.dynamo_core_concepts.html</li>
+</ul>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Torch Dynamo in
+vLLM</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-10-27</span></div>
+  <div><span class="k">Sources cited</span><span class="v">3</span></div>
+</div>
+</div></div>
+</body>
+</html>
