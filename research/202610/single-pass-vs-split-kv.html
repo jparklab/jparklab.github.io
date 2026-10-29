@@ -86,7 +86,7 @@ sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
 <header>
 <h1>Single-Pass vs Split-KV Decode Attention in vLLM: Where the Boundary
 Sits, Who Draws It, and What It Costs</h1>
-<div class="byline">Research report · 83 cited sources · reviewed 2026-10-29</div>
+<div class="byline">Research report · 89 cited sources · reviewed 2026-10-29</div>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -1945,6 +1945,31 @@ formula gives about 30. Each sequence has 2 CTAs, so the unsplit global
 grid fills one wave of a 132-SM H100 at about 66 sequences if one CTA
 sits on each SM. Under FA3’s 0.8-wave rule it’s about 53 (our own
 arithmetic).</p>
+<p>In released vLLM that split never happens. Since v0.30.0, whose
+<code>vllm_flash_attn</code> pin moved in #54819, FA4’s forward kernel
+on SM90 ignores <code>num_splits</code>, so every decode call runs as
+one KV split
+<sup>[<a href="https://github.com/vllm-project/vllm/issues/59362">84</a>]</sup>.
+The issue’s example is this model. At about 6k context a decode step was
+48% slower than on v0.26.0 at batch 1, and 36% slower at batch 4. The
+global-layer kernel went from 18.5 µs to 311 µs per launch with an
+identical launch configuration, and switching to
+<code>TRITON_ATTN</code> recovered about 70% of the gap
+<sup>[<a href="https://github.com/vllm-project/vllm/issues/59362">84</a>]</sup>.
+A commenter on H200 measured long-context decode (17k–31k-token prompts)
+at 214 tok/s on v0.29.0, 86 tok/s on v0.31.0, and 217 tok/s on v0.31.0
+with only the fix applied
+<sup>[<a href="https://github.com/vllm-project/vllm/issues/59362">84</a>]</sup>.
+The fix is flash-attention #198, merged on 2026-09-28 as
+<code>6d11b3c</code>
+<sup>[<a href="https://github.com/vllm-project/flash-attention/pull/198">85</a>]</sup>.
+vLLM <code>main</code> pins <code>b273a02</code>, three commits past it.
+v0.32.0, released 2026-10-18, still pins <code>9cd61de</code>, the
+commit just before the fix
+<sup>[<a href="https://raw.githubusercontent.com/vllm-project/vllm/main/cmake/external_projects/vllm_flash_attn.cmake">86</a>,
+<a href="https://raw.githubusercontent.com/vllm-project/vllm/v0.32.0/cmake/external_projects/vllm_flash_attn.cmake">87</a>]</sup>.
+So on any release from v0.30.0 to v0.32.0, the global layers decode
+single-pass on an H100 whatever the cap says.</p>
 <p><code>TRITON_ATTN</code> moves the decision out of the kernel and
 into vLLM. The rule is simple, and it never looks at sequence length
 <sup>[<a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/triton_attn.py">25</a>,
@@ -1974,8 +1999,9 @@ The model-level value is presumably the config’s
 <code>num_key_value_heads</code>, which is 8. That gives
 <code>128 // 8 = 16</code>, and since 16 is one of the default capture
 sizes, snapping leaves it at 16. Both layer groups split at batch 16 or
-below and run single-pass above it. This is our reading of the code. We
-haven’t checked it on a running server.</p>
+below and run single-pass above it. The author of open PR #56996 reads
+the code the same way, for this model, and measures the effect
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/56996">88</a>]</sup>.</p>
 <p>For the sliding layers, 16 is the right cutoff. At batch 16 their 2D
 grid is 16 × 8 = 128 CTAs, which is exactly vLLM’s target. The global
 layers miss. At the same batch they have only 16 × 2 = 32 CTAs, and
@@ -1985,6 +2011,17 @@ the global layers run single-pass on 34 to 130 CTAs, with part of the
 GPU idle. At long context those are the layers that read the most KV. If
 the builder used each group’s own count, the global layers would get a
 cutoff of <code>128 // 2 = 64</code>.</p>
+<p>Two open PRs make that change. #56996 reads both the KV-head count
+and the head size from each group’s <code>kv_cache_spec</code>. On
+MI325X it measured the global-layer kernel 66% faster at batch 24 and
+36% faster at batch 64, with batches that keep their kernel unchanged. A
+serving run on MI355X at 32K input and concurrency 24 gave 6.7% more
+throughput and 11.5% lower median TPOT
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/56996">88</a>]</sup>.
+#54191 changes only the KV-head count
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/54191">89</a>]</sup>.
+Both sets of numbers are author-reported and on AMD GPUs. Neither PR has
+H100 data.</p>
 <p>Below the cutoff the error runs the other way, and it is small. The
 3D kernel cuts every sequence into 16 segments, however long it is. A
 sliding layer reads at most 1,024 tokens, so each segment gets 64 tokens
@@ -2026,13 +2063,21 @@ under one wave</td>
 </tr>
 </tbody>
 </table>
-<p>On the default backend there’s only one useful knob. Raise
-<code>flash_attn_max_num_splits_for_cuda_graph</code> to 64 for
-concurrency-1, long-context serving, and watch tail latency
+<p>On the default backend, check the build first. On v0.30.0 through
+v0.32.0 the global layers never split, and
+<code>flash_attn_max_num_splits_for_cuda_graph</code> has no effect. A
+<code>main</code> build, or a release that pins flash-attention
+<code>6d11b3c</code> or later, restores splitting
+<sup>[<a href="https://github.com/vllm-project/vllm/issues/59362">84</a>,
+<a href="https://raw.githubusercontent.com/vllm-project/vllm/main/cmake/external_projects/vllm_flash_attn.cmake">86</a>,
+<a href="https://raw.githubusercontent.com/vllm-project/vllm/v0.32.0/cmake/external_projects/vllm_flash_attn.cmake">87</a>]</sup>.
+With the fix in place, raising the cap to 64 is worth trying only for
+concurrency-1, long-context serving, with tail latency watched
 <sup>[<a href="https://github.com/vllm-project/vllm/pull/25274">59</a>]</sup>.
-On <code>TRITON_ATTN</code>, only a code change moves the global layers’
-cutoff. A per-group KV-head count would raise it to
-<code>128 // 2 = 64</code>.</p>
+On <code>TRITON_ATTN</code>, the global layers’ cutoff stays at 16 until
+#56996 or #54191 lands
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/56996">88</a>,
+<a href="https://github.com/vllm-project/vllm/pull/54191">89</a>]</sup>.</p>
 <h3 id="ranking-the-decision-designs-and-where-this-is-heading">9.5
 Ranking the decision designs, and where this is heading</h3>
 <p>For mixed-length serving under full graphs:</p>
@@ -2339,13 +2384,34 @@ class="dom">pytorch.org</span></li>
 <li><a href="https://huggingface.co/google/gemma-4-26B-A4B-it/blob/main/config.json">config.json
 · google/gemma-4-26B-A4B-it at main</a><span
 class="dom">huggingface.co</span></li>
+<li><a href="https://github.com/vllm-project/vllm/issues/59362">[Bug]:
+FA4 ignores <code>num_splits</code> on SM90 in v0.30.0 causing upto 48%
+slower decode · Issue #59362 · vllm-project/vllm</a><span
+class="dom">github.com</span></li>
+<li><a href="https://github.com/vllm-project/flash-attention/pull/198">[Bugfix]
+Fix SM90 SplitKV work distribution · Pull Request #198 ·
+vllm-project/flash-attention</a><span class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/vllm-project/vllm/main/cmake/external_projects/vllm_flash_attn.cmake">vLLM
+main vllm_flash_attn.cmake</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/vllm-project/vllm/v0.32.0/cmake/external_projects/vllm_flash_attn.cmake">vLLM
+v0.32.0 vllm_flash_attn.cmake</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github.com/vllm-project/vllm/pull/56996">[Perf][Attention]
+Source Triton metadata builder geometry from kv_cache_spec · Pull
+Request #56996 · vllm-project/vllm</a><span
+class="dom">github.com</span></li>
+<li><a href="https://github.com/vllm-project/vllm/pull/54191">[Attention]
+Derive Triton split-KV decode threshold from the KV cache group's head
+count · Pull Request #54191 · vllm-project/vllm</a><span
+class="dom">github.com</span></li>
 </ol>
 <div class="tb">
   <div><span class="k">Title</span><span class="v">Single-Pass vs
 Split-KV Decode Attention in vLLM: Where the Boundary Sits, Who Draws
 It, and What It Costs</span></div>
   <div><span class="k">Reviewed</span><span class="v">2026-10-29</span></div>
-  <div><span class="k">Sources cited</span><span class="v">83</span></div>
+  <div><span class="k">Sources cited</span><span class="v">89</span></div>
 </div>
 </div></div>
 </body>
