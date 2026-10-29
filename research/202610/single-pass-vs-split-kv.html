@@ -73,7 +73,7 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <body>
 <div class="frame"><div class="sheet">
 <h1>Single-Pass vs Split-KV Decode Attention in vLLM: Where the Boundary Sits, Who Draws It, and What It Costs</h1>
-<div class="meta">Research survey · 82 cited sources · reviewed 2026-10-25</div>
+<div class="meta">Research survey · 83 cited sources · reviewed 2026-10-28</div>
 <nav class="toc"><div class="lbl">Contents</div><ol>
 <li><a href="#sec-1">1. Single-Pass vs Split-KV Decode: Mechanics and Why the Choice Exists</a></li>
 <li><a href="#sec-2">2. The Cost Model: SM Occupancy, Reduction Pass, and Scratch Memory</a></li>
@@ -855,7 +855,33 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <li>Build a graph-safe decode path for batch-invariant mode with 256-token, page-aligned splits on a worst-case grid with early exit, as HIP ll4mi already does<sup class="cite">[<a href="#src-46">46</a>, <a href="#src-72">72</a>]</sup>, alongside a batch-free split bucket like the one SGLang's Triton backend uses for deterministic inference<sup class="cite">[<a href="#src-31">31</a>]</sup>.</li>
 <li>Measure the <code>ROCM_ATTN</code> reduce tax on CDNA at batch ≥ 256 before keeping the always-split HIP path first in ROCm priority, a place PR #36702 granted without a benchmark<sup class="cite">[<a href="#src-47">47</a>]</sup> and open PR #60418 would reverse on RDNA<sup class="cite">[<a href="#src-46">46</a>, <a href="#src-54">54</a>]</sup>.</li>
 </ol>
-<h3>9.4 Ranking the decision architectures, and where this is heading</h3>
+<h3>9.4 Worked example: Gemma-4-26B-A4B on H100</h3>
+<p>Gemma-4-26B-A4B mixes two attention shapes. Of its 30 layers, 25 use a 1,024-token sliding window with head size 256 and 16 query / 8 KV heads; 5 are global layers with head size 512 and 16 query / 2 KV heads, over contexts up to 262,144 tokens<sup class="cite">[<a href="#src-83">83</a>]</sup>. At long context the global layers carry most of the attention traffic, so their split decision is the one that matters.</p>
+<p>On Hopper, vLLM selects the <code>TRITON_FLASH_ATTN</code> composite for Gemma 4, with FA4 for causal prefill and decode<sup class="cite">[<a href="#src-57">57</a>]</sup>. vLLM passes FA4 <code>num_splits = 0</code> (the kernel's heuristic) in eager batches, the cap of 32 under full graphs, and 1 under batch invariance; on SM90 it precompiles the head-512 kernel with split variants for 1, 32, 64, 128 and 256 splits<sup class="cite">[<a href="#src-5">5</a>]</sup>. FA4's own heuristic is not in the sources. Using FA3's device formula as a proxy<sup class="cite">[<a href="#src-44">44</a>]</sup>, one global-layer sequence wants about 132 / (1.1 × 2) ≈ 60 splits, so the cap binds only at concurrency 1; at batch 2 the formula gives about 30. With 2 CTAs per sequence, the unsplit global grid fills one wave of a 132-SM H100 at about 66 sequences if one CTA is resident per SM, or about 53 under FA3's 0.8-wave rule (our arithmetic).</p>
+<p>Forcing <code>TRITON_ATTN</code> changes the picture. The builder computes <code>seq_threshold_3D = 128 // num_heads_kv</code> from the model-level <code>get_num_kv_heads()</code>, not per layer group<sup class="cite">[<a href="#src-25">25</a>]</sup>. For Gemma 4 that is presumably the sliding layers' 8 KV heads, giving 16, which the default capture sizes keep at 16; H100 uses 16 segments<sup class="cite">[<a href="#src-25">25</a>, <a href="#src-6">6</a>]</sup>. That model-level value is our reading of the code, unverified at runtime.</p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Layer group</th>
+<th>FA4 (default)</th>
+<th><code>TRITON_ATTN</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sliding, 8 KV heads, ≤ 1,024 tokens</td>
+<td>live split choice; little to gain</td>
+<td>split at batch ≤ 16, ≤ 64 tokens per segment (near the floor)</td>
+</tr>
+<tr>
+<td>Global, 2 KV heads, full context</td>
+<td>live split choice; cap 32 binds at batch 1</td>
+<td>split at batch ≤ 16; single-pass at 17–65 with a sub-wave grid of 34–130 CTAs</td>
+</tr>
+</tbody>
+</table></div>
+<p>On the default backend the only useful knob is raising <code>flash_attn_max_num_splits_for_cuda_graph</code> to 64 for concurrency-1, long-context serving, with tail latency monitored<sup class="cite">[<a href="#src-59">59</a>]</sup>. On <code>TRITON_ATTN</code> nothing short of a code change moves the global layers' cutoff; a per-group KV-head count would raise it to <code>128 // 2 = 64</code>.</p>
+<h3>9.5 Ranking the decision architectures, and where this is heading</h3>
 <p>For mixed-length serving under full graphs:</p>
 <ol>
 <li>Data-driven schedulers writing into capture-sized buffers (FA3 device prep, FlashInfer's CPU plan, the in-progress persistent Triton 3D) rank first.</li>
@@ -951,11 +977,12 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <li id="src-80"><span class="sn">[80]</span> <a href="https://lmsys.org/blog/2025-09-22-sglang-deterministic/">Towards Deterministic Inference in SGLang and Reproducible RL Training - LMSYS Org</a> <span class="dom">lmsys.org</span></li>
 <li id="src-81"><span class="sn">[81]</span> <a href="https://docs.vllm.ai/en/latest/features/batch_invariance/">Batch Invariance - vLLM</a> <span class="dom">docs.vllm.ai</span></li>
 <li id="src-82"><span class="sn">[82]</span> <a href="https://pytorch.org/blog/flash-decoding/">Flash-Decoding for long-context inference - PyTorch</a> <span class="dom">pytorch.org</span></li>
+<li id="src-83"><span class="sn">[83]</span> <a href="https://huggingface.co/google/gemma-4-26B-A4B-it/blob/main/config.json">config.json · google/gemma-4-26B-A4B-it at main</a> <span class="dom">huggingface.co</span></li>
 </ol></section>
 <footer class="tb">
 <div><div class="lbl">Title</div><div class="val">Single-Pass vs Split-KV Decode Attention in vLLM: Where the Boundary Sits, Who Draws It, and What It Costs</div></div>
-<div><div class="lbl">Review date</div><div class="val">2026-10-25</div></div>
-<div><div class="lbl">Sources cited</div><div class="val">82</div></div>
+<div><div class="lbl">Review date</div><div class="val">2026-10-28</div></div>
+<div><div class="lbl">Sources cited</div><div class="val">83</div></div>
 </footer>
 </div></div>
 </body>
