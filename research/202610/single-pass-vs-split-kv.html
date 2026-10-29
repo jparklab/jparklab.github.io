@@ -3,100 +3,212 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single-Pass vs Split-KV Decode</title>
+<meta name="theme" content="jp-sheet">
+<title>Single-Pass vs Split-KV Decode Attention in vLLM: Where the
+Boundary Sits, Who Draws It, and What It Costs</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root {
-  --paper: #ffffff;
-  --ink: #16181d;
-  --muted: #5d636e;
-  --rule: #1f2329;
-  --hair: #c9cdd3;
-  --accent: #1f5fbf;
-  --accent-bg: #eef4fd;
-  --zebra: #f4f5f7;
-  --head: #23272e;
-  --head-ink: #f5f6f8;
-  color-scheme: light;
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
 }
-* { box-sizing: border-box; }
-html { background: #e9ebee; }
-body {
-  margin: 0; padding: 24px 16px; background: #e9ebee; color: var(--ink);
-  font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 14px; line-height: 1.65;
-}
-.frame { max-width: 1000px; margin: 0 auto; border: 1px solid var(--rule); padding: 6px; background: var(--paper); }
-.sheet { border: 1px solid var(--rule); padding: 40px 48px 28px; }
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
-h1 { font-size: 26px; line-height: 1.25; margin: 0 0 6px; font-weight: 700; letter-spacing: -0.01em; }
-.meta { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); margin-bottom: 22px; }
-.toc { border: 1px solid var(--rule); padding: 12px 18px 10px; margin-bottom: 18px; }
-.toc .lbl, .tb .lbl { font-family: "IBM Plex Mono", monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-.toc ol { list-style: none; margin: 6px 0 0; padding: 0; columns: 2; column-gap: 32px; }
-.toc li { break-inside: avoid; padding: 2px 0; font-size: 13px; }
-.summary { border: 1px solid var(--accent); background: var(--accent-bg); padding: 14px 18px; margin-bottom: 28px; }
-.summary p { margin: 0; }
-h2 { font-size: 18px; margin: 34px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--rule); font-weight: 600; }
-h3 { font-size: 15px; margin: 22px 0 8px; font-weight: 600; }
-p { margin: 0 0 12px; }
-ul, ol { margin: 0 0 12px; padding-left: 22px; }
-li { margin-bottom: 4px; }
-code { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; background: #f2f3f5; padding: 1px 4px; border-radius: 2px; overflow-wrap: anywhere; }
-sup.cite { font-family: "IBM Plex Mono", monospace; font-size: 10px; line-height: 0; white-space: nowrap; }
-.tbl { overflow-x: auto; margin: 14px 0 18px; }
-table { border-collapse: collapse; width: 100%; font-size: 12.5px; line-height: 1.45; }
-th, td { border: 1px solid var(--hair); padding: 6px 8px; text-align: left; vertical-align: top; }
-thead th { background: var(--head); color: var(--head-ink); font-weight: 600; border-color: var(--head); }
-tbody tr:nth-child(even) td { background: var(--zebra); }
-.sources ol { list-style: none; padding: 0; margin: 0; }
-.sources li { font-size: 13px; margin-bottom: 6px; padding-left: 38px; text-indent: -38px; overflow-wrap: anywhere; }
-.sources .sn { display: inline-block; width: 38px; text-indent: 0; font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); }
-.sources .dom { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: #8a9099; margin-left: 4px; }
-.tb { display: grid; grid-template-columns: 3fr 1fr 1fr; border: 1px solid var(--rule); margin-top: 36px; }
-.tb > div { padding: 8px 12px; border-left: 1px solid var(--rule); }
-.tb > div:first-child { border-left: none; }
-.tb .val { font-size: 13px; font-weight: 600; margin-top: 2px; }
-@media (max-width: 640px) {
-  body { padding: 12px 8px; }
-  .sheet { padding: 22px 16px 18px; }
-  h1 { font-size: 21px; }
-  .toc ol { columns: 1; }
-  .tb { grid-template-columns: 1fr; }
-  .tb > div { border-left: none; border-top: 1px solid var(--rule); }
-  .tb > div:first-child { border-top: none; }
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
 }
 </style>
 </head>
 <body>
 <div class="frame"><div class="sheet">
-<h1>Single-Pass vs Split-KV Decode Attention in vLLM: Where the Boundary Sits, Who Draws It, and What It Costs</h1>
-<div class="meta">Research survey · 83 cited sources · reviewed 2026-10-28</div>
-<nav class="toc"><div class="lbl">Contents</div><ol>
-<li><a href="#sec-1">1. Single-Pass vs Split-KV Decode: Mechanics and Why the Choice Exists</a></li>
-<li><a href="#sec-2">2. The Cost Model: SM Occupancy, Reduction Pass, and Scratch Memory</a></li>
-<li><a href="#sec-3">3. vLLM Triton Unified Attention: 2D vs 3D Kernels</a></li>
-<li><a href="#sec-4">4. FlashAttention and num_splits</a></li>
-<li><a href="#sec-5">5. FlashInfer and the TRT-LLM Kernels (XQA, TRT-LLM-gen)</a></li>
-<li><a href="#sec-6">6. ROCm Decode Attention Paths</a></li>
-<li><a href="#sec-7">7. CUDA-Graph and Batch-Invariance Constraints</a></li>
-<li><a href="#sec-8">8. Measured Results</a></li>
-<li><a href="#sec-9">9. Recommendation: When Each Strategy Wins</a></li>
-</ol></nav>
-<section class="summary"><p><strong>Neither single-pass nor split-KV decode attention wins in general; every vLLM backend implements the same inequality with different inputs. Split-KV wins when the single-pass launch cannot saturate HBM bandwidth: the unsplit grid (batch × KV heads per GPU × query tiles) falls below about one wave of the GPU, lands in a mostly empty final wave, or gives each thread block a KV walk too long to hide memory latency. Splitting is safe within about one wave of split blocks and at least 64–128 KV tokens per split. Deep in underfill a wrong single-pass has cost 5–49x at kernel level and a wrong split at most 1.21x<sup class="cite">[<a href="#src-1">1</a>, <a href="#src-2">2</a>]</sup>; near one wave both errors cost about 1.1–1.4x<sup class="cite">[<a href="#src-3">3</a>, <a href="#src-4">4</a>, <a href="#src-2">2</a>]</sup>. Serving gains concentrate at low concurrency with long contexts and on ragged lengths. vLLM Triton decides from batch size, FA3 from live lengths on the device, FlashInfer from a CPU plan, XQA and trtllm-gen from max_seq_len; ROCm's HIP default always splits. CUDA graphs push decisions toward a capture-time worst case, and batch invariance forces single-pass in vLLM's FA, Triton and FlashInfer paths<sup class="cite">[<a href="#src-5">5</a>, <a href="#src-6">6</a>, <a href="#src-7">7</a>]</sup>, costing 15–41% on ragged-length loads<sup class="cite">[<a href="#src-8">8</a>]</sup>.</strong></p>
-</section>
-<main>
-<h2 id="sec-1">1. Single-Pass vs Split-KV Decode: Mechanics and Why the Choice Exists</h2>
-<h3>1.1 Two decompositions of the same reduction</h3>
-<p>In the decode phase of LLM inference, each sequence contributes one new query token per iteration, or 1+K tokens when speculative decoding verifies K proposed tokens at once, and that query attends over the sequence's whole key/value (KV) cache. Kernels parallelize the work by handing independent pieces to CTAs (cooperative thread arrays, i.e. thread blocks; AMD calls them workgroups), which the GPU schedules onto its streaming multiprocessors (SMs; compute units, or CUs, on AMD). The two strategies differ only in how many independent pieces they create.</p>
-<p>A single-pass kernel assigns one CTA per (sequence, KV head, query tile) and has it walk every KV tile serially with online softmax, keeping a running maximum, exponential sum and accumulator, and writing the normalized output once. vLLM's Triton 2D kernel launches exactly this grid, <code>(total_num_q_blocks, num_kv_heads)</code><sup class="cite">[<a href="#src-6">6</a>]</sup>; FlashAttention's <code>num_splits = 1</code>, the legacy CUDA PagedAttention V1 and trtllm-gen's persistent fallback are the same design<sup class="cite">[<a href="#src-9">9</a>, <a href="#src-10">10</a>, <a href="#src-11">11</a>]</sup>.</p>
-<p>Flash-Decoding adds a third parallel axis, the KV length. It splits the cache into chunks, computes partial attention per chunk in parallel while writing &quot;1 extra scalar per row and per split: the log-sum-exp&quot;, then reduces across splits, using that log-sum-exp (LSE) to rescale each contribution<sup class="cite">[<a href="#src-12">12</a>]</sup>. vLLM's Triton 3D kernel is this design: a grid of <code>(total_num_q_blocks, num_kv_heads, num_par_softmax_segments)</code> followed by a <code>reduce_segments</code> kernel that rescales each segment by <code>exp(segm_max - overall_max)</code><sup class="cite">[<a href="#src-6">6</a>]</sup>. The second launch exists because &quot;Triton does not provide a global barrier, this reduction requires launching a second kernel, introducing a trade-off between additional parallelism and launch overhead&quot;<sup class="cite">[<a href="#src-13">13</a>]</sup>. The legacy CUDA <code>paged_attention_v2</code> had the same two-kernel shape<sup class="cite">[<a href="#src-14">14</a>]</sup>; XQA and FlashInfer's persistent kernel fuse the merge instead<sup class="cite">[<a href="#src-15">15</a>, <a href="#src-16">16</a>]</sup>.</p>
-<p>The merge is exact in real arithmetic: FlashInfer documents <code>merge_state</code> as producing output &quot;equivalent to attention with merged KV-segment&quot; from two partials and their float32 LSEs<sup class="cite">[<a href="#src-17">17</a>]</sup>. It is not bitwise exact in floating point, because summation order follows the split boundaries. vLLM PRs record greedy outputs diverging into &quot;equally plausible continuations&quot; when only the segment layout changed<sup class="cite">[<a href="#src-18">18</a>, <a href="#src-1">1</a>]</sup>, the root of the batch-invariance constraint.</p>
-<h3>1.2 Why the choice exists at all</h3>
-<p>Prefill has thousands of query rows to parallelize over; decode has one per sequence. As the Flash-Decoding authors put it, &quot;if the batch size is smaller than the number of streaming multiprocessors (SMs) on the GPU (108 for an A100), the operation will only use a small part of the GPU&quot;<sup class="cite">[<a href="#src-12">12</a>]</sup>. GQA (grouped-query attention, where several query heads share one KV head) packs a KV head's query heads into one CTA, so the grid scales with KV heads. Tensor parallelism (TP) shards those heads across GPUs, &quot;further reducing the number of SMs activated per GPU during the decode phase&quot;<sup class="cite">[<a href="#src-19">19</a>]</sup>. A Llama-70B-class model at batch 1 runs 8 CTAs on an H100's 132 SMs<sup class="cite">[<a href="#src-20">20</a>]</sup>; at TP8 the unsplit grid equals the batch size. Single-pass also hit walls: legacy vLLM forced V2 above 8,192 tokens <code>to avoid shared memory shortage</code><sup class="cite">[<a href="#src-10">10</a>]</sup>, and TensorRT-LLM forces multi-block mode when its sequence-proportional shared memory runs out<sup class="cite">[<a href="#src-21">21</a>]</sup>.</p>
-<div class="tbl"><table>
+<header>
+<h1>Single-Pass vs Split-KV Decode Attention in vLLM: Where the Boundary
+Sits, Who Draws It, and What It Costs</h1>
+<div class="byline">Research report · 83 cited sources · reviewed 2026-10-29</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a
+href="#single-pass-vs-split-kv-decode-mechanics-and-why-the-choice-exists"
+id="toc-single-pass-vs-split-kv-decode-mechanics-and-why-the-choice-exists">1.
+Single-Pass vs Split-KV Decode: Mechanics and Why the Choice
+Exists</a></li>
+<li><a
+href="#the-cost-model-sm-occupancy-reduction-pass-and-scratch-memory"
+id="toc-the-cost-model-sm-occupancy-reduction-pass-and-scratch-memory">2.
+The Cost Model: SM Occupancy, Reduction Pass, and Scratch
+Memory</a></li>
+<li><a href="#vllm-triton-unified-attention-2d-vs-3d-kernels"
+id="toc-vllm-triton-unified-attention-2d-vs-3d-kernels">3. vLLM Triton
+Unified Attention: 2D vs 3D Kernels</a></li>
+<li><a href="#flashattention-and-num_splits"
+id="toc-flashattention-and-num_splits">4. FlashAttention and
+num_splits</a></li>
+<li><a href="#flashinfer-and-the-trt-llm-kernels-xqa-trt-llm-gen"
+id="toc-flashinfer-and-the-trt-llm-kernels-xqa-trt-llm-gen">5.
+FlashInfer and the TRT-LLM Kernels (XQA, TRT-LLM-gen)</a></li>
+<li><a href="#rocm-decode-attention-paths"
+id="toc-rocm-decode-attention-paths">6. ROCm Decode Attention
+Paths</a></li>
+<li><a href="#cuda-graph-and-batch-invariance-constraints"
+id="toc-cuda-graph-and-batch-invariance-constraints">7. CUDA-Graph and
+Batch-Invariance Constraints</a></li>
+<li><a href="#measured-results" id="toc-measured-results">8. Measured
+Results</a></li>
+<li><a href="#recommendation-when-each-strategy-wins"
+id="toc-recommendation-when-each-strategy-wins">9. Recommendation: When
+Each Strategy Wins</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>Neither single-pass nor split-KV decode attention wins in
+general. Every vLLM backend implements the same inequality, just with
+different inputs. Split-KV wins when the single-pass launch can’t
+saturate HBM bandwidth. The unsplit grid is batch × KV heads per GPU ×
+query tiles. Split-KV wins when that grid falls below about one wave of
+the GPU, or lands in a mostly empty final wave. It also wins when each
+thread block has a KV walk too long to hide memory latency. Splitting is
+safe if you stay within about one wave of split blocks and keep at least
+64–128 KV tokens per split. Deep in underfill, a wrong single-pass
+choice has cost 5–49x at kernel level, and a wrong split at most 1.21x
+[1, 2]. Near one wave, both mistakes cost about 1.1–1.4x [3, 4, 2].
+Serving gains show up mostly at low concurrency with long contexts, and
+on ragged lengths. vLLM Triton decides from batch size, FA3 from live
+lengths on the device, FlashInfer from a CPU plan, and XQA and
+trtllm-gen from max_seq_len. ROCm’s HIP default always splits. CUDA
+graphs push decisions toward a capture-time worst case. And batch
+invariance forces single-pass in vLLM’s FA, Triton and FlashInfer paths
+[5, 6, 7], which costs 15–41% on ragged-length loads [8].</strong></p>
+</div>
+<h2
+id="single-pass-vs-split-kv-decode-mechanics-and-why-the-choice-exists">1.
+Single-Pass vs Split-KV Decode: Mechanics and Why the Choice Exists</h2>
+<h3 id="two-ways-to-split-the-same-reduction">1.1 Two ways to split the
+same reduction</h3>
+<p>In the decode phase of LLM inference, each sequence adds one new
+query token per iteration. With speculative decoding it adds 1+K tokens,
+when the model checks K proposed tokens at once. That query attends over
+the sequence’s whole key/value (KV) cache. Kernels split the work into
+independent pieces and hand them to CTAs (cooperative thread arrays,
+i.e. thread blocks; AMD calls them workgroups). The GPU schedules CTAs
+onto its streaming multiprocessors (SMs; compute units, or CUs, on AMD).
+The two strategies differ in only one thing: how many independent pieces
+they create.</p>
+<p>A single-pass kernel gives one CTA to each (sequence, KV head, query
+tile). That CTA walks every KV tile in order with online softmax. It
+keeps a running maximum, exponential sum and accumulator, and writes the
+normalized output once. vLLM’s Triton 2D kernel launches exactly this
+grid, <code>(total_num_q_blocks, num_kv_heads)</code> [6].
+FlashAttention’s <code>num_splits = 1</code>, the legacy CUDA
+PagedAttention V1 and trtllm-gen’s persistent fallback are the same
+design [9, 10, 11].</p>
+<p>Flash-Decoding adds a third parallel axis: the KV length. It cuts the
+cache into chunks and computes partial attention for each chunk in
+parallel, while writing “1 extra scalar per row and per split: the
+log-sum-exp” [12]. Then it reduces across splits, using that log-sum-exp
+(LSE) to rescale each piece [12]. vLLM’s Triton 3D kernel is this
+design. It launches a grid of
+<code>(total_num_q_blocks, num_kv_heads, num_par_softmax_segments)</code>,
+then a <code>reduce_segments</code> kernel that rescales each segment by
+<code>exp(segm_max - overall_max)</code> [6]. The second launch exists
+because “Triton does not provide a global barrier, this reduction
+requires launching a second kernel, introducing a trade-off between
+additional parallelism and launch overhead” [13]. The legacy CUDA
+<code>paged_attention_v2</code> had the same two-kernel shape [14]. XQA
+and FlashInfer’s persistent kernel do the merge inside the kernel
+instead [15, 16].</p>
+<p>The merge is exact in real arithmetic. FlashInfer documents
+<code>merge_state</code> as producing output “equivalent to attention
+with merged KV-segment” from two partials and their float32 LSEs [17].
+But it isn’t bitwise exact in floating point, because the summation
+order follows the split boundaries. vLLM PRs record greedy outputs
+drifting into “equally plausible continuations” when only the segment
+layout changed [18, 1]. That is the root of the batch-invariance
+constraint.</p>
+<h3 id="why-the-choice-exists-at-all">1.2 Why the choice exists at
+all</h3>
+<p>Prefill has thousands of query rows to spread across the GPU. Decode
+has one per sequence. As the Flash-Decoding authors put it, “if the
+batch size is smaller than the number of streaming multiprocessors (SMs)
+on the GPU (108 for an A100), the operation will only use a small part
+of the GPU” [12]. GQA (grouped-query attention, where several query
+heads share one KV head) packs a KV head’s query heads into one CTA. So
+the grid scales with KV heads. Tensor parallelism (TP) shards those
+heads across GPUs, “further reducing the number of SMs activated per GPU
+during the decode phase” [19]. A Llama-70B-class model at batch 1 runs 8
+CTAs on an H100’s 132 SMs [20]. At TP8 the unsplit grid equals the batch
+size. Single-pass also ran into hard limits. Legacy vLLM forced V2 above
+8,192 tokens <code>to avoid shared memory shortage</code> [10]. And
+TensorRT-LLM forces multi-block mode when its shared memory, which grows
+with sequence length, runs out [21].</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
 <thead>
 <tr>
 <th>Property</th>
@@ -113,7 +225,8 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <tr>
 <td>Launches</td>
 <td>1</td>
-<td>2, or 1 with an in-kernel merge (XQA, FlashInfer persistent)</td>
+<td>2, or 1 with the merge inside the kernel (XQA, FlashInfer
+persistent)</td>
 </tr>
 <tr>
 <td>Scratch</td>
@@ -128,7 +241,8 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <tr>
 <td>vLLM instances</td>
 <td>Triton 2D, FA <code>num_splits=1</code>, AITER V1</td>
-<td>Triton 3D, FA <code>num_splits&gt;1</code>, FlashInfer partition-KV, XQA multi-block, trtllm-gen multi-CTA-KV, HIP ll4mi</td>
+<td>Triton 3D, FA <code>num_splits&gt;1</code>, FlashInfer partition-KV,
+XQA multi-block, trtllm-gen multi-CTA-KV, HIP ll4mi</td>
 </tr>
 <tr>
 <td>Wins when</td>
@@ -136,45 +250,165 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <td>grid below ~1 wave or just past one, long KV</td>
 </tr>
 </tbody>
-</table></div>
-<h2 id="sec-2">2. The Cost Model: SM Occupancy, Reduction Pass, and Scratch Memory</h2>
-<p>Split-KV pays three costs for one benefit. The benefit is more CTAs in flight issuing memory loads, drawing more of the GPU's HBM (high-bandwidth memory) bandwidth. The costs are wave quantization (CTAs run in waves that fill every resident slot once, so a grid slightly larger than one wave pays for two), the reduction pass, and scratch memory for partial results.</p>
-<h3>2.1 One normalized variable</h3>
-<p>Let C₁ be the unsplit CTA count, batch × KV heads per GPU × ⌈query tokens × GQA ratio / BLOCK_M⌉, and W the unsplit wave fill, C₁ / (SMs × resident CTAs per SM). The production thresholds look unrelated, but each reads W plus a length term. FA3 returns one split at <code>total_mblocks &gt;= 0.8f * num_SMs</code> and otherwise picks the smallest split count reaching 85% of the best wave efficiency<sup class="cite">[<a href="#src-9">9</a>]</sup>; upstream FA2 uses the same rule with the SM count doubled<sup class="cite">[<a href="#src-22">22</a>]</sup>. FlashInfer skips splitting when <code>batch_size * gdy &gt;= max_grid_size</code>, with the grid size taken from measured occupancy<sup class="cite">[<a href="#src-23">23</a>]</sup>; trtllm-gen goes single-pass when <code>oneWaveSplits = SMs / baseNumCtas</code> is 1 or below<sup class="cite">[<a href="#src-11">11</a>]</sup>; AITER's Triton unified attention runs 2D when <code>num_2d_prgms</code> exceeds <code>cu_count * 4</code><sup class="cite">[<a href="#src-24">24</a>]</sup>.</p>
-<p>vLLM's own Triton gate is the exception. It sets <code>seq_threshold_3D = MIN_LAUNCH_GRID_SIZE_2D // num_heads_kv</code> with <code>MIN_LAUNCH_GRID_SIZE_2D = 128</code><sup class="cite">[<a href="#src-25">25</a>]</sup>, an absolute CTA count rather than an SM-scaled one. Arithmetic from the constant and published core counts gives W cutoffs of about 0.97 on a 132-SM H100 and 0.42 on a 304-CU MI300X<sup class="cite">[<a href="#src-26">26</a>]</sup>, 0.86 on a 148-SM B200<sup class="cite">[<a href="#src-27">27</a>]</sup>, and 0.68 on a 188-SM RTX PRO 6000 (SM120, workstation Blackwell)<sup class="cite">[<a href="#src-2">2</a>]</sup>. If one CTA is resident per SM, the Triton default is tuned to H100 scale and switches to single-pass too early on larger parts. That is inference, and the one measured per-platform retune (gfx1201, open PR #60418) moved the threshold down instead.</p>
-<h3>2.2 The criterion is bandwidth, not idle SMs</h3>
-<p>W &lt; 1 is a proxy. The criterion is whether the unsplit launch can saturate HBM, and three 2026 measurements show split-KV winning at W ≥ 1:</p>
+</table>
+<h2
+id="the-cost-model-sm-occupancy-reduction-pass-and-scratch-memory">2.
+The Cost Model: SM Occupancy, Reduction Pass, and Scratch Memory</h2>
+<p>Split-KV pays three costs for one benefit. The benefit is more CTAs
+in flight issuing memory loads, which pulls more of the GPU’s HBM
+(high-bandwidth memory) bandwidth. The costs are wave quantization, the
+reduction pass, and scratch memory for partial results. Wave
+quantization works like this: CTAs run in waves, and each wave fills
+every resident slot once. So a grid slightly larger than one wave pays
+for two.</p>
+<h3 id="one-normalized-variable">2.1 One normalized variable</h3>
+<p>Let C₁ be the unsplit CTA count: batch × KV heads per GPU × ⌈query
+tokens × GQA ratio / BLOCK_M⌉. Let W be the unsplit wave fill, C₁ / (SMs
+× resident CTAs per SM). The production thresholds look unrelated. But
+each one reads W plus a length term. FA3 returns one split at
+<code>total_mblocks &gt;= 0.8f * num_SMs</code> [9]. Otherwise it picks
+the smallest split count that reaches 85% of the best wave efficiency
+[9]. Upstream FA2 uses the same rule with the SM count doubled [22].
+FlashInfer skips splitting when
+<code>batch_size * gdy &gt;= max_grid_size</code>, with the grid size
+taken from measured occupancy [23]. trtllm-gen goes single-pass when
+<code>oneWaveSplits = SMs / baseNumCtas</code> is 1 or below [11].
+AITER’s Triton unified attention runs 2D when <code>num_2d_prgms</code>
+exceeds <code>cu_count * 4</code> [24].</p>
+<p>vLLM’s own Triton gate is the exception. It sets
+<code>seq_threshold_3D = MIN_LAUNCH_GRID_SIZE_2D // num_heads_kv</code>
+with <code>MIN_LAUNCH_GRID_SIZE_2D = 128</code> [25]. That is a fixed
+CTA count, not one that scales with the SM count. We worked out the W
+cutoffs from the constant and published core counts. They come out at
+about 0.97 on a 132-SM H100 and 0.42 on a 304-CU MI300X [26]. On a
+148-SM B200 the cutoff is 0.86 [27], and on a 188-SM RTX PRO 6000
+(SM120, workstation Blackwell) it is 0.68 [2]. If one CTA is resident
+per SM, the Triton default is tuned to H100 scale and switches to
+single-pass too early on larger parts. That is our inference. And the
+one measured per-platform retune (gfx1201, open PR #60418) moved the
+threshold down instead.</p>
+<h3 id="the-test-is-bandwidth-not-idle-sms">2.2 The test is bandwidth,
+not idle SMs</h3>
+<p>W &lt; 1 is only a proxy. The real test is whether the unsplit launch
+can saturate HBM. Three 2026 measurements show split-KV winning at W ≥
+1:</p>
 <ul>
-<li>FlashInfer's SM90 fp8 XQA launcher dropped to one split once batch × KV heads exceeded about 50: &quot;One CTA per SM cannot cover HBM latency, so large-batch long-context decode with few KV heads ran at 60-75% of bandwidth&quot; on GH200<sup class="cite">[<a href="#src-4">4</a>]</sup>.</li>
-<li>On MI355X (gfx950, CDNA4) at context 8,192, AITER's partitioned V2 still beat single-pass V1 by 2.00x at batch 128 with 64 query and 8 KV heads at head size 128 (2.92x at head size 64), where V1's grid already holds 8,192 programs<sup class="cite">[<a href="#src-28">28</a>, <a href="#src-29">29</a>]</sup>. Part of the gap is kernel design rather than split policy: V1 launches one program per query head (<code>num_seqs * num_q_heads</code>), by our reading of the dispatch code<sup class="cite">[<a href="#src-29">29</a>]</sup>.</li>
-<li>On SM107 (a Blackwell variant), growing a batch of 9K-token sequences from 208 to 209 requests made the call 1.39x slower for 0.5% more work, because the 209th CTA opens a nearly empty second wave<sup class="cite">[<a href="#src-3">3</a>]</sup>.</li>
+<li>FlashInfer’s SM90 fp8 XQA launcher dropped to one split once batch ×
+KV heads went past about 50: “One CTA per SM cannot cover HBM latency,
+so large-batch long-context decode with few KV heads ran at 60-75% of
+bandwidth” on GH200 [4].</li>
+<li>On MI355X (gfx950, CDNA4) at context 8,192, AITER’s partitioned V2
+still beat single-pass V1 by 2.00x at batch 128, with 64 query and 8 KV
+heads at head size 128 (2.92x at head size 64) [28, 29]. V1’s grid
+already holds 8,192 programs there [28, 29]. Part of the gap is kernel
+design, not split policy: V1 launches one program per query head
+(<code>num_seqs * num_q_heads</code>). That is our reading of the
+dispatch code [29].</li>
+<li>On SM107 (a Blackwell variant), growing a batch of 9K-token
+sequences from 208 to 209 requests made the call 1.39x slower for 0.5%
+more work. The 209th CTA opens a nearly empty second wave [3].</li>
 </ul>
-<p>Below saturation the speedup tracks parallel CTAs. On SM120 at 131k, 16 and 64 segments beat one 2D CTA by 15x and 48x, about 0.94 and 0.75 parallel efficiency by our arithmetic; at 4k context 16 segments gave only 6.3x (142.9 → 22.6 µs) because a launch-plus-reduce floor of about 22 µs dominates<sup class="cite">[<a href="#src-18">18</a>, <a href="#src-2">2</a>]</sup>.</p>
-<p>The counter-case: FlashInfer's 2024 launch post found split-KV gave nothing on RTX 4090 and RTX 6000 Ada, where a fraction of the SMs already saturates GDDR bandwidth for a kernel that is not compute-bound, while it helped on an A100 where the CUDA-core kernel was compute-bound<sup class="cite">[<a href="#src-30">30</a>]</sup>. No source states the general rule, but these measurements jointly imply it: split when C₁ × (bandwidth one CTA can sustain) is below HBM peak. Memory type does not decide it: the 2024 result concerns a CUDA-core, non-GQA kernel. Modern GQA decode kernels on GDDR and LPDDR parts still gain heavily from splits at batch 1 and long context (R9700, RTX PRO 6000, gfx1151 and RTX 3090 results in 4.3 and 8.1)<sup class="cite">[<a href="#src-18">18</a>, <a href="#src-1">1</a>]</sup>.</p>
-<h3>2.3 Three cost terms, and which one bites</h3>
-<p><strong>Wave quantization is the largest measured over-split cost.</strong> SGLang's AMD MLA (multi-head latent attention, DeepSeek's compressed-KV design) decode code records that crossing the one-wave split budget costs a whole wave: at batch 24 and 68k context, 21 splits (504 blocks) took 358 µs and 22 splits (528 blocks) took 528 µs, +47% for 4.8% more blocks<sup class="cite">[<a href="#src-31">31</a>]</sup>. The 208→209 cliff is the same effect hitting single-pass, and LeanAttention's critique of fixed-split decoding rests on the same partially full waves<sup class="cite">[<a href="#src-32">32</a>]</sup>.</p>
-<p><strong>The reduction pass is cheap in isolation; what it drags along is not.</strong> Two isolated timings exist. A research kernel on an RTX 3060 merged in 0.014 ms against 1.263 ms of decode, about 1.1%, yet the same paper routed contexts below 16k back to FlashInfer because split and merge dominated there<sup class="cite">[<a href="#src-33">33</a>]</sup>. FlashInfer PR #4702 cut a B200 MLA decode call at 4k KV from 12.03 to 11.46 µs median, about 5%, by switching only the reduction from global memory to a thread-block cluster<sup class="cite">[<a href="#src-34">34</a>]</sup>.</p>
-<p>Production caps treat the reduction as real: XQA caps splits at <code>round(sqrt(8n))</code> because <code>otherwise the final reduction may dominate</code><sup class="cite">[<a href="#src-35">35</a>]</sup>, and trtllm-gen allows at most <code>ceil(window / (2*stepKv))</code> splits<sup class="cite">[<a href="#src-11">11</a>]</sup>. In trtllm-gen, 16 splits reduced through a CGA (a thread-block cluster sharing distributed shared memory) &quot;beat 17-32 splits on the GMEM path whenever each CTA walks ≤ 4096 KV tokens&quot;<sup class="cite">[<a href="#src-36">36</a>]</sup>. The reduce turns material when per-split work shrinks toward it: on gfx950 the measured crossover is 64–80 KV tokens per segment, and a gate at 80 had a worst case of −1.0% over 250 configurations against −60.9% for a 256-token gate<sup class="cite">[<a href="#src-37">37</a>]</sup>. FlashDecoding++'s widely quoted 18.8% measures &quot;synchronized partial softmax update&quot; overhead, not the combine pass<sup class="cite">[<a href="#src-38">38</a>]</sup>.</p>
-<p><strong>Scratch memory is a capacity and CUDA-graph problem more than a time problem.</strong></p>
+<p>Below saturation, the speedup tracks the number of parallel CTAs. On
+SM120 at 131k, 16 and 64 segments beat one 2D CTA by 15x and 48x [18,
+2]. By our arithmetic, that’s about 0.94 and 0.75 parallel efficiency.
+At 4k context, 16 segments gave only 6.3x (142.9 → 22.6 µs), because a
+launch-plus-reduce floor of about 22 µs dominates [18, 2].</p>
+<p>The counter-case: FlashInfer’s 2024 launch post found split-KV gave
+nothing on RTX 4090 and RTX 6000 Ada [30]. On those cards, a fraction of
+the SMs already saturates GDDR bandwidth for a kernel that isn’t
+compute-bound. It did help on an A100, where the CUDA-core kernel was
+compute-bound [30]. No source states the general rule, but these
+measurements together imply it: split when C₁ × (bandwidth one CTA can
+sustain) is below HBM peak. Memory type doesn’t decide it, since the
+2024 result is about a CUDA-core, non-GQA kernel. Modern GQA decode
+kernels on GDDR and LPDDR parts still gain a lot from splits at batch 1
+and long context (R9700, RTX PRO 6000, gfx1151 and RTX 3090 results in
+4.3 and 8.1) [18, 1].</p>
+<h3 id="three-cost-terms-and-which-one-bites">2.3 Three cost terms, and
+which one bites</h3>
+<p><strong>Wave quantization is the largest measured over-split
+cost.</strong> SGLang’s AMD MLA decode code (MLA is multi-head latent
+attention, DeepSeek’s compressed-KV design) records that crossing the
+one-wave split budget costs a whole wave [31]. At batch 24 and 68k
+context, 21 splits (504 blocks) took 358 µs and 22 splits (528 blocks)
+took 528 µs: +47% for 4.8% more blocks [31]. The 208→209 cliff is the
+same effect hitting single-pass. LeanAttention’s critique of fixed-split
+decoding rests on the same partly full waves [32].</p>
+<p><strong>The reduction pass is cheap in isolation; what it drags along
+is not.</strong> Two isolated timings exist. A research kernel on an RTX
+3060 merged in 0.014 ms against 1.263 ms of decode, about 1.1% [33]. Yet
+the same paper sent contexts below 16k back to FlashInfer, because split
+and merge dominated there [33]. FlashInfer PR #4702 cut a B200 MLA
+decode call at 4k KV from 12.03 to 11.46 µs median, about 5% [34]. It
+did that by changing only the reduction, moving it from global memory to
+a thread-block cluster [34].</p>
+<p>Production caps treat the reduction as a real cost. XQA caps splits
+at <code>round(sqrt(8n))</code> because
+<code>otherwise the final reduction may dominate</code> [35]. trtllm-gen
+allows at most <code>ceil(window / (2*stepKv))</code> splits [11]. In
+trtllm-gen, 16 splits reduced through a CGA (a thread-block cluster
+sharing distributed shared memory) “beat 17-32 splits on the GMEM path
+whenever each CTA walks ≤ 4096 KV tokens” [36]. The reduce starts to
+matter when per-split work shrinks toward its size. On gfx950 the
+measured crossover is 64–80 KV tokens per segment [37]. A gate at 80 had
+a worst case of −1.0% over 250 configurations, against −60.9% for a
+256-token gate [37]. FlashDecoding++’s widely quoted 18.8% measures
+“synchronized partial softmax update” overhead, not the combine pass
+[38].</p>
+<p><strong>Scratch memory is a capacity and CUDA-graph problem more than
+a time problem.</strong></p>
 <ul>
-<li>FA3 allocates fp32 <code>out_accum</code> of shape <code>[num_splits, batch, heads, seqlen_q, head_dim]</code> plus <code>softmax_lse_accum</code>, with <code>num_splits ≤ 256</code><sup class="cite">[<a href="#src-39">39</a>]</sup>, which is why vLLM fixes FA's split count under full graphs so the buffers can be allocated at capture<sup class="cite">[<a href="#src-5">5</a>]</sup>.</li>
-<li>FlashInfer's persistent scheduler bounds partials at 2 × #CTA<sup class="cite">[<a href="#src-16">16</a>]</sup>.</li>
-<li>XQA reserves 6,000 sub-sequences, about 12 MB <code>for llama v2 70b</code><sup class="cite">[<a href="#src-40">40</a>]</sup>.</li>
-<li>vLLM Triton's preallocated partials cost +24 to +42 MiB per rank for MiniMax-M3 TP8<sup class="cite">[<a href="#src-2">2</a>]</sup>.</li>
-<li>ROCm's HIP path allocates per call, sized by the batch's <code>max_seq_len</code>; by our arithmetic from its partial shapes, batch 256 with 32 query heads, head size 128 and 32k context needs about 277 MB per layer call<sup class="cite">[<a href="#src-41">41</a>]</sup>.</li>
+<li>FA3 allocates fp32 <code>out_accum</code> of shape
+<code>[num_splits, batch, heads, seqlen_q, head_dim]</code> plus
+<code>softmax_lse_accum</code>, with <code>num_splits ≤ 256</code> [39].
+That’s why vLLM fixes FA’s split count under full graphs, so the buffers
+can be allocated at capture [5].</li>
+<li>FlashInfer’s persistent scheduler caps partials at 2 × #CTA
+[16].</li>
+<li>XQA reserves 6,000 sub-sequences, about 12 MB
+<code>for llama v2 70b</code> [40].</li>
+<li>vLLM Triton’s preallocated partials cost +24 to +42 MiB per rank for
+MiniMax-M3 TP8 [2].</li>
+<li>ROCm’s HIP path allocates per call, sized by the batch’s
+<code>max_seq_len</code> [41]. By our arithmetic from its partial
+shapes, batch 256 with 32 query heads, head size 128 and 32k context
+needs about 277 MB per layer call [41].</li>
 </ul>
-<p>Capped-split scratch is small next to a multi-gigabyte KV cache, the HIP path's is not; for all of them the binding constraint is that graph-replayed buffers must be sized at capture for the largest split count.</p>
-<p><strong>Correctness surface is the cost kernel benchmarks never show.</strong> In 2025–2026 the split reduction path produced at least four bugs:</p>
+<p>Capped-split scratch is small next to a multi-gigabyte KV cache. The
+HIP path’s is not. For all of them, the binding constraint is that
+graph-replayed buffers must be sized at capture for the largest split
+count.</p>
+<p><strong>Correctness surface is the cost kernel benchmarks never
+show.</strong> In 2025–2026 the split reduction path produced at least
+four bugs:</p>
 <ul>
-<li>FA2's varlen combine wrote every batch to the same output address when a real split occurred<sup class="cite">[<a href="#src-42">42</a>]</sup>.</li>
-<li>vLLM Triton's 3D path corrupted rows whose keys were all masked within a segment, with a maximum absolute error of about 4<sup class="cite">[<a href="#src-1">1</a>]</sup>.</li>
-<li>#56148 fixed the same <code>-inf</code>-clamp hazard for empty segments<sup class="cite">[<a href="#src-2">2</a>]</sup>.</li>
-<li>AITER's HIP persistent-split reduce gives wrong outputs above 32 partitions, with relative error up to 2.8 at 33 splits<sup class="cite">[<a href="#src-43">43</a>]</sup>.</li>
+<li>FA2’s varlen combine wrote every batch to the same output address
+when a real split happened [42].</li>
+<li>vLLM Triton’s 3D path corrupted rows whose keys were all masked
+within a segment, with a maximum absolute error of about 4 [1].</li>
+<li>#56148 fixed the same <code>-inf</code>-clamp hazard for empty
+segments [2].</li>
+<li>AITER’s HIP persistent-split reduce gives wrong outputs above 32
+partitions, with relative error up to 2.8 at 33 splits [43].</li>
 </ul>
-<p>Single-pass kernels have no cross-program merge and no equivalent bug class.</p>
-<h3>2.4 The rule and its two guards</h3>
-<p>Under-splitting wastes memory parallelism in proportion to how far the grid sits below saturation; over-splitting costs a fraction of a wave plus a cheap merge until one of two guards is violated: about one wave of split CTAs, and a floor of about 64–128 tokens per split. The measured wave cliffs come from opening a partial wave, not from multi-wave grids at long KV.</p>
-<div class="tbl"><table>
+<p>Single-pass kernels have no cross-program merge, so they have no
+matching bug class.</p>
+<h3 id="the-rule-and-its-two-guards">2.4 The rule and its two
+guards</h3>
+<p>Under-splitting wastes memory parallelism, in proportion to how far
+the grid sits below saturation. Over-splitting costs a fraction of a
+wave plus a cheap merge, until one of two guards is broken. The guards
+are about one wave of split CTAs, and a floor of about 64–128 tokens per
+split. The measured wave cliffs come from opening a partial wave, not
+from multi-wave grids at long KV.</p>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
 <thead>
 <tr>
 <th>Backend (code anchor, main Oct 2026)</th>
@@ -186,75 +420,150 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 </thead>
 <tbody>
 <tr>
-<td>FA3 heuristic<sup class="cite">[<a href="#src-9">9</a>]</sup></td>
+<td>FA3 heuristic [9]</td>
 <td>W_mblocks ≥ 0.8</td>
-<td>smallest S at ≥85% of best wave efficiency, S ≤ min(128, SMs, n_blocks)</td>
+<td>smallest S at ≥85% of best wave efficiency, S ≤ min(128, SMs,
+n_blocks)</td>
 <td><code>num_n_blocks &lt;= 4</code> → 1</td>
 <td>separate combine</td>
 </tr>
 <tr>
-<td>FA3 device prep<sup class="cite">[<a href="#src-44">44</a>]</sup></td>
+<td>FA3 device prep [44]</td>
 <td>batch &gt; 992</td>
-<td><code>ceil(n_blocks / blocks_per_sm)</code>, 10% margin, ≤ static cap</td>
+<td><code>ceil(n_blocks / blocks_per_sm)</code>, 10% margin, ≤ static
+cap</td>
 <td>none</td>
 <td>separate combine</td>
 </tr>
 <tr>
-<td>FlashInfer BatchDecode<sup class="cite">[<a href="#src-23">23</a>]</sup></td>
+<td>FlashInfer BatchDecode [23]</td>
 <td>batch × KV heads ≥ occupancy × SMs</td>
-<td>smallest chunk keeping CTAs within one wave</td>
+<td>smallest chunk that keeps CTAs within one wave</td>
 <td>128 tokens</td>
 <td>merge kernel</td>
 </tr>
 <tr>
-<td>vLLM Triton<sup class="cite">[<a href="#src-25">25</a>]</sup></td>
+<td>vLLM Triton [25]</td>
 <td>Q-blocks &gt; snap(128 // H_kv)</td>
 <td>16 (64 on SM120 when 16 underfills)</td>
 <td>none</td>
 <td><code>reduce_segments</code> launch</td>
 </tr>
 <tr>
-<td>AITER Triton<sup class="cite">[<a href="#src-24">24</a>, <a href="#src-45">45</a>]</sup></td>
+<td>AITER Triton [24, 45]</td>
 <td>2D programs &gt; 4 × CUs, KV ≤ 512, or SWA (sliding window)</td>
 <td>next_pow2(clamp(CUs × per-CU / programs))</td>
 <td>minimum tiles</td>
 <td>Triton or Gluon reduce</td>
 </tr>
 <tr>
-<td>XQA<sup class="cite">[<a href="#src-35">35</a>]</sup></td>
+<td>XQA [35]</td>
 <td>history &lt; 256, or MLA</td>
 <td>min(h/128, round(sqrt(8n))), cut above 8 waves</td>
 <td>128 tokens</td>
 <td>in-kernel last-CTA merge</td>
 </tr>
 <tr>
-<td>trtllm-gen<sup class="cite">[<a href="#src-11">11</a>]</sup></td>
+<td>trtllm-gen [11]</td>
 <td>SMs / baseCtas ≤ 1</td>
 <td>min(window/(2·stepKv), one wave); 4 waves opt-in</td>
 <td>2 × stepKv</td>
 <td>CGA (≤16) or GMEM</td>
 </tr>
 <tr>
-<td>ROCm HIP PA<sup class="cite">[<a href="#src-46">46</a>]</sup></td>
+<td>ROCm HIP PA [46]</td>
 <td>never</td>
 <td>ceil(max_seq_len / 256)</td>
 <td>256 tokens</td>
 <td>always separate reduce</td>
 </tr>
 </tbody>
-</table></div>
-<h2 id="sec-3">3. vLLM Triton Unified Attention: 2D vs 3D Kernels</h2>
-<p>The Triton backend (<code>TRITON_ATTN</code>) is the one place where vLLM itself makes the split decision: a launcher gate picks the 2D (single-pass) or 3D (segmented, plus <code>reduce_segments</code>) kernel per batch. An April 2026 talk calls it the default for AMD deployments<sup class="cite">[<a href="#src-26">26</a>]</sup>, but vLLM main ranks it last among ROCm backends, behind <code>ROCM_ATTN</code>, which merged PR #36702 put first<sup class="cite">[<a href="#src-47">47</a>]</sup>; it is chosen when those decline a shape. Nearly every change to its boundary came with a measurement.</p>
-<h3>3.1 The gate, as of vLLM main (October 2026)</h3>
-<p>The launcher runs 2D if scratch is missing or undersized; if <code>max_seqlen_q &gt; 1</code> and the query exceeds <code>MAX_3D_QUERY_LEN</code> or masking is non-causal; if <code>num_seqs * cdiv(max_seqlen_q, BLOCK_Q) &gt; seq_threshold_3D</code>; or if batch invariance is enabled<sup class="cite">[<a href="#src-6">6</a>]</sup>. Because the query test reads the batch maximum, an iteration carrying a chunked-prefill chunk runs all its decodes on 2D, whereas FlashInfer plans decode rows separately<sup class="cite">[<a href="#src-7">7</a>]</sup> and FA3 handles mixed varlen batches in one call<sup class="cite">[<a href="#src-5">5</a>]</sup>; no source measures the serving cost. On main, <code>MAX_3D_QUERY_LEN</code> is 8 for the unified kernel<sup class="cite">[<a href="#src-6">6</a>, <a href="#src-25">25</a>]</sup> (the DiffKV variant, fixed by #59085, admits verify widths up to 16<sup class="cite">[<a href="#src-48">48</a>, <a href="#src-1">1</a>]</sup>); PR #56148's final commit text states that admission is &quot;widths 2..5 on every platform; width &gt;= 6 uses 2D&quot;, enforced beyond that constant<sup class="cite">[<a href="#src-2">2</a>]</sup>.</p>
-<p>The threshold is <code>128 // num_heads_kv</code>. Under full decode graphs it snaps to <code>the CUDA Graph capture size closest to self.seq_threshold_3D</code>, so each captured graph covers one kernel<sup class="cite">[<a href="#src-25">25</a>]</sup>. PR #28306 added the snap with a guard that resets the threshold to 0 (2D only) if snapping would push it above 4x its unsnapped value; a reviewer called 2D-only a safe choice for CUDA graph compatibility<sup class="cite">[<a href="#src-49">49</a>]</sup>. The 3D kernel fixes the segment count per sequence, so short sequences produce empty segments that <code>reduce_segments</code> masks<sup class="cite">[<a href="#src-6">6</a>]</sup>. The count is 16, rising to 64 on SM120 when 16 segments would underfill the GPU<sup class="cite">[<a href="#src-25">25</a>]</sup>. The gate reads batch size, KV heads, query width and capture sizes; it never reads KV length.</p>
-<h3>3.2 How the boundary moved, PR by PR</h3>
-<p>PR #19152 (June 2025) introduced 3D with 16 segments and reported &quot;more than a factor of two&quot; end to end at batch 1 with long outputs on H100<sup class="cite">[<a href="#src-50">50</a>]</sup>; the authors' paper confirms 3D was &quot;only launched for decode attention on small batches involving longer sequences&quot;<sup class="cite">[<a href="#src-51">51</a>]</sup>. Until October 2026, however, any <code>max_seqlen_q &gt; 1</code> forced 2D, so a single-stream verify ran &quot;(1, 4) = 4 CTAs on a 70-SM GPU, each CTA sequentially walking the entire KV history&quot;, a 19.6–48.7x kernel penalty at 65–67K KV; on gfx1151 (an RDNA client GPU) a verify iteration took 581 ms against 92 ms without speculation until the 3D fix brought it to 162 ms<sup class="cite">[<a href="#src-1">1</a>]</sup>.</p>
-<p>PR #56148, merged 2026-10-13, admitted short multi-query batches to 3D through the same shape-only gate. On a width-6 MiniMax-M3 TP8 shape at 128k, measured before admission was narrowed to widths 2..5, the attention kernel ran roughly 10x faster on SM120 and H200, and the worst admitted shape lost 1.21x<sup class="cite">[<a href="#src-2">2</a>]</sup>. PR #58482 (merged 2026-10-01) made SM120's segment count occupancy-adaptive after a constant 64 regressed Llama-3.1-8B with EAGLE3 (a speculative-decoding head) at concurrency 8 and 768-token prompts to 0.962x tokens/s, because &quot;Once the grid fills the GPU, more segments only add partial-result traffic and reducer work&quot;<sup class="cite">[<a href="#src-18">18</a>]</sup>. Over 176 SM120 verify shapes timed for #56148, 64 segments beat 16 by 1.15–3.6x from 8k context and lost only at 2k context, by at most 6%<sup class="cite">[<a href="#src-2">2</a>]</sup>.</p>
-<p>Two widely cited PRs are not shipped behavior: PR #46724 (unmerged) reported 7.30x for a diffusion-LM canvas at 24 queries and 92K KV on B200, shrinking to 2.46x at four sequences &quot;as more sequences fill the grid&quot;<sup class="cite">[<a href="#src-52">52</a>]</sup>; PR #45450 (open, superseded in practice by #56148) reported B300 gemma-4-31B TPOT (time per output token) falling from 13.42 to 3.12 ms at batch 1<sup class="cite">[<a href="#src-53">53</a>]</sup>.</p>
-<p>RDNA tuning found the 16-segment constant wrong in both directions, too few programs for one request on a 32-CU part and too many tiny ones for larger batches; PR #60418 (open) proposes halving the gfx1201 threshold to <code>64 // num_kv_heads</code> after a 3,888-batch forced-2D/forced-3D sweep<sup class="cite">[<a href="#src-54">54</a>]</sup>. PR #56276 raised gfx1151 segments to 32 for MQA (multi-query attention, one KV head), improving end-to-end latency 12.7–15.7% at batch 1 with an 8k prompt while an 8-KV-head control stayed flat<sup class="cite">[<a href="#src-55">55</a>]</sup>. PR #61646 (open, R9700) splits only sliding-window layers<sup class="cite">[<a href="#src-56">56</a>]</sup>.</p>
-<h3>3.3 Reading the gate against the cost model</h3>
-<div class="tbl"><table>
+</table>
+<h2 id="vllm-triton-unified-attention-2d-vs-3d-kernels">3. vLLM Triton
+Unified Attention: 2D vs 3D Kernels</h2>
+<p>The Triton backend (<code>TRITON_ATTN</code>) is the one place where
+vLLM itself makes the split decision. A launcher gate picks, per batch,
+either the 2D kernel (single-pass) or the 3D kernel (segmented, plus a
+<code>reduce_segments</code> step). An April 2026 talk calls it the
+default for AMD deployments [26]. But vLLM main ranks it last among ROCm
+backends, behind <code>ROCM_ATTN</code>, which merged PR #36702 put
+first [47]. So it is chosen when those backends decline a shape. Nearly
+every change to its boundary came with a measurement.</p>
+<h3 id="the-gate-as-of-vllm-main-october-2026">3.1 The gate, as of vLLM
+main (October 2026)</h3>
+<p>The launcher runs 2D in any of these cases: scratch is missing or too
+small; <code>max_seqlen_q &gt; 1</code> and the query exceeds
+<code>MAX_3D_QUERY_LEN</code> or masking is non-causal;
+<code>num_seqs * cdiv(max_seqlen_q, BLOCK_Q) &gt; seq_threshold_3D</code>;
+or batch invariance is enabled [6]. The query test reads the batch
+maximum. So when an iteration carries a chunked-prefill chunk, all its
+decodes run on 2D. FlashInfer, by contrast, plans decode rows separately
+[7], and FA3 handles mixed varlen batches in one call [5]. No source
+measures what this costs in serving. On main,
+<code>MAX_3D_QUERY_LEN</code> is 8 for the unified kernel [6, 25]. (The
+DiffKV variant, fixed by #59085, admits verify widths up to 16 [48, 1].)
+PR #56148’s final commit text states that admission is “widths 2..5 on
+every platform; width &gt;= 6 uses 2D”, enforced on top of that constant
+[2].</p>
+<p>The threshold is <code>128 // num_heads_kv</code>. Under full decode
+graphs it snaps to
+<code>the CUDA Graph capture size closest to self.seq_threshold_3D</code>,
+so each captured graph covers one kernel [25]. PR #28306 added the snap,
+along with a guard [49]. If snapping would push the threshold above 4x
+its unsnapped value, the guard resets it to 0, which means 2D only. A
+reviewer called 2D-only a safe choice for CUDA graph compatibility [49].
+The 3D kernel fixes the segment count per sequence. So short sequences
+produce empty segments, which <code>reduce_segments</code> masks out
+[6]. The count is 16. It rises to 64 on SM120 when 16 segments would
+underfill the GPU [25]. The gate reads batch size, KV heads, query width
+and capture sizes. It never reads KV length.</p>
+<h3 id="how-the-boundary-moved-pr-by-pr">3.2 How the boundary moved, PR
+by PR</h3>
+<p>PR #19152 (June 2025) introduced 3D with 16 segments. It reported
+“more than a factor of two” end to end at batch 1 with long outputs on
+H100 [50]. The authors’ paper confirms 3D was “only launched for decode
+attention on small batches involving longer sequences” [51]. But until
+October 2026, any <code>max_seqlen_q &gt; 1</code> forced 2D. So a
+single-stream verify ran “(1, 4) = 4 CTAs on a 70-SM GPU, each CTA
+sequentially walking the entire KV history” [1]. That was a 19.6–48.7x
+kernel penalty at 65–67K KV [1]. On gfx1151 (an RDNA client GPU), a
+verify iteration took 581 ms, against 92 ms without speculation, until
+the 3D fix brought it to 162 ms [1].</p>
+<p>PR #56148, merged 2026-10-13, let short multi-query batches into 3D
+through the same shape-only gate. It was measured on a width-6
+MiniMax-M3 TP8 shape at 128k, before admission was narrowed to widths
+2..5. There the attention kernel ran roughly 10x faster on SM120 and
+H200, and the worst admitted shape lost 1.21x [2]. PR #58482 (merged
+2026-10-01) made SM120’s segment count adapt to occupancy. A constant 64
+had regressed Llama-3.1-8B with EAGLE3 (a speculative-decoding head) to
+0.962x tokens/s, at concurrency 8 and 768-token prompts [18]. The reason
+given: “Once the grid fills the GPU, more segments only add
+partial-result traffic and reducer work” [18]. Across 176 SM120 verify
+shapes timed for #56148, 64 segments beat 16 by 1.15–3.6x from 8k
+context up. They lost only at 2k context, by at most 6% [2].</p>
+<p>Two widely cited PRs are not shipped behavior. PR #46724 (unmerged)
+reported 7.30x for a diffusion-LM canvas at 24 queries and 92K KV on
+B200. That shrank to 2.46x at four sequences “as more sequences fill the
+grid” [52]. PR #45450 (open, in practice superseded by #56148) reported
+B300 gemma-4-31B TPOT (time per output token) falling from 13.42 to 3.12
+ms at batch 1 [53].</p>
+<p>RDNA tuning found the 16-segment constant wrong in both directions
+[54]. It gives too few programs for one request on a 32-CU part, and too
+many tiny ones for larger batches. PR #60418 (open) proposes halving the
+gfx1201 threshold to <code>64 // num_kv_heads</code>, after a
+3,888-batch sweep of forced 2D against forced 3D [54]. PR #56276 raised
+gfx1151 segments to 32 for MQA (multi-query attention, one KV head).
+That improved end-to-end latency by 12.7–15.7% at batch 1 with an 8k
+prompt, while an 8-KV-head control stayed flat [55]. PR #61646 (open,
+R9700) splits only sliding-window layers [56].</p>
+<h3 id="reading-the-gate-against-the-cost-model">3.3 Reading the gate
+against the cost model</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
 <thead>
 <tr>
 <th>Input</th>
@@ -294,20 +603,91 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <td>no split-KV in invariant mode</td>
 </tr>
 </tbody>
-</table></div>
-<p>The gate is right about the entry condition and blind to the cost model's other two axes: with no KV floor it splits short contexts where the reduce launch dominates, and with no SM scaling it probably under-splits large parts. It is a good default for low-batch long-context decode and verify and a small tax at short context. The persistent 3D kernel the IBM authors describe, with a static grid sized from SMs per KV head and CPU-generated scheduling tensors, is the better end state because real lengths would drive the split<sup class="cite">[<a href="#src-26">26</a>]</sup>.</p>
-<h2 id="sec-4">4. FlashAttention and num_splits</h2>
-<p>FlashAttention exposes split-KV as one integer, <code>num_splits</code>: 1 is single-pass, more adds a separate combine kernel. Upstream FA3 picks the value with a host heuristic and refines it on the device for variable-length batches; vLLM sets a cap and decides when the heuristic may run. On Ampere and Hopper <code>FLASH_ATTN</code> is first in vLLM's backend priority, so this code decides on a default H100 deployment<sup class="cite">[<a href="#src-57">57</a>]</sup>.</p>
-<h3>4.1 The upstream heuristic</h3>
-<p>FA3's <code>get_num_splits</code> packs GQA into the query dimension and, for dynamic-split varlen batches, deliberately computes an upper bound: <code>We assume the case where there's 1 long sequence and the rest are short, i.e. pretending that batch = 1</code><sup class="cite">[<a href="#src-39">39</a>]</sup>. The heuristic returns one split at W ≥ 0.8, one split if <code>num_n_blocks &lt;= 4</code> (<code>we never split for hdim = 128 and seqlen_k = 512</code>), and otherwise the smallest split count at ≥85% of the best wave efficiency, on the grounds that excess splits add HBM traffic<sup class="cite">[<a href="#src-9">9</a>]</sup>. The 512-token guard has a small measured price: on H100 with a Llama-70B shape at batch 1 it leaves 8 CTAs on 132 SMs, and three splits save about 2.5 µs, shrinking to roughly 1.0–1.05x without precomputed scheduler metadata<sup class="cite">[<a href="#src-20">20</a>]</sup>, a minor defect.</p>
-<h3>4.2 What vLLM overrides, and who actually decides</h3>
-<p>vLLM's FA backend (<code>flash_attn.py</code>, main as of 2026-10-25) handles three cases<sup class="cite">[<a href="#src-5">5</a>]</sup>. Eager batches get <code>max_num_splits = 0</code>, <code>use FA3's heuristics, not CG compatible</code>. Batches within the full-graph capture range get <code>flash_attn_max_num_splits_for_cuda_graph</code>, default 32<sup class="cite">[<a href="#src-58">58</a>]</sup>, so buffers are pre-allocated at capture, plus a persistent <code>scheduler_metadata</code> buffer refreshed in place. Under <code>VLLM_BATCH_INVARIANT</code>, <code>max_num_splits = 1</code> and the AOT (ahead-of-time) schedule is disabled because the <code>schedule varies with max_seqlen_q/k</code>.</p>
-<p>The cap is not the split count. FA3's <code>prepare_varlen_num_blocks</code> kernel computes, on the device at every replay, <code>blocks_per_sm = ceil(total_blocks * 1.1 * num_head / num_sm)</code> and <code>num_splits_dynamic = min(ceil(num_n_blocks / blocks_per_sm), num_splits_static)</code>, falling back to one split above batch 992<sup class="cite">[<a href="#src-44">44</a>]</sup>. The live decision belongs to FA3's device scheduler, which sees actual lengths bounded by vLLM's cap. Read from the code<sup class="cite">[<a href="#src-44">44</a>, <a href="#src-5">5</a>]</sup> and unverified at runtime, it is the only production design surveyed whose split count stays data-driven inside a captured graph. vLLM turns it off for spec-decode proposers as well as under batch invariance.</p>
-<p>Two unmeasured inferences follow. The device path does not reapply the <code>num_n_blocks &lt;= 4</code> guard, so with 4 KV blocks, 8 heads and 132 SMs it yields four splits where eager FA3 would run one<sup class="cite">[<a href="#src-44">44</a>, <a href="#src-9">9</a>]</sup>. And because <code>blocks_per_sm</code> sums work across the batch, the split adapts to batch composition, which is exactly what batch invariance forbids<sup class="cite">[<a href="#src-5">5</a>]</sup>.</p>
-<h3>4.3 Is the cap right?</h3>
-<p>The original default of 16 came from upstream FlashAttention when PR #25274 made it configurable. Its DeepSeek-V3 TP8 FLASH_ATTN_MLA run (8 sequences, about 32k-token inputs) showed median TPOT of 34.75, 32.48 and 30.98 ms at caps 16, 32 and 64 (−11%; mean 61.00 → 44.26 ms), but P99 TPOT rose from 136.90 to 178.50 ms, throughput was non-monotonic, and the 20-request runs generated different token counts<sup class="cite">[<a href="#src-59">59</a>]</sup>. The evidence for raising the cap is directional and noisy.</p>
-<p>FA2's varlen paged path treats split-KV as opt-in: a fix that re-enabled splitting for every paged call was closed after splits of 2 and 4 ran slower than splits=0 across KV lengths 512–16384, and a vLLM-fork PR proposing splits only on explicit request (closed as a duplicate) cited −13.8% to −18.9% verify latency at batch 1 on an RTX 3090<sup class="cite">[<a href="#src-42">42</a>]</sup>.</p>
-<div class="tbl"><table>
+</table>
+<p>The gate gets the entry condition right. But it is blind to the cost
+model’s other two axes. It has no KV floor, so it splits short contexts
+where the reduce launch dominates. And it has no SM scaling, so it
+probably under-splits large parts. It is a good default for low-batch
+long-context decode and verify, and a small tax at short context. The
+IBM authors describe a persistent 3D kernel, with a static grid sized
+from SMs per KV head and scheduling tensors generated on the CPU [26].
+That is the better end state, because real lengths would drive the split
+[26].</p>
+<h2 id="flashattention-and-num_splits">4. FlashAttention and
+num_splits</h2>
+<p>FlashAttention exposes split-KV as one integer,
+<code>num_splits</code>. A value of 1 is single-pass; anything more adds
+a separate combine kernel. Upstream FA3 picks the value with a host
+heuristic, then refines it on the device for variable-length batches.
+vLLM sets a cap and decides when the heuristic may run. On Ampere and
+Hopper, <code>FLASH_ATTN</code> is first in vLLM’s backend priority, so
+this code decides on a default H100 deployment [57].</p>
+<h3 id="the-upstream-heuristic">4.1 The upstream heuristic</h3>
+<p>FA3’s <code>get_num_splits</code> packs GQA into the query dimension.
+For dynamic-split varlen batches, it computes an upper bound on purpose:
+<code>We assume the case where there's 1 long sequence and the rest are short, i.e. pretending that batch = 1</code>
+[39]. The heuristic returns one split at W ≥ 0.8 [9]. It also returns
+one split if <code>num_n_blocks &lt;= 4</code>
+(<code>we never split for hdim = 128 and seqlen_k = 512</code>) [9].
+Otherwise it picks the smallest split count that reaches ≥85% of the
+best wave efficiency, because extra splits add HBM traffic [9]. The
+512-token guard has a small measured cost. On H100 with a Llama-70B
+shape at batch 1, it leaves 8 CTAs on 132 SMs [20]. Three splits save
+about 2.5 µs, and the gain shrinks to roughly 1.0–1.05x without
+precomputed scheduler metadata [20]. It is a minor defect.</p>
+<h3 id="what-vllm-overrides-and-who-actually-decides">4.2 What vLLM
+overrides, and who actually decides</h3>
+<p>vLLM’s FA backend (<code>flash_attn.py</code>, main as of 2026-10-25)
+handles three cases [5]. Eager batches get
+<code>max_num_splits = 0</code>
+(<code>use FA3's heuristics, not CG compatible</code>). Batches inside
+the full-graph capture range get
+<code>flash_attn_max_num_splits_for_cuda_graph</code>, default 32 [58].
+That way buffers are pre-allocated at capture, along with a persistent
+<code>scheduler_metadata</code> buffer that is refreshed in place. Under
+<code>VLLM_BATCH_INVARIANT</code>, <code>max_num_splits = 1</code>, and
+the AOT (ahead-of-time) schedule is turned off because the
+<code>schedule varies with max_seqlen_q/k</code>.</p>
+<p>The cap is not the split count. At every replay, FA3’s
+<code>prepare_varlen_num_blocks</code> kernel computes, on the device,
+<code>blocks_per_sm = ceil(total_blocks * 1.1 * num_head / num_sm)</code>
+and
+<code>num_splits_dynamic = min(ceil(num_n_blocks / blocks_per_sm), num_splits_static)</code>
+[44]. Above batch 992 it falls back to one split [44]. So the live
+decision belongs to FA3’s device scheduler. It sees actual lengths,
+bounded by vLLM’s cap. We read this from the code [44, 5]; nobody has
+checked it at runtime. On that reading, it is the only production design
+surveyed whose split count stays data-driven inside a captured graph.
+vLLM turns it off for spec-decode proposers, and under batch invariance
+too.</p>
+<p>Two inferences follow, and neither has been measured. The device path
+does not reapply the <code>num_n_blocks &lt;= 4</code> guard. So with 4
+KV blocks, 8 heads and 132 SMs it yields four splits, where eager FA3
+would run one [44, 9]. And <code>blocks_per_sm</code> sums work across
+the batch, so the split adapts to batch composition. That is exactly
+what batch invariance forbids [5].</p>
+<h3 id="is-the-cap-right">4.3 Is the cap right?</h3>
+<p>The original default of 16 came from upstream FlashAttention, when PR
+#25274 made it configurable. That PR’s DeepSeek-V3 TP8 FLASH_ATTN_MLA
+run (8 sequences, about 32k-token inputs) showed median TPOT of 34.75,
+32.48 and 30.98 ms at caps 16, 32 and 64 (−11%; mean 61.00 → 44.26 ms)
+[59]. But P99 TPOT rose from 136.90 to 178.50 ms, throughput was
+non-monotonic, and the 20-request runs generated different token counts
+[59]. So the evidence for raising the cap points in one direction, but
+it is noisy.</p>
+<p>FA2’s varlen paged path treats split-KV as opt-in. A fix that
+re-enabled splitting for every paged call was closed, after splits of 2
+and 4 ran slower than splits=0 across KV lengths 512–16384 [42]. A
+vLLM-fork PR that proposed splitting only on explicit request (closed as
+a duplicate) cited −13.8% to −18.9% verify latency at batch 1 on an RTX
+3090 [42].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
 <thead>
 <tr>
 <th>FA path in vLLM</th>
@@ -342,27 +722,121 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <td>only if requested (proposal)</td>
 </tr>
 </tbody>
-</table></div>
-<p>On Hopper, vLLM plus FA3 already approximates the right architecture, a device-side scheduler writing into capture-sized buffers. The cap rarely binds: by the device formula, one 32k sequence with 8 KV heads on 132 SMs gets about 15 splits. A cap of 32 therefore binds only when batch × KV heads per GPU is below about 4, as with MQA, MLA or TP-sharded GQA at batch 1–3 (our inference from<sup class="cite">[<a href="#src-44">44</a>]</sup>). Raising it toward 64 is justified there, with tail latency monitored, on the strength of one noisy MLA run<sup class="cite">[<a href="#src-59">59</a>]</sup>.</p>
-<h2 id="sec-5">5. FlashInfer and the TRT-LLM Kernels (XQA, TRT-LLM-gen)</h2>
-<p>FlashInfer is a kernel library with native decode kernels and a planner that runs on the CPU before each launch. It also wraps two NVIDIA TensorRT-LLM families: XQA, a decode kernel specialized for grouped- and multi-query attention, and trtllm-gen, TensorRT-LLM's generated attention kernels for Blackwell.</p>
-<h3>5.1 Routing: vLLM picks the kernel, the kernel picks the split</h3>
-<p>On Blackwell <code>FLASHINFER</code> is first in vLLM's backend priority<sup class="cite">[<a href="#src-57">57</a>]</sup>. Inside it vLLM selects the decode kernel statically, per the code comment <code>The decode kernel must be selected statically for FULL cudagraph capture</code>: XQA on SM90 and SM12x, trtllm-gen on the SM100 family, and FlashInfer's native kernels for unsupported layouts and pre-SM90 parts<sup class="cite">[<a href="#src-7">7</a>]</sup>. <code>supports_trtllm_attention</code> returns False under <code>VLLM_BATCH_INVARIANT</code> or without NVIDIA artifactory access<sup class="cite">[<a href="#src-60">60</a>]</sup>.</p>
-<h3>5.2 FlashInfer native: two planners</h3>
-<p>The non-persistent <code>BatchDecode</code> planner (FlashInfer main, October 2026) goes single-pass when <code>batch_size * gdy &gt;= max_grid_size</code> and otherwise binary-searches the smallest page chunk (at least 128 tokens) that keeps CTAs within one wave; without graphs it falls back to single-pass when nothing would split, but <code>when using CUDAGraph, we always use partition-kv kernel</code>, padding the batch to <code>max_grid_size / gdy</code><sup class="cite">[<a href="#src-23">23</a>]</sup>.</p>
-<p>The persistent scheduler from the MLSys 2025 paper splits only requests &quot;whose KV length exceeds the total KV length divided by the number of CTAs&quot; and lets short requests write through without a reduce; both planners run on the CPU every iteration, outside the captured graph, into fixed-address, max-size workspace<sup class="cite">[<a href="#src-16">16</a>]</sup>. The paper's only scheduler ablation (H100, Llama-3.1-8B in SGLang) shows load balancing moving inter-token latency (ITL) from 9.16 to 8.96 ms on ShareGPT but from 13.89 to 8.63 ms on uniform 4k–16k inputs, bounding the value of the split logic rather than comparing split with single-pass<sup class="cite">[<a href="#src-16">16</a>]</sup>.</p>
-<h3>5.3 XQA: split-happy, keyed to max length, merged in-kernel</h3>
-<p>XQA's split count (TensorRT-LLM main, October 2026) is <code>historyLength / 128</code>, capped at <code>round(sqrt(8n))</code>, reduced only if the grid exceeds 8 waves, and bounded by the 6,000-sub-sequence workspace. MLA gets one split, and the spec-decode variant skips splitting when <code>batchSize &gt; 32 || historyLength &lt; 2048</code> and otherwise asserts at most one wave<sup class="cite">[<a href="#src-35">35</a>, <a href="#src-40">40</a>]</sup>. Each CTA writes row max, row sum and partial output to scratch, and <code>only the CTA that performs the multi-block merge may write the output</code>, so XQA pays no second launch<sup class="cite">[<a href="#src-15">15</a>]</sup>.</p>
-<p>Because <code>historyLength</code> is the batch maximum, short requests in a mixed batch inherit the long request's split count; for one KV head per GPU at history 8,192 and batch 1, the code yields n = min(64, round(sqrt(512))) = 23 splits<sup class="cite">[<a href="#src-35">35</a>]</sup>. At batch 128 and history 4,096 it still yields 8 splits with one KV head and 2 with four, so XQA keeps splitting up to about 4x the SM count, against TensorRT-LLM's documented batch × heads &lt; SMs guidance (derived from the code)<sup class="cite">[<a href="#src-35">35</a>, <a href="#src-21">21</a>]</sup>. TensorRT-LLM has had multi-block &quot;turned on by default starting from TRT-LLM 0.13&quot;<sup class="cite">[<a href="#src-21">21</a>]</sup>, and NVIDIA claims &quot;up to 3.5x more tokens per second&quot; on HGX H200 at low batch and long sequences, without a table<sup class="cite">[<a href="#src-19">19</a>]</sup>.</p>
-<p>The XQA problem actually measured is under-splitting. FlashInfer PR #4904 (open) replaces the SM90 fp8 launcher's collapsing rule with a cost model, <code>ceil(waves) * (tiles / split + overhead) + merge * split</code>, gaining 1.38x at batch 32 and 32,768 KV and 1.78x with random lengths at batch 64 on GH200 under CUDA graphs; its one regression, 0.92x at batch 128 and KV 512, came from splitting 8-tile sequences three ways<sup class="cite">[<a href="#src-4">4</a>]</sup>.</p>
-<h3>5.4 trtllm-gen: one wave, persistent fallback, opt-in beyond</h3>
-<p>FlashInfer's launcher hard-codes multi-CTA-KV mode for generation<sup class="cite">[<a href="#src-61">61</a>]</sup>. The split is <code>min(tunedMax, max(1, SMs / baseNumCtas))</code> with <code>tunedMax = ceil(window / (2*stepKv))</code>; at 1 or below the kernel switches to <code>MultiCtasKvMode::Disabled</code> and a persistent tile scheduler, trtllm-gen's single-pass<sup class="cite">[<a href="#src-11">11</a>]</sup>. The rule sees <code>mMaxSeqLenKv</code>, not per-request lengths. PR #6331 (merged; B200, FP8) added an opt-in 4-wave split when one wave gives ≤ 2 splits (4 is a hard cap, because more waves can leave the reduction kernel a zero-size grid). It was faster at every batch from 25 to 148 with random lengths (geomean 1.22x at 64k, 1.27x at 288k), neutral with fixed lengths and slower at 8k. Under a graph captured with <code>max_seq_len</code> of 1M, it gave 2.02x at batch 38 with lognormal 288k lengths but 0.57x at batch 25 with uniform 8k<sup class="cite">[<a href="#src-27">27</a>]</sup>. It stayed opt-in because under CUDA graphs only the maximum length is known, so short requests get too many splits<sup class="cite">[<a href="#src-27">27</a>]</sup>.</p>
+</table>
+<p>On Hopper, vLLM plus FA3 already comes close to the right
+architecture: a device-side scheduler writing into capture-sized
+buffers. The cap rarely binds. By the device formula, one 32k sequence
+with 8 KV heads on 132 SMs gets about 15 splits. So a cap of 32 binds
+only when batch × KV heads per GPU is below about 4. That happens with
+MQA, MLA or TP-sharded GQA at batch 1–3 (our inference from [44]).
+There, raising the cap toward 64 is justified, with tail latency
+watched, on the strength of one noisy MLA run [59].</p>
+<h2 id="flashinfer-and-the-trt-llm-kernels-xqa-trt-llm-gen">5.
+FlashInfer and the TRT-LLM Kernels (XQA, TRT-LLM-gen)</h2>
+<p>FlashInfer is a kernel library. It has native decode kernels and a
+planner that runs on the CPU before each launch. It also wraps two
+NVIDIA TensorRT-LLM kernel families. XQA is a decode kernel specialized
+for grouped- and multi-query attention. trtllm-gen is TensorRT-LLM’s set
+of generated attention kernels for Blackwell.</p>
+<h3 id="routing-vllm-picks-the-kernel-the-kernel-picks-the-split">5.1
+Routing: vLLM picks the kernel, the kernel picks the split</h3>
+<p>On Blackwell, <code>FLASHINFER</code> is first in vLLM’s backend
+priority [57]. Inside it, vLLM picks the decode kernel statically, per
+the code comment
+<code>The decode kernel must be selected statically for FULL cudagraph capture</code>
+[7]. XQA runs on SM90 and SM12x, trtllm-gen on the SM100 family, and
+FlashInfer’s native kernels on unsupported layouts and pre-SM90 parts
+[7]. <code>supports_trtllm_attention</code> returns False under
+<code>VLLM_BATCH_INVARIANT</code> or without NVIDIA artifactory access
+[60].</p>
+<h3 id="flashinfer-native-two-planners">5.2 FlashInfer native: two
+planners</h3>
+<p>The non-persistent <code>BatchDecode</code> planner (FlashInfer main,
+October 2026) goes single-pass when
+<code>batch_size * gdy &gt;= max_grid_size</code> [23]. Otherwise it
+binary-searches for the smallest page chunk (at least 128 tokens) that
+keeps CTAs within one wave [23]. Without graphs, it falls back to
+single-pass when nothing would split. But
+<code>when using CUDAGraph, we always use partition-kv kernel</code>,
+padding the batch to <code>max_grid_size / gdy</code> [23].</p>
+<p>The persistent scheduler from the MLSys 2025 paper splits only
+requests “whose KV length exceeds the total KV length divided by the
+number of CTAs” [16]. Short requests write through without a reduce
+[16]. Both planners run on the CPU every iteration, outside the captured
+graph, into a fixed-address, max-size workspace [16]. The paper’s only
+scheduler ablation (H100, Llama-3.1-8B in SGLang) shows load balancing
+moving inter-token latency (ITL) from 9.16 to 8.96 ms on ShareGPT, but
+from 13.89 to 8.63 ms on uniform 4k–16k inputs [16]. That bounds the
+value of the split logic. It does not compare split with single-pass
+[16].</p>
+<h3 id="xqa-split-happy-keyed-to-max-length-merged-in-kernel">5.3 XQA:
+split-happy, keyed to max length, merged in-kernel</h3>
+<p>XQA’s split count (TensorRT-LLM main, October 2026) is
+<code>historyLength / 128</code>, capped at <code>round(sqrt(8n))</code>
+[35, 40]. It is reduced only if the grid exceeds 8 waves, and it is
+bounded by the 6,000-sub-sequence workspace [35, 40]. MLA gets one
+split. The spec-decode variant skips splitting when
+<code>batchSize &gt; 32 || historyLength &lt; 2048</code>, and otherwise
+asserts at most one wave [35, 40]. Each CTA writes row max, row sum and
+partial output to scratch. And
+<code>only the CTA that performs the multi-block merge may write the output</code>,
+so XQA pays for no second launch [15].</p>
+<p><code>historyLength</code> is the batch maximum. So short requests in
+a mixed batch inherit the long request’s split count. For one KV head
+per GPU at history 8,192 and batch 1, the code yields n = min(64,
+round(sqrt(512))) = 23 splits [35]. At batch 128 and history 4,096 it
+still yields 8 splits with one KV head, and 2 with four [35]. So XQA
+keeps splitting up to about 4x the SM count (we worked this out from the
+code) [35]. That goes against TensorRT-LLM’s documented batch × heads
+&lt; SMs guidance [21]. TensorRT-LLM has had multi-block “turned on by
+default starting from TRT-LLM 0.13” [21]. NVIDIA claims “up to 3.5x more
+tokens per second” on HGX H200 at low batch and long sequences, but
+gives no table [19].</p>
+<p>The XQA problem that has actually been measured is under-splitting.
+FlashInfer PR #4904 (open) replaces the SM90 fp8 launcher’s collapsing
+rule with a cost model,
+<code>ceil(waves) * (tiles / split + overhead) + merge * split</code>
+[4]. On GH200 under CUDA graphs it gains 1.38x at batch 32 and 32,768
+KV, and 1.78x with random lengths at batch 64 [4]. Its one regression,
+0.92x at batch 128 and KV 512, came from splitting 8-tile sequences
+three ways [4].</p>
+<h3 id="trtllm-gen-one-wave-persistent-fallback-opt-in-beyond">5.4
+trtllm-gen: one wave, persistent fallback, opt-in beyond</h3>
+<p>FlashInfer’s launcher hard-codes multi-CTA-KV mode for generation
+[61]. The split is <code>min(tunedMax, max(1, SMs / baseNumCtas))</code>
+with <code>tunedMax = ceil(window / (2*stepKv))</code> [11]. At 1 or
+below, the kernel switches to <code>MultiCtasKvMode::Disabled</code> and
+a persistent tile scheduler, which is trtllm-gen’s single-pass [11]. The
+rule sees <code>mMaxSeqLenKv</code>, not per-request lengths. PR #6331
+(merged; B200, FP8) added an opt-in 4-wave split for when one wave gives
+≤ 2 splits [27]. 4 is a hard cap, because more waves can leave the
+reduction kernel a zero-size grid. With random lengths it was faster at
+every batch from 25 to 148 (geomean 1.22x at 64k, 1.27x at 288k). It was
+neutral with fixed lengths and slower at 8k. Under a graph captured with
+<code>max_seq_len</code> of 1M, it gave 2.02x at batch 38 with lognormal
+288k lengths, but 0.57x at batch 25 with uniform 8k [27]. It stayed
+opt-in because under CUDA graphs only the maximum length is known, so
+short requests get too many splits [27].</p>
 <ul>
-<li>PR #6267 clamped more than 16 splits to 16 so the CGA reduction survives, for 1.33x on SM107 and 1.38x on B200 at batch 1 and 65,536 KV<sup class="cite">[<a href="#src-36">36</a>]</sup>.</li>
-<li>PR #6522 (open) adds a wave-aware split of 2 to 5 when the base grid is 1x–1.5x the SM count and KV is at least 4 MiB per sequence: 1.28x at batch 209 on SM107, 1.02–1.11x on B200, and 0.995–1.017x outside that window<sup class="cite">[<a href="#src-3">3</a>]</sup>.</li>
-<li>PR #3379 (open) oversubscribes SMs for mixed-length DeepSeek-V3 MLA decode, for 1.50–2.62x at q_len 1 on a production-like length mix<sup class="cite">[<a href="#src-62">62</a>]</sup>.</li>
+<li>PR #6267 clamped more than 16 splits down to 16 so the CGA reduction
+still works. That gave 1.33x on SM107 and 1.38x on B200 at batch 1 and
+65,536 KV [36].</li>
+<li>PR #6522 (open) adds a wave-aware split of 2 to 5 when the base grid
+is 1x–1.5x the SM count and KV is at least 4 MiB per sequence. Results:
+1.28x at batch 209 on SM107, 1.02–1.11x on B200, and 0.995–1.017x
+outside that window [3].</li>
+<li>PR #3379 (open) oversubscribes SMs for mixed-length DeepSeek-V3 MLA
+decode. It gets 1.50–2.62x at q_len 1 on a production-like length mix
+[62].</li>
 </ul>
-<div class="tbl"><table>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
 <thead>
 <tr>
 <th>Kernel</th>
@@ -402,28 +876,106 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <td>2·stepKv per CTA, CGA ≤ 16, one wave (4 opt-in)</td>
 </tr>
 </tbody>
-</table></div>
-<p>FlashInfer's plan-time scheduler is the better architecture for mixed lengths. XQA and trtllm-gen are graph-stable because they are blind to live lengths: XQA tolerates up to 8 waves, trtllm-gen stops at one. On Blackwell, vLLM's effective split policy is trtllm-gen's default unless the user sets the multi-wave environment variable.</p>
-<h2 id="sec-6">6. ROCm Decode Attention Paths</h2>
-<p>On AMD GPUs vLLM tries its attention backends in priority order, and the first that supports the model's shape wins; in vLLM main the non-MLA order is <code>ROCM_ATTN</code> → <code>ROCM_AITER_FA</code> → <code>ROCM_AITER_UNIFIED_ATTN</code> → <code>TRITON_ATTN</code><sup class="cite">[<a href="#src-63">63</a>]</sup>. AITER is AMD's kernel library, with decode kernels in hand-written assembly (ASM), Triton and Gluon (a lower-level Triton dialect), each encoding its own split policy. MLA models use a separate backend family on both vendors (<code>FLASHINFER_MLA</code> first on NVIDIA, AITER MLA here), covered only where it reuses XQA, trtllm-gen or SGLang's AMD MLA kernel. FlashMLA plans <code>num_splits</code> by a rule the sources do not document<sup class="cite">[<a href="#src-57">57</a>, <a href="#src-63">63</a>]</sup>.</p>
-<h3>6.1 Four policies behind one platform (vLLM and AITER main, October 2026)</h3>
-<ol>
-<li><strong>HIP custom paged attention (ll4mi, the <code>ROCM_ATTN</code> default): always split.</strong> The partition is a compile-time 256 tokens, the grid is <code>(num_seqs, ceil(max_seq_len/256), num_kv_heads)</code>, workgroups past a sequence's end exit early, and a separate reduce always follows with no single-partition skip<sup class="cite">[<a href="#src-46">46</a>]</sup>. Scratch is allocated per call from <code>max_seq_len</code><sup class="cite">[<a href="#src-41">41</a>]</sup>, and the only gate is capability (head size, block size, GQA ratio, context length), not occupancy<sup class="cite">[<a href="#src-63">63</a>]</sup>.</li>
-<li><strong>AITER FA decode: split below 2 × CUs.</strong> <code>paged_attention_common</code> picks the ASM kernel only at head size 128, where int8 KV or <code>high_precision == 2</code> force it and otherwise <code>num_seqs * num_heads &gt; 2 * cu_num</code> decides; every other case gets the 256-token HIP split kernel<sup class="cite">[<a href="#src-64">64</a>, <a href="#src-65">65</a>]</sup>. On a 304-CU MI300X the switch falls at 608, about batch 19 for 32 query heads, so at head size 128 the split kernel never meets the large batches where its reduce would cost most.</li>
-<li><strong>AITER Triton unified attention: CU-scaled.</strong> It runs 2D for sliding windows (SWA), for <code>max_seqlen_k &lt;= 512</code>, or when 2D programs exceed <code>4 × CUs</code>; on gfx1100 the code documents a tighter crossover of <code>cu_count / 4</code> because segment traffic and the reduce cost more than the added parallelism<sup class="cite">[<a href="#src-24">24</a>]</sup>. The segment count collapses to one when each program's share of CUs is small<sup class="cite">[<a href="#src-45">45</a>]</sup>.</li>
-<li><strong>AITER Triton <code>pa_decode</code>: V1 vs V2.</strong> Legacy dispatch chose single-pass V1 when <code>max_seq_len &lt;= 8192</code> and (one partition, or <code>num_seqs * num_q_heads &gt; 512</code>)<sup class="cite">[<a href="#src-29">29</a>]</sup>, copying vLLM v0.6.0's CUDA rule, itself a shared-memory workaround<sup class="cite">[<a href="#src-10">10</a>]</sup>.</li>
+</table>
+<p>FlashInfer’s plan-time scheduler is the better architecture for mixed
+lengths. XQA and trtllm-gen are graph-stable because they are blind to
+live lengths. XQA tolerates up to 8 waves; trtllm-gen stops at one. On
+Blackwell, vLLM’s effective split policy is trtllm-gen’s default, unless
+the user sets the multi-wave environment variable.</p>
+<h2 id="rocm-decode-attention-paths">6. ROCm Decode Attention Paths</h2>
+<p>On AMD GPUs, vLLM tries its attention backends in priority order. The
+first one that supports the model’s shape wins. In vLLM main, the
+non-MLA order is <code>ROCM_ATTN</code> → <code>ROCM_AITER_FA</code> →
+<code>ROCM_AITER_UNIFIED_ATTN</code> → <code>TRITON_ATTN</code> [63].
+AITER is AMD’s kernel library. Its decode kernels come in hand-written
+assembly (ASM), Triton and Gluon (a lower-level Triton dialect), and
+each one has its own split policy. MLA models use a separate backend
+family on both vendors (<code>FLASHINFER_MLA</code> first on NVIDIA,
+AITER MLA here). We cover those only where they reuse XQA, trtllm-gen or
+SGLang’s AMD MLA kernel. FlashMLA plans <code>num_splits</code> by a
+rule the sources don’t document [57, 63].</p>
+<h3
+id="four-policies-on-one-platform-vllm-and-aiter-main-october-2026">6.1
+Four policies on one platform (vLLM and AITER main, October 2026)</h3>
+<ol type="1">
+<li><strong>HIP custom paged attention (ll4mi, the
+<code>ROCM_ATTN</code> default): always split.</strong> The partition
+size is fixed at compile time to 256 tokens. The grid is
+<code>(num_seqs, ceil(max_seq_len/256), num_kv_heads)</code>. Workgroups
+past the end of a sequence exit early. A separate reduce always runs
+after, and there’s no skip for the single-partition case [46]. Scratch
+memory is allocated on every call, sized from <code>max_seq_len</code>
+[41]. The only gate is capability (head size, block size, GQA ratio,
+context length), not occupancy [63].</li>
+<li><strong>AITER FA decode: split below 2 × CUs.</strong>
+<code>paged_attention_common</code> picks the ASM kernel only at head
+size 128. There, int8 KV or <code>high_precision == 2</code> forces it,
+and otherwise <code>num_seqs * num_heads &gt; 2 * cu_num</code> decides.
+Every other case gets the 256-token HIP split kernel [64, 65]. On a
+304-CU MI300X the switch falls at 608, which is about batch 19 with 32
+query heads. So at head size 128, the split kernel never sees the large
+batches where its reduce would cost the most.</li>
+<li><strong>AITER Triton unified attention: scaled by CU count.</strong>
+It runs 2D for sliding windows (SWA), for
+<code>max_seqlen_k &lt;= 512</code>, or when 2D programs exceed
+<code>4 × CUs</code>. On gfx1100 the code documents a tighter crossover
+of <code>cu_count / 4</code>, because segment traffic and the reduce
+cost more than the extra parallelism buys [24]. The segment count drops
+to one when each program’s share of CUs is small [45].</li>
+<li><strong>AITER Triton <code>pa_decode</code>: V1 vs V2.</strong> The
+legacy dispatch chose single-pass V1 when
+<code>max_seq_len &lt;= 8192</code> and either there was one partition
+or <code>num_seqs * num_q_heads &gt; 512</code> [29]. That copies vLLM
+v0.6.0’s CUDA rule, which was itself a workaround for a shared-memory
+limit [10].</li>
 </ol>
-<h3>6.2 What the ROCm measurements say</h3>
+<h3 id="what-the-rocm-measurements-say">6.2 What the ROCm measurements
+say</h3>
 <p>AITER now has measured split wins at W well above 1:</p>
 <ul>
-<li>PR #5859 (merged 2026-10-07) made gfx950 select V2 whenever the context spans more than one 1024-token partition, for 2.00–5.29x on the shapes that switched (geomean 3.13x) while shapes already on V2 stayed at 0.99–1.02x<sup class="cite">[<a href="#src-28">28</a>]</sup>.</li>
-<li>PR #6453 raised the Gluon persistent-split cap from 8 to 32 for small grids: 2.25x at batch 1 and 32k, 1.343x geomean over 72 shapes, with no shape slower<sup class="cite">[<a href="#src-66">66</a>]</sup>.</li>
-<li>PR #6434 (open) sizes splits from kernel occupancy and aligns them to whole 256-token partitions: 1.23x geomean on mixed lengths and 1.15x on equal lengths over 2,100 points, with 32 kept as a correctness cap because the reduce gives &quot;relative error up to 2.8 at 33 splits&quot;<sup class="cite">[<a href="#src-43">43</a>]</sup>.</li>
-<li>vLLM PR #62476 (closed unmerged, single run) routed gfx950 decode-width batches from AITER's Gluon kernel to its Triton split-KV kernel because the Gluon &quot;KV split leaves the launch on too few workgroups&quot;, raising MiniMax-M3 TP4 EAGLE3 throughput from 720.8 to 985.8 tok/s at about 135K input<sup class="cite">[<a href="#src-67">67</a>]</sup>.</li>
+<li>PR #5859 (merged 2026-10-07) made gfx950 pick V2 whenever the
+context spans more than one 1024-token partition. The shapes that
+switched got 2.00–5.29x faster (geomean 3.13x), and shapes already on V2
+stayed at 0.99–1.02x [28].</li>
+<li>PR #6453 raised the Gluon persistent-split cap from 8 to 32 for
+small grids. It got 2.25x at batch 1 and 32k, and 1.343x geomean over 72
+shapes, with no shape slower [66].</li>
+<li>PR #6434 (open) sizes splits from kernel occupancy and aligns them
+to whole 256-token partitions. It got 1.23x geomean on mixed lengths and
+1.15x on equal lengths over 2,100 points. It keeps 32 as a correctness
+cap, because the reduce gives “relative error up to 2.8 at 33 splits”
+[43].</li>
+<li>vLLM PR #62476 (closed unmerged, single run) sent gfx950
+decode-width batches from AITER’s Gluon kernel to its Triton split-KV
+kernel, because the Gluon “KV split leaves the launch on too few
+workgroups”. That raised MiniMax-M3 TP4 EAGLE3 throughput from 720.8 to
+985.8 tok/s at about 135K input [67].</li>
 </ul>
-<p>The only A/B against the HIP decode kernel is on RDNA and confounded by tile tuning: in PR #60418 (open), a tuned, occupancy-gated <code>TRITON_ATTN</code> beat it by 1.05x geomean at 1k context rising to 1.13x at 128k (worst 0.91x), and by 1.02–1.04x at 1 KV head per GPU against 1.12–1.17x at 8, the gradient expected if the unconditional reduce costs more as the unsplit grid fills<sup class="cite">[<a href="#src-54">54</a>]</sup>. The tax is real but small there; on CDNA at batch ≥ 256 nothing isolates it, and the closest evidence is the MI300 Triton result, where the split kernel lost at short outputs &quot;as the former includes an additional launch of a reduction kernel&quot;, a loss the static-launch-grid kernel under full HIP graphs removed<sup class="cite">[<a href="#src-51">51</a>]</sup>.</p>
-<p>The large published ROCm backend gains reflect routing more than split policy: <code>ROCM_AITER_FA</code> roughly halves spec-decode TPOT against <code>ROCM_ATTN</code> (11.10 to 5.62 ms at concurrency 1 on 8×MI300X) while non-spec decode was unchanged within ±1–5%<sup class="cite">[<a href="#src-68">68</a>]</sup>, and the vLLM ROCm blog attributes <code>ROCM_ATTN</code>'s 2.7–4.4x lower throughput on Qwen3-235B to unsupported KV head sizes &quot;forcing it to fall back to Triton decode kernels&quot;<sup class="cite">[<a href="#src-69">69</a>]</sup>.</p>
-<div class="tbl"><table>
+<p>There’s only one A/B against the HIP decode kernel. It’s on RDNA, and
+tile tuning muddies it. In PR #60418 (open), a tuned, occupancy-gated
+<code>TRITON_ATTN</code> beat the HIP kernel by 1.05x geomean at 1k
+context, rising to 1.13x at 128k (worst 0.91x). It won by 1.02–1.04x at
+1 KV head per GPU and by 1.12–1.17x at 8. That’s the pattern you’d
+expect if the always-on reduce costs more as the unsplit grid fills
+[54]. So the tax is real but small there. On CDNA at batch ≥ 256,
+nothing isolates it. The closest evidence is the MI300 Triton result.
+There the split kernel lost at short outputs “as the former includes an
+additional launch of a reduction kernel”, and the static-launch-grid
+kernel under full HIP graphs removed that loss [51].</p>
+<p>The big published ROCm backend gains come more from routing than from
+split policy. <code>ROCM_AITER_FA</code> roughly halves spec-decode TPOT
+against <code>ROCM_ATTN</code> (11.10 to 5.62 ms at concurrency 1 on
+8×MI300X), while non-spec decode stayed the same within ±1–5% [68]. And
+the vLLM ROCm blog blames <code>ROCM_ATTN</code>’s 2.7–4.4x lower
+throughput on Qwen3-235B on unsupported KV head sizes “forcing it to
+fall back to Triton decode kernels” [69].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
 <thead>
 <tr>
 <th>ROCm path</th>
@@ -459,7 +1011,7 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 </tr>
 <tr>
 <td>AITER Gluon persistent split</td>
-<td>occupancy-sized, ≤ 32</td>
+<td>sized by occupancy, ≤ 32</td>
 <td>small share</td>
 <td>1.23x mixed / 1.15x equal, worst 0.82x</td>
 </tr>
@@ -470,13 +1022,45 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <td>+12.7–15.7% e2e (gfx1151)</td>
 </tr>
 </tbody>
-</table></div>
-<p>ROCm inverts the NVIDIA default: NVIDIA backends are single-pass unless underfilled, while the ROCm HIP default splits unless the shape is unsupported. AMD's newer AITER paths gate on CUs, and their measurements fit the same bandwidth-saturation rule. The HIP default's unconditional reduce reads as an inheritance from the legacy V2 design rather than a measured policy. Because AITER FA at head size 128 reaches its split kernel only below 2 × CUs, that unmeasured large-batch tax belongs to <code>ROCM_ATTN</code>'s first-place priority alone. Recommendations for CDNA3 (MI300X) are therefore inference from the rule plus MI355X and RDNA data.</p>
-<h2 id="sec-7">7. CUDA-Graph and Batch-Invariance Constraints</h2>
-<p>A CUDA graph records a sequence of kernel launches once and replays it with a single CPU call, removing most launch overhead in decode; vLLM captures one graph per batch size from a configured list. Replay freezes grid dimensions and kernel arguments, so a split decision that depends on live lengths must be made at capture or by a scheduler that writes into fixed, pre-sized buffers. Batch invariance is stronger than determinism: a request's output must be bitwise identical regardless of which other requests share its batch.</p>
-<h3>7.1 CUDA graphs: the decision moves to capture time and goes blind</h3>
-<p>The IBM authors spell out the consequence: under graphs &quot;we always launch as many Triton kernels as we would need for the longest request possible&quot;, and the surplus waves &quot;outweighs the saving of the launch overhead in nearly all cases&quot;<sup class="cite">[<a href="#src-51">51</a>]</sup>. Their static-grid kernel under full graphs ran about 6% faster than the partial-graph split kernel on H100 and up to 1.99x faster on MI300, at batch 1 with grid, graph mode and heuristics bundled<sup class="cite">[<a href="#src-51">51</a>]</sup>.</p>
-<div class="tbl"><table>
+</table>
+<p>ROCm flips the NVIDIA default. NVIDIA backends run single-pass unless
+the GPU is underfilled. The ROCm HIP default splits unless the shape is
+unsupported. AMD’s newer AITER paths gate on CUs, and their measurements
+fit the same bandwidth-saturation rule. The HIP default’s always-on
+reduce looks like something carried over from the legacy V2 design, not
+a policy anyone measured. At head size 128, AITER FA only reaches its
+split kernel below 2 × CUs. So that unmeasured large-batch tax belongs
+only to <code>ROCM_ATTN</code>, because it sits first in priority. Our
+recommendations for CDNA3 (MI300X) are therefore inference: we built
+them from the rule plus MI355X and RDNA data.</p>
+<h2 id="cuda-graph-and-batch-invariance-constraints">7. CUDA-Graph and
+Batch-Invariance Constraints</h2>
+<p>A CUDA graph records a sequence of kernel launches once, then replays
+it with a single CPU call. That removes most launch overhead in decode.
+vLLM captures one graph per batch size from a configured list. Replay
+freezes grid dimensions and kernel arguments. So a split decision that
+depends on live lengths has to be made at capture time, or by a
+scheduler that writes into fixed, pre-sized buffers. Batch invariance is
+stronger than determinism. It means a request’s output must be bitwise
+identical no matter which other requests share its batch.</p>
+<h3
+id="cuda-graphs-the-decision-moves-to-capture-time-and-cant-see-real-lengths">7.1
+CUDA graphs: the decision moves to capture time and can’t see real
+lengths</h3>
+<p>The IBM authors spell out what this means. Under graphs “we always
+launch as many Triton kernels as we would need for the longest request
+possible”, and the extra waves “outweighs the saving of the launch
+overhead in nearly all cases” [51]. Their static-grid kernel under full
+graphs ran about 6% faster than the partial-graph split kernel on H100,
+and up to 1.99x faster on MI300. That was at batch 1, with grid, graph
+mode and heuristics all changed together [51].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
 <thead>
 <tr>
 <th>Backend</th>
@@ -490,59 +1074,143 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <td>vLLM Triton</td>
 <td>capture, vLLM</td>
 <td>padded batch size, KV heads</td>
-<td>split for every batch ≤ snapped threshold<sup class="cite">[<a href="#src-25">25</a>, <a href="#src-49">49</a>]</sup></td>
+<td>split for every batch ≤ snapped threshold [25, 49]</td>
 </tr>
 <tr>
 <td>vLLM FA3</td>
 <td>every replay, FA3 device scheduler</td>
 <td>live block counts, cap 32</td>
-<td>data-driven split up to the cap<sup class="cite">[<a href="#src-44">44</a>, <a href="#src-5">5</a>, <a href="#src-58">58</a>]</sup></td>
+<td>split driven by data, up to the cap [44, 5, 58]</td>
 </tr>
 <tr>
 <td>FlashInfer native</td>
 <td>every iteration, CPU plan</td>
 <td>live lengths, padded grid</td>
-<td>always partition-KV below one wave<sup class="cite">[<a href="#src-23">23</a>, <a href="#src-16">16</a>]</sup></td>
+<td>always partition-KV below one wave [23, 16]</td>
 </tr>
 <tr>
 <td>trtllm-gen, XQA</td>
 <td>host code, capture-time maxima</td>
 <td><code>max_seq_len</code>, batch, SMs</td>
-<td>split sized from worst-case length<sup class="cite">[<a href="#src-11">11</a>, <a href="#src-35">35</a>]</sup></td>
+<td>split sized from worst-case length [11, 35]</td>
 </tr>
 <tr>
 <td>ROCm HIP</td>
 <td>grid from <code>max_seq_len</code></td>
 <td>batch maximum length</td>
-<td>always split; empty partitions exit; declares graph support ALWAYS, capture behavior unverified<sup class="cite">[<a href="#src-46">46</a>, <a href="#src-70">70</a>]</sup></td>
+<td>always split; empty partitions exit; declares graph support ALWAYS,
+capture behavior unverified [46, 70]</td>
 </tr>
 <tr>
 <td>TurboQuant</td>
 <td>fixed count</td>
 <td>none</td>
-<td><code>tq_max_kv_splits_for_cuda_graph = 32</code> &quot;fixes the split count so grid dimensions are constant across captures&quot;<sup class="cite">[<a href="#src-58">58</a>]</sup></td>
+<td><code>tq_max_kv_splits_for_cuda_graph = 32</code> “fixes the split
+count so grid dimensions are constant across captures” [58]</td>
 </tr>
 </tbody>
-</table></div>
-<p>An H100 report on Qwen3-8B found that under full graphs the decode launch is fixed at capture with <code>max_seq_len</code> set to <code>max_model_len</code>, so a context-length guard is in effect a <code>max_model_len</code> guard<sup class="cite">[<a href="#src-71">71</a>]</sup>. The trtllm-gen code says the same of itself: <code>The split only sees max_seq_len, so short or similar KV lengths can be slower</code><sup class="cite">[<a href="#src-11">11</a>]</sup>. AITER PR #6434 traced 47 of its 57 regressions to 1K–2K contexts, where callers that fix the grid at capture cannot pass <code>max_context_length</code><sup class="cite">[<a href="#src-43">43</a>]</sup>, and vLLM PR #58650's gfx950 window-1024 split gain held in eager mode but regressed under CUDA graphs<sup class="cite">[<a href="#src-37">37</a>]</sup>.</p>
-<p>Under uncertainty about real lengths most backends split, which the cost asymmetry justifies until the blind guess goes past one wave, as trtllm-gen's 0.57x at uniform 8k under a 1M-capture graph shows<sup class="cite">[<a href="#src-27">27</a>]</sup>. FA3's device scheduler and FlashInfer's plan keep the decision live and avoid both errors, at the price of a scheduler and max-size buffers.</p>
-<h3>7.2 Batch invariance collapses the boundary to never split</h3>
-<p>Thinking Machines states the requirement: &quot;the reduction order for each element must be fixed regardless of the batch-size of the kernel&quot;<sup class="cite">[<a href="#src-72">72</a>]</sup>. FlashInfer's scheduler is deterministic run to run, with no atomics<sup class="cite">[<a href="#src-16">16</a>]</sup>, yet its balanced scheduling &quot;chooses the largest split-size that can still saturate all the GPU's cores&quot;, so the reduction depends on the batch<sup class="cite">[<a href="#src-72">72</a>]</sup>. Every vLLM split rule except HIP's fixed-size partitions depends on batch composition, and all of vLLM's invariance overrides land on single-pass:</p>
+</table>
+<p>An H100 report on Qwen3-8B found that under full graphs, the decode
+launch is fixed at capture with <code>max_seq_len</code> set to
+<code>max_model_len</code>. So a context-length guard is really a
+<code>max_model_len</code> guard [71]. The trtllm-gen code says the same
+about itself:
+<code>The split only sees max_seq_len, so short or similar KV lengths can be slower</code>
+[11]. AITER PR #6434 traced 47 of its 57 regressions to 1K–2K contexts,
+where callers that fix the grid at capture can’t pass
+<code>max_context_length</code> [43]. And vLLM PR #58650’s gfx950
+window-1024 split gain held in eager mode but regressed under CUDA
+graphs [37].</p>
+<p>When real lengths are unknown, most backends split. The cost
+asymmetry justifies that, until the blind guess goes past one wave.
+trtllm-gen’s 0.57x at uniform 8k under a 1M-capture graph shows what
+happens then [27]. FA3’s device scheduler and FlashInfer’s plan keep the
+decision live and avoid both errors. The price is a scheduler and
+max-size buffers.</p>
+<h3 id="batch-invariance-pushes-the-boundary-to-never-split">7.2 Batch
+invariance pushes the boundary to never split</h3>
+<p>Thinking Machines states the requirement: “the reduction order for
+each element must be fixed regardless of the batch-size of the kernel”
+[72]. FlashInfer’s scheduler gives the same result run to run, with no
+atomics [16]. But its balanced scheduling “chooses the largest
+split-size that can still saturate all the GPU’s cores”, so the
+reduction depends on the batch [72]. Every vLLM split rule except HIP’s
+fixed-size partitions depends on what’s in the batch. And all of vLLM’s
+invariance overrides land on single-pass:</p>
 <ul>
-<li>FA sets <code>max_num_splits = 1</code> and turns off the AOT schedule<sup class="cite">[<a href="#src-5">5</a>]</sup>.</li>
-<li>Triton forces 2D with <code>or is_batch_invariant</code><sup class="cite">[<a href="#src-6">6</a>]</sup>.</li>
-<li>The TRT-LLM kernels are disabled<sup class="cite">[<a href="#src-60">60</a>]</sup>.</li>
-<li>FlashInfer native sets <code>decode_fixed_split_size = 2048</code> and <code>disable_split_kv = True</code><sup class="cite">[<a href="#src-7">7</a>]</sup>, but <code>disable_split_kv</code> takes precedence in the planner (one chunk of <code>numeric_limits&lt;int64_t&gt;::max()</code>), so the 2048 never takes effect<sup class="cite">[<a href="#src-23">23</a>]</sup>.</li>
+<li>FA sets <code>max_num_splits = 1</code> and turns off the AOT
+schedule [5].</li>
+<li>Triton forces 2D with <code>or is_batch_invariant</code> [6].</li>
+<li>The TRT-LLM kernels are disabled [60].</li>
+<li>FlashInfer native sets <code>decode_fixed_split_size = 2048</code>
+and <code>disable_split_kv = True</code> [7]. But
+<code>disable_split_kv</code> wins in the planner (one chunk of
+<code>numeric_limits&lt;int64_t&gt;::max()</code>), so the 2048 never
+takes effect [23].</li>
 </ul>
-<p><code>rocm.py</code> adds no attention override under batch invariance, so whether <code>ROCM_ATTN</code> still splits there, and stays invariant, is unverified<sup class="cite">[<a href="#src-63">63</a>]</sup>. PyTorch documents the same contract: disabling split-KV via <code>num_splits</code> restores batch invariance because the split decision depends on the longest sequence in the batch<sup class="cite">[<a href="#src-73">73</a>]</sup>.</p>
-<p>The principled alternative: &quot;instead of fixing the # of splits, we fix the size of each split&quot;, so KV 1,000 becomes 256 + 256 + 256 + 232<sup class="cite">[<a href="#src-72">72</a>]</sup>. On a length-sized grid it does not survive CUDA graphs, because the CTA count then varies with length; FlashInfer's code warns that with <code>fixed_split_size</code> <code>compatibility with CUDA graph is NOT guaranteed</code>, while <code>disable_split_kv</code> exists <code>for determinism in CUDA Graph</code><sup class="cite">[<a href="#src-74">74</a>]</sup>. The PR that introduced fixed split size concluded &quot;It's better to disable split-kv for cuda graph&quot;<sup class="cite">[<a href="#src-75">75</a>]</sup>. SGLang's 2048 decode split is &quot;only effective when cuda graph is not enabled&quot;<sup class="cite">[<a href="#src-76">76</a>]</sup>, and its FA3 backend fixes <code>num_splits</code> to 1<sup class="cite">[<a href="#src-77">77</a>]</sup>. Its Triton backend is the exception: deterministic mode keeps fixed 256-token splits with per-sequence counts on a <code>(batch, head, MAX_KV_SPLITS)</code> grid<sup class="cite">[<a href="#src-31">31</a>]</sup>, documented as CUDA-graph compatible<sup class="cite">[<a href="#src-78">78</a>]</sup>. The introducing PR, however, tested only without graphs and no source reports its cost<sup class="cite">[<a href="#src-79">79</a>]</sup>.</p>
-<h3>7.3 What giving up split-KV costs, and where</h3>
-<p>Only one source isolates the cost: in high-concurrency offline throughput runs, CoRun reports that disabling split-KV costs 15–41% when prompt lengths vary and 1–9% when they are similar, because ragged batches offer uneven attention work<sup class="cite">[<a href="#src-8">8</a>]</sup>. Whole-mode overheads are larger and not split-specific: SGLang's deterministic mode averages a 34.35% slowdown against Thinking Machines' 61.5%<sup class="cite">[<a href="#src-80">80</a>]</sup>, and Thinking Machines' vLLM run took 26 s by default, 55 s deterministic and 42 s with an improved attention kernel<sup class="cite">[<a href="#src-72">72</a>]</sup>. vLLM's batch-invariance documentation (beta) warns only of a possible performance impact<sup class="cite">[<a href="#src-81">81</a>]</sup>. The measured driver is length heterogeneity, not concurrency. Low concurrency with long contexts is a second regime where the cost model predicts a large tax that no source has isolated. RL rollouts and evaluation replays, the workloads that most often want determinism, can hit both<sup class="cite">[<a href="#src-8">8</a>, <a href="#src-72">72</a>]</sup>.</p>
-<p>A graph-safe fixed-split design is closer than vLLM's code suggests: SGLang's Triton backend ships one, and ROCm's HIP kernel already uses fixed 256-token partitions on a <code>max_seq_len</code>-sized grid with early exit. Each request's partition boundaries are therefore independent of its neighbors, which is the Thinking Machines prescription on a capture-compatible grid<sup class="cite">[<a href="#src-46">46</a>]</sup>. The caveat is that the reduce's template instance (<code>NPAR_LOOPS</code>) is chosen from the batch-maximum partition count, and whether that changes per-request summation order needs checking<sup class="cite">[<a href="#src-46">46</a>]</sup>. Single-pass under batch invariance is a stopgap, not best practice.</p>
-<h2 id="sec-8">8. Measured Results</h2>
-<p>Kernel-level numbers time one attention call; end-to-end numbers measure serving throughput or TPOT, and the two diverge by attention's share of the iteration. Almost every number below is author-reported, most from single-author PRs, several explicitly AI-assisted (#56148, #59054, #4904, #61029, #6331, #62476), and none independently reproduced.</p>
-<h3>8.1 Kernel level</h3>
-<div class="tbl"><table>
+<p><code>rocm.py</code> adds no attention override under batch
+invariance. So whether <code>ROCM_ATTN</code> still splits there, and
+whether it stays invariant, is unverified [63]. PyTorch documents the
+same contract. Turning off split-KV via <code>num_splits</code> restores
+batch invariance, because the split decision depends on the longest
+sequence in the batch [73].</p>
+<p>The principled alternative is this: “instead of fixing the # of
+splits, we fix the size of each split”, so KV 1,000 becomes 256 + 256 +
+256 + 232 [72]. On a grid sized by length, it doesn’t survive CUDA
+graphs, because the CTA count then changes with length. FlashInfer’s
+code warns that with <code>fixed_split_size</code>
+<code>compatibility with CUDA graph is NOT guaranteed</code>, while
+<code>disable_split_kv</code> exists
+<code>for determinism in CUDA Graph</code> [74]. The PR that added fixed
+split size concluded “It’s better to disable split-kv for cuda graph”
+[75]. SGLang’s 2048 decode split is “only effective when cuda graph is
+not enabled” [76], and its FA3 backend fixes <code>num_splits</code> to
+1 [77]. Its Triton backend is the exception. Deterministic mode keeps
+fixed 256-token splits with per-sequence counts on a
+<code>(batch, head, MAX_KV_SPLITS)</code> grid [31], and it’s documented
+as CUDA-graph compatible [78]. But the PR that added it tested only
+without graphs, and no source reports its cost [79].</p>
+<h3 id="what-giving-up-split-kv-costs-and-where">7.3 What giving up
+split-KV costs, and where</h3>
+<p>Only one source isolates the cost. In high-concurrency offline
+throughput runs, CoRun reports that turning off split-KV costs 15–41%
+when prompt lengths vary and 1–9% when they’re similar, because ragged
+batches give uneven attention work [8]. Whole-mode overheads are bigger
+and not specific to splitting. SGLang’s deterministic mode averages a
+34.35% slowdown, against Thinking Machines’ 61.5% [80]. Thinking
+Machines’ vLLM run took 26 s by default, 55 s deterministic and 42 s
+with an improved attention kernel [72]. vLLM’s batch-invariance docs
+(beta) only warn of a possible performance impact [81]. The measured
+driver is length variation, not concurrency. Low concurrency with long
+contexts is a second regime. There the cost model predicts a large tax,
+but no source has isolated it. RL rollouts and evaluation replays, the
+workloads that most often want determinism, can hit both [8, 72].</p>
+<p>A graph-safe fixed-split design is closer than vLLM’s code suggests.
+SGLang’s Triton backend ships one. And ROCm’s HIP kernel already uses
+fixed 256-token partitions on a <code>max_seq_len</code>-sized grid with
+early exit. So each request’s partition boundaries don’t depend on its
+neighbors. That’s the Thinking Machines prescription on a grid that
+works with capture [46]. The catch is that the reduce’s template
+instance (<code>NPAR_LOOPS</code>) is picked from the batch-maximum
+partition count. Whether that changes the per-request summation order
+needs checking [46]. Single-pass under batch invariance is a stopgap,
+not best practice.</p>
+<h2 id="measured-results">8. Measured Results</h2>
+<p>Kernel-level numbers time one attention call. End-to-end numbers
+measure serving throughput or TPOT. The two differ by attention’s share
+of the iteration. Almost every number below is author-reported, most
+from single-author PRs. Several are explicitly AI-assisted (#56148,
+#59054, #4904, #61029, #6331, #62476). None has been reproduced
+independently.</p>
+<h3 id="kernel-level">8.1 Kernel level</h3>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
 <thead>
 <tr>
 <th>GPU</th>
@@ -558,81 +1226,87 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <td>16 Q / 2 KV, d128; FA 2.0.9 vs Flash-Decoding</td>
 <td>64k, B=1</td>
 <td>2300.6 → 64.4 µs</td>
-<td><sup class="cite">[<a href="#src-82">82</a>]</sup></td>
+<td>[82]</td>
 </tr>
 <tr>
 <td>A100</td>
 <td>same</td>
 <td>256, B=256</td>
 <td>390.5 → 63.4 µs</td>
-<td><sup class="cite">[<a href="#src-82">82</a>]</sup></td>
+<td>[82]</td>
 </tr>
 <tr>
 <td>H200</td>
 <td>8 Q / 1 KV, FP8, width 6</td>
 <td>128k, 1 request</td>
 <td>6,187 → 537 µs</td>
-<td><sup class="cite">[<a href="#src-2">2</a>]</sup></td>
+<td>[2]</td>
 </tr>
 <tr>
 <td>SM120</td>
 <td>8 Q / 1 KV, FP8, width 6</td>
 <td>128k, 1 request</td>
 <td>4,327 → 444 µs</td>
-<td><sup class="cite">[<a href="#src-2">2</a>]</sup></td>
+<td>[2]</td>
 </tr>
 <tr>
 <td>SM120</td>
 <td>8 Q / 1 KV, 6 queries</td>
 <td>131k, 1 request</td>
 <td>2D 4.71 ms → 312 µs (16 seg) → 98.5 µs (64 seg)</td>
-<td><sup class="cite">[<a href="#src-18">18</a>]</sup></td>
+<td>[18]</td>
 </tr>
 <tr>
 <td>CMP 170HX (sm80)</td>
 <td>64 Q / 4 KV, q=2</td>
 <td>67K</td>
 <td>5.08 → 0.26 ms (19.6x)</td>
-<td><sup class="cite">[<a href="#src-1">1</a>]</sup></td>
+<td>[1]</td>
 </tr>
 <tr>
 <td>gfx1151</td>
 <td>24 Q / 4 KV, q=4</td>
 <td>65,536</td>
 <td>262.8 → 5.39 ms (48.7x)</td>
-<td><sup class="cite">[<a href="#src-1">1</a>]</sup></td>
+<td>[1]</td>
 </tr>
 <tr>
 <td>MI355X</td>
 <td>64 Q / 8 KV, D64 / D128</td>
 <td>8,192, B=32 / B=128</td>
 <td>0.86 → 4.57 TB/s (5.29x) / 2.74 → 5.48 TB/s (2.00x)</td>
-<td><sup class="cite">[<a href="#src-28">28</a>]</sup></td>
+<td>[28]</td>
 </tr>
 <tr>
 <td>GH200 (XQA fp8)</td>
 <td>8 Q / 1 KV</td>
 <td>32k random, B=64</td>
 <td>160.7 → 90.2 µs (under-split → sized)</td>
-<td><sup class="cite">[<a href="#src-4">4</a>]</sup></td>
+<td>[4]</td>
 </tr>
 <tr>
 <td>H100 (FA3)</td>
 <td>Llama-70B shape, 1 KV head</td>
 <td>512, B=1</td>
 <td>13.72 → 11.37 µs (1.21x)</td>
-<td><sup class="cite">[<a href="#src-20">20</a>]</sup></td>
+<td>[20]</td>
 </tr>
 <tr>
 <td>R9700</td>
 <td>8 Q / 1 KV, SWA 2048</td>
 <td>≥32K at B=1 / ≤12K at B=16</td>
 <td>~10x / 0.98–1.02x</td>
-<td><sup class="cite">[<a href="#src-56">56</a>]</sup></td>
+<td>[56]</td>
 </tr>
 </tbody>
-</table></div>
-<div class="tbl"><table>
+</table>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
 <thead>
 <tr>
 <th>GPU</th>
@@ -646,49 +1320,60 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <td>H200 / SM120</td>
 <td>18 / 7 of 1,370 admitted shapes &gt;3% slower</td>
 <td>worst 1.21x / 1.08x</td>
-<td><sup class="cite">[<a href="#src-2">2</a>]</sup></td>
+<td>[2]</td>
 </tr>
 <tr>
 <td>GH200</td>
 <td>512-token KV split three ways, B=128</td>
 <td>0.92x</td>
-<td><sup class="cite">[<a href="#src-4">4</a>]</sup></td>
+<td>[4]</td>
 </tr>
 <tr>
 <td>B200</td>
 <td>4-wave split, 8k uniform</td>
 <td>worst 0.56x, geomean 0.83x</td>
-<td><sup class="cite">[<a href="#src-27">27</a>]</sup></td>
+<td>[27]</td>
 </tr>
 <tr>
 <td>MI355X MLA</td>
 <td>21 → 22 splits crosses a wave</td>
 <td>358 → 528 µs (+47%)</td>
-<td><sup class="cite">[<a href="#src-31">31</a>]</sup></td>
+<td>[31]</td>
 </tr>
 <tr>
 <td>gfx950</td>
-<td>256-token-per-segment gate</td>
+<td>gate of 256 tokens per segment</td>
 <td>worst −60.9% (77 of 250 configs)</td>
-<td><sup class="cite">[<a href="#src-37">37</a>]</sup></td>
+<td>[37]</td>
 </tr>
 <tr>
 <td>MI355X</td>
 <td>occupancy-sized splits, worst point</td>
 <td>0.82x</td>
-<td><sup class="cite">[<a href="#src-43">43</a>]</sup></td>
+<td>[43]</td>
 </tr>
 <tr>
 <td>B200</td>
 <td>MLA oversubscription, random lengths</td>
 <td>0.85–0.92x scattered</td>
-<td><sup class="cite">[<a href="#src-62">62</a>]</sup></td>
+<td>[62]</td>
 </tr>
 </tbody>
-</table></div>
-<p>Single-pass losses run an order of magnitude or more and cluster at batch 1–4 with 32k-plus context. Over-split losses bottom out between 0.56x and 0.82x, and each sits outside a guard: multi-wave, short segments, a wave crossing, or a sequence too short to split. Inside the guards the worst observed over-split is 1.21x. The asymmetry is a property of deep underfill: near the one-wave boundary, measured single-pass errors are the same order, 1.28–1.39x<sup class="cite">[<a href="#src-3">3</a>, <a href="#src-4">4</a>]</sup>.</p>
-<h3>8.2 End to end</h3>
-<div class="tbl"><table>
+</table>
+<p>Single-pass losses are an order of magnitude or more. They cluster at
+batch 1–4 with 32k-plus context. Over-split losses bottom out between
+0.56x and 0.82x, and each one sits outside a guard: multi-wave, short
+segments, a wave crossing, or a sequence too short to split. Inside the
+guards, the worst over-split we saw is 1.21x. This asymmetry only holds
+when the GPU is deeply underfilled. Near the one-wave boundary, measured
+single-pass errors are the same size, 1.28–1.39x [3, 4].</p>
+<h3 id="end-to-end">8.2 End to end</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
 <thead>
 <tr>
 <th>Setting</th>
@@ -700,64 +1385,121 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <tr>
 <td>B300, MiniMax-M3 NVFP4 + EAGLE3, c1, 205k input</td>
 <td>throughput 1.642x; TPOT 15.29 → 7.24 ms</td>
-<td><sup class="cite">[<a href="#src-2">2</a>]</sup></td>
+<td>[2]</td>
 </tr>
 <tr>
 <td>same, c10, 111k input</td>
 <td>1.019x; TPOT 28.50 → 27.49 ms</td>
-<td><sup class="cite">[<a href="#src-2">2</a>]</sup></td>
+<td>[2]</td>
 </tr>
 <tr>
 <td>4× CMP 170HX, MiMo with MTP k=2, 67K</td>
-<td>16.5 → 33.7 tok/s; spec stayed a net loss against 56.1 tok/s non-spec</td>
-<td><sup class="cite">[<a href="#src-1">1</a>]</sup></td>
+<td>16.5 → 33.7 tok/s; spec was still a net loss against 56.1 tok/s
+non-spec</td>
+<td>[1]</td>
 </tr>
 <tr>
 <td>SM120, Llama-3.1-8B + EAGLE3, c1 at 32k / 8k / 768</td>
 <td>1.055x / 1.027x / ~1.0x</td>
-<td><sup class="cite">[<a href="#src-18">18</a>]</sup></td>
+<td>[18]</td>
 </tr>
 <tr>
-<td>H100, Qwen3-8B-AWQ, c1 / 4 / 8 / 16 / max (tile change within 3D)</td>
+<td>H100, Qwen3-8B-AWQ, c1 / 4 / 8 / 16 / max (tile change within
+3D)</td>
 <td>+3.0 / +2.8 / +0.6 / +0.5 / −0.1%</td>
-<td><sup class="cite">[<a href="#src-71">71</a>]</sup></td>
+<td>[71]</td>
 </tr>
 <tr>
 <td>B200, DiffusionGemma, single stream, 92k (unmerged PR)</td>
 <td>61 → 100 tok/s</td>
-<td><sup class="cite">[<a href="#src-52">52</a>]</sup></td>
+<td>[52]</td>
 </tr>
 <tr>
 <td>A100, CodeLlama-34B, B=1</td>
 <td>up to 8x decode; attention up to 50x</td>
-<td><sup class="cite">[<a href="#src-82">82</a>]</sup></td>
+<td>[82]</td>
 </tr>
 </tbody>
-</table></div>
-<h3>8.3 What the numbers jointly say</h3>
-<p>End-to-end gain is approximately attention share × (1 − 1/kernel speedup), Amdahl's law applied to these measurements. Attention's share of iteration time is large only when context is long and the batch small, exactly when the unsplit grid underfills. That is why ~5–49x kernel wins become 1.5–2x at concurrency 1 and 1–3% at concurrency 10 or short context with homogeneous lengths. Length skew is the second regime where splitting pays at moderate-to-high concurrency (CoRun, FlashInfer's scheduler ablation, trtllm-gen #6331, #3379)<sup class="cite">[<a href="#src-8">8</a>, <a href="#src-16">16</a>, <a href="#src-27">27</a>, <a href="#src-62">62</a>]</sup>.</p>
-<p>The model reproduces the H100 report: a roughly 25% kernel gain on a call of about 14 µs saves about 3.5 µs per layer. Across Qwen3-8B's 36 layers (a model fact assumed here, not stated in the source), that is about 0.13 ms of a 4.6–4.7 ms ITL, or about 2.7%, against a measured +2.61%<sup class="cite">[<a href="#src-71">71</a>]</sup>. The #56148 c10 result has a second limiter: on B300 only three dense layers plus the EAGLE3 head use <code>unified_attention</code>, and the PR's c10 equivalence check failed its ±3% rule at n=1 before passing at n=4, so c10 differences sit near run-to-run noise<sup class="cite">[<a href="#src-2">2</a>]</sup>.</p>
-<p>The Flash-Decoding headline needs a correction. Its own table shows Flash-Decoding 6.2x faster than FlashAttention 2.0.9 even at batch 256 and sequence length 256, where the grid is already full<sup class="cite">[<a href="#src-82">82</a>]</sup>. Part of the famous 2300.6 → 64.4 µs therefore reflects FA 2.0.9's inefficiency at query length 1, not split-KV alone; the original post notes that &quot;all approaches perform similarly for small prompts&quot;<sup class="cite">[<a href="#src-12">12</a>]</sup>.</p>
-<h3>8.4 Gaps in the published evidence</h3>
-<p>None of the following appears in the PRs, issues, docs and code of vLLM, FlashAttention, FlashInfer, TensorRT-LLM, AITER and SGLang, or the arXiv decode-attention literature, through October 2026:</p>
+</table>
+<h3 id="what-the-numbers-say-together">8.3 What the numbers say
+together</h3>
+<p>End-to-end gain is roughly attention share × (1 − 1/kernel speedup).
+That’s Amdahl’s law applied to these measurements. Attention’s share of
+iteration time is large only when context is long and the batch is
+small. That’s exactly when the unsplit grid underfills. So ~5–49x kernel
+wins turn into 1.5–2x at concurrency 1, and 1–3% at concurrency 10 or at
+short context with similar lengths. Length skew is the second regime
+where splitting pays at moderate-to-high concurrency (CoRun,
+FlashInfer’s scheduler ablation, trtllm-gen #6331, #3379) [8, 16, 27,
+62].</p>
+<p>The model matches the H100 report. A roughly 25% kernel gain on a
+call of about 14 µs saves about 3.5 µs per layer. Across Qwen3-8B’s 36
+layers (we assume this model fact; the source doesn’t state it), that’s
+about 0.13 ms of a 4.6–4.7 ms ITL, or about 2.7%. The measured gain was
++2.61% [71]. The #56148 c10 result has a second limit. On B300, only
+three dense layers plus the EAGLE3 head use
+<code>unified_attention</code>. And the PR’s c10 equivalence check
+failed its ±3% rule at n=1 before passing at n=4. So c10 differences sit
+near run-to-run noise [2].</p>
+<p>The Flash-Decoding headline needs a correction. Its own table shows
+Flash-Decoding 6.2x faster than FlashAttention 2.0.9 even at batch 256
+and sequence length 256, where the grid is already full [82]. So part of
+the famous 2300.6 → 64.4 µs comes from FA 2.0.9 being slow at query
+length 1, not from split-KV alone. The original post notes that “all
+approaches perform similarly for small prompts” [12].</p>
+<h3 id="gaps-in-the-published-evidence">8.4 Gaps in the published
+evidence</h3>
+<p>None of the following shows up in the PRs, issues, docs and code of
+vLLM, FlashAttention, FlashInfer, TensorRT-LLM, AITER and SGLang, or in
+the arXiv decode-attention literature, through October 2026:</p>
 <ul>
-<li>a combine-kernel timing as a function of split count for FA's <code>mha_combine</code>, FlashInfer's merge, trtllm-gen's reduction or Triton's <code>reduce_segments</code> (PR #4702 compares two reduction flavours at one shape);</li>
-<li>a same-GPU comparison of capture-gated against scheduler-driven splitting on mixed lengths;</li>
-<li>a kernel benchmark of fixed-size splitting against <code>num_splits = 1</code> at batch 1–8 and 32k–128k;</li>
-<li>an MI300X/MI325X split-versus-single ablation, and a reduce-on/off A/B for HIP paged attention on CDNA at batch ≥ 256 (RDNA has only the confounded #60418 A/B);</li>
+<li>a timing of the combine kernel as a function of split count, for
+FA’s <code>mha_combine</code>, FlashInfer’s merge, trtllm-gen’s
+reduction or Triton’s <code>reduce_segments</code> (PR #4702 compares
+two reduction flavours at one shape);</li>
+<li>a same-GPU comparison of capture-gated vs scheduler-driven splitting
+on mixed lengths;</li>
+<li>a kernel benchmark of fixed-size splitting vs
+<code>num_splits = 1</code> at batch 1–8 and 32k–128k;</li>
+<li>an MI300X/MI325X split-vs-single ablation, and a reduce-on/off A/B
+for HIP paged attention on CDNA at batch ≥ 256 (RDNA has only the
+muddied #60418 A/B);</li>
 <li>an official XQA multi-block on/off table;</li>
-<li>any independent, non-author serving reproduction.</li>
+<li>any independent serving reproduction by someone other than the
+author.</li>
 </ul>
-<h2 id="sec-9">9. Recommendation: When Each Strategy Wins</h2>
-<h3>9.1 The rule</h3>
+<h2 id="recommendation-when-each-strategy-wins">9. Recommendation: When
+Each Strategy Wins</h2>
+<h3 id="the-rule">9.1 The rule</h3>
 <ul>
-<li><strong>Split</strong> when W &lt; ~1 and per-sequence KV is at least ~1–2k tokens; when W is 1–1.5 and KV per sequence is large (≥ ~4 MiB, the #6522 threshold); when skewed lengths make one long request the critical path; and for spec-decode verify at long context.</li>
-<li><strong>Size the split</strong> to fill about one wave. Deep in underfill, err toward more splits; near one wave, where both errors cost about 1.1–1.4x, let the wave guard decide. Never take the one extra split that opens a partial wave; keep each split at ≥ ~64–128 tokens, aligned to page or partition boundaries; prefer cluster reductions at ≤ 16 splits when each CTA walks ≤ 4,096 tokens.</li>
-<li><strong>Stay single-pass</strong> when W ≥ ~1.5 with moderate KV, when KV ≤ ~512–1k tokens, for legacy CUDA-core kernels on consumer GPUs, and whenever batch invariance is on.</li>
+<li><strong>Split</strong> in four cases. First, when W &lt; ~1 and each
+sequence has at least ~1–2k tokens of KV. Second, when W is 1–1.5 and KV
+per sequence is large (≥ ~4 MiB, the #6522 threshold). Third, when
+skewed lengths make one long request the critical path. Fourth, for
+spec-decode verify at long context.</li>
+<li><strong>Size the split</strong> to fill about one wave. Deep in
+underfill, lean toward more splits. Near one wave, both mistakes cost
+about 1.1–1.4x, so let the wave guard decide. Never take the one extra
+split that opens a partial wave. Keep each split at ≥ ~64–128 tokens,
+lined up with page or partition boundaries. Prefer cluster reductions at
+≤ 16 splits when each CTA walks ≤ 4,096 tokens.</li>
+<li><strong>Stay single-pass</strong> when W ≥ ~1.5 with moderate KV,
+when KV ≤ ~512–1k tokens, for legacy CUDA-core kernels on consumer GPUs,
+and any time batch invariance is on.</li>
 </ul>
-<p>The burden of proof sits on single-pass for long-KV, low-batch, TP-sharded, verify and ragged-length workloads, and on split-KV for homogeneous short-context or full-grid serving.</p>
-<h3>9.2 Regime table (vLLM main, October 2026)</h3>
-<div class="tbl"><table>
+<p>So who has to prove their case? Single-pass does, for long-KV,
+low-batch, TP-sharded, verify and ragged-length workloads. Split-KV
+does, for homogeneous short-context or full-grid serving.</p>
+<h3 id="regime-table-vllm-main-october-2026">9.2 Regime table (vLLM
+main, October 2026)</h3>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
 <thead>
 <tr>
 <th>Regime</th>
@@ -772,46 +1514,51 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <td>Batch 1–8, context ≥ 32k, any GQA</td>
 <td>split, about one wave</td>
 <td>W ≪ 1; ~5–49x kernel, 1.5–2x e2e</td>
-<td>defaults split (Triton: decode-only iterations); Hopper: raise the FA graph split cap toward 64 only if batch × H_kv &lt; ~4</td>
+<td>defaults split (Triton: decode-only iterations); Hopper: raise the
+FA graph split cap toward 64 only if batch × H_kv &lt; ~4</td>
 <td>high (knob: medium)</td>
 </tr>
 <tr>
 <td>Spec-decode verify (q ≤ 8), long context, low batch</td>
 <td>split</td>
 <td>2D verify was 19.6–48.7x slower</td>
-<td>build with PR #56148; on ROCm prefer <code>ROCM_AITER_FA</code> for spec decode</td>
+<td>build with PR #56148; on ROCm prefer <code>ROCM_AITER_FA</code> for
+spec decode</td>
 <td>high</td>
 </tr>
 <tr>
 <td>TP-sharded GQA (1–2 KV heads/GPU), moderate batch</td>
 <td>split until batch × H_kv ≈ SMs</td>
 <td>unsplit grid equals batch</td>
-<td>defaults adequate (Triton threshold 64–128, FA3 cap 32)</td>
+<td>defaults are fine (Triton threshold 64–128, FA3 cap 32)</td>
 <td>high</td>
 </tr>
 <tr>
 <td>Batch × H_kv at 1–1.5 waves, KV ≥ ~4 MiB/seq</td>
 <td>small split (2–5)</td>
-<td>fills the fractional wave</td>
+<td>fills the partial wave</td>
 <td>no vLLM knob; depends on FlashInfer #6522 (open)</td>
 <td>medium</td>
 </tr>
 <tr>
 <td>Large batch, KV 4–32k, few KV heads, fp8</td>
 <td>occupancy-sized split</td>
-<td>one CTA per SM cannot cover HBM latency</td>
+<td>one CTA per SM can’t hide HBM latency</td>
 <td>depends on #4904-style launchers</td>
 <td>medium</td>
 </tr>
 <tr>
 <td>Ragged long lengths, moderate-to-high concurrency</td>
 <td>split; multi-wave on Blackwell</td>
-<td>longest request is critical path; up to 2.02x kernel, 15–41% throughput</td>
-<td>Blackwell: <code>FLASHINFER_TRTLLM_GEN_MULTI_WAVE_KV_SPLIT=1</code> only for long, skewed lengths</td>
+<td>longest request is the critical path; up to 2.02x kernel, 15–41%
+throughput</td>
+<td>Blackwell: <code>FLASHINFER_TRTLLM_GEN_MULTI_WAVE_KV_SPLIT=1</code>
+only for long, skewed lengths</td>
 <td>medium</td>
 </tr>
 <tr>
-<td>Concurrency ≥ 16, 8 KV heads/GPU, context ≤ 32k, homogeneous lengths</td>
+<td>Concurrency ≥ 16, 8 KV heads/GPU, context ≤ 32k, homogeneous
+lengths</td>
 <td>single-pass</td>
 <td>W ≥ 1; e2e effect ≤ ±1%</td>
 <td>defaults already do this</td>
@@ -820,170 +1567,404 @@ tbody tr:nth-child(even) td { background: var(--zebra); }
 <tr>
 <td>Short context (≤ ~1k), any batch</td>
 <td>single-pass</td>
-<td>launch- or reduce-bound; ≤ 3% at stake</td>
+<td>bound by launch or reduce; ≤ 3% at stake</td>
 <td>Triton has no KV floor, so expect a small tax</td>
 <td>high</td>
 </tr>
 <tr>
 <td>Batch-invariant serving</td>
 <td>single-pass (forced)</td>
-<td>invariance requires a fixed reduction order</td>
-<td><code>VLLM_BATCH_INVARIANT=1</code>; budget 15–41% on ragged-length loads (measured at high concurrency), 1–9% on homogeneous ones</td>
+<td>invariance needs a fixed reduction order</td>
+<td><code>VLLM_BATCH_INVARIANT=1</code>; budget 15–41% on ragged-length
+loads (measured at high concurrency), 1–9% on homogeneous ones</td>
 <td>medium</td>
 </tr>
 <tr>
 <td>ROCm CDNA, default <code>ROCM_ATTN</code>, large batch</td>
-<td>likely single-pass, by a small margin (unmeasured)</td>
+<td>likely single-pass, by a small margin (not measured)</td>
 <td>HIP always splits and reduces; the RDNA tax was 5–13%</td>
 <td>consider AITER backends, which gate on CUs</td>
 <td>low (inference)</td>
 </tr>
 <tr>
 <td>Legacy CUDA-core kernels on consumer GPUs</td>
-<td>single-pass usually enough</td>
+<td>single-pass is usually enough</td>
 <td>a few CTAs saturated GDDR in 2024</td>
-<td>do not force splits</td>
+<td>don’t force splits</td>
 <td>low</td>
 </tr>
 </tbody>
-</table></div>
-<p>Two cross-cutting settings matter. <code>cudagraph_capture_sizes</code> moves the Triton boundary, because the threshold snaps to the nearest capture size; a sparse list can shift the 2D/3D switch by up to 4x before the guard forces 2D<sup class="cite">[<a href="#src-25">25</a>, <a href="#src-49">49</a>]</sup>. <code>max_model_len</code> drives every max-length-keyed decision under full graphs (trtllm-gen, XQA, ROCm HIP), so setting it far above real traffic over-splits short batches<sup class="cite">[<a href="#src-11">11</a>, <a href="#src-71">71</a>]</sup>.</p>
-<h3>9.3 Four changes vLLM should make</h3>
-<ol>
-<li>Replace Triton's absolute <code>MIN_LAUNCH_GRID_SIZE_2D = 128</code> with about one wave of 2D programs (SMs × resident CTAs per SM, or AITER's 4 × CUs) plus a floor of 64–128 KV tokens per segment, validated per platform, and generalize the SM120 64-segment rule into a segments-per-SM target<sup class="cite">[<a href="#src-25">25</a>, <a href="#src-24">24</a>, <a href="#src-37">37</a>, <a href="#src-23">23</a>, <a href="#src-54">54</a>]</sup>.</li>
-<li>Raise <code>flash_attn_max_num_splits_for_cuda_graph</code> toward 64 where batch × KV heads per GPU is below about 4, with tail-latency monitoring; FA3's device scheduler already backs off at full grids<sup class="cite">[<a href="#src-59">59</a>, <a href="#src-44">44</a>]</sup>.</li>
-<li>Build a graph-safe decode path for batch-invariant mode with 256-token, page-aligned splits on a worst-case grid with early exit, as HIP ll4mi already does<sup class="cite">[<a href="#src-46">46</a>, <a href="#src-72">72</a>]</sup>, alongside a batch-free split bucket like the one SGLang's Triton backend uses for deterministic inference<sup class="cite">[<a href="#src-31">31</a>]</sup>.</li>
-<li>Measure the <code>ROCM_ATTN</code> reduce tax on CDNA at batch ≥ 256 before keeping the always-split HIP path first in ROCm priority, a place PR #36702 granted without a benchmark<sup class="cite">[<a href="#src-47">47</a>]</sup> and open PR #60418 would reverse on RDNA<sup class="cite">[<a href="#src-46">46</a>, <a href="#src-54">54</a>]</sup>.</li>
+</table>
+<p>Two settings cut across all of these. The first is
+<code>cudagraph_capture_sizes</code>. It moves the Triton boundary,
+because the threshold snaps to the nearest capture size. A sparse list
+can shift the 2D/3D switch by up to 4x before the guard forces 2D [25,
+49]. The second is <code>max_model_len</code>. Under full graphs it
+drives every decision keyed on max length (trtllm-gen, XQA, ROCm HIP).
+So if you set it far above your real traffic, short batches get
+over-split [11, 71].</p>
+<h3 id="four-changes-vllm-should-make">9.3 Four changes vLLM should
+make</h3>
+<ol type="1">
+<li>Replace Triton’s absolute <code>MIN_LAUNCH_GRID_SIZE_2D = 128</code>
+with about one wave of 2D programs (SMs × resident CTAs per SM, or
+AITER’s 4 × CUs). Add a floor of 64–128 KV tokens per segment, checked
+on each platform. And turn the SM120 64-segment rule into a general
+segments-per-SM target [25, 24, 37, 23, 54].</li>
+<li>Raise <code>flash_attn_max_num_splits_for_cuda_graph</code> toward
+64 where batch × KV heads per GPU is below about 4, and watch tail
+latency. FA3’s device scheduler already backs off at full grids [59,
+44].</li>
+<li>Build a graph-safe decode path for batch-invariant mode. It would
+use 256-token, page-aligned splits on a worst-case grid with early exit,
+as HIP ll4mi already does [46, 72]. Pair it with a batch-free split
+bucket like the one SGLang’s Triton backend uses for deterministic
+inference [31].</li>
+<li>Measure the <code>ROCM_ATTN</code> reduce tax on CDNA at batch ≥ 256
+before keeping the always-split HIP path first in ROCm priority. PR
+#36702 gave it that spot without a benchmark [47], and open PR #60418
+would reverse it on RDNA [46, 54].</li>
 </ol>
-<h3>9.4 Worked example: Gemma-4-26B-A4B on H100</h3>
-<p>Gemma-4-26B-A4B mixes two attention shapes. Of its 30 layers, 25 use a 1,024-token sliding window with head size 256 and 16 query / 8 KV heads; 5 are global layers with head size 512 and 16 query / 2 KV heads, over contexts up to 262,144 tokens<sup class="cite">[<a href="#src-83">83</a>]</sup>. At long context the global layers carry most of the attention traffic, so their split decision is the one that matters.</p>
-<p>On Hopper, vLLM selects the <code>TRITON_FLASH_ATTN</code> composite for Gemma 4, with FA4 for causal prefill and decode<sup class="cite">[<a href="#src-57">57</a>]</sup>. vLLM passes FA4 <code>num_splits = 0</code> (the kernel's heuristic) in eager batches, the cap of 32 under full graphs, and 1 under batch invariance; on SM90 it precompiles the head-512 kernel with split variants for 1, 32, 64, 128 and 256 splits<sup class="cite">[<a href="#src-5">5</a>]</sup>. FA4's own heuristic is not in the sources. Using FA3's device formula as a proxy<sup class="cite">[<a href="#src-44">44</a>]</sup>, one global-layer sequence wants about 132 / (1.1 × 2) ≈ 60 splits, so the cap binds only at concurrency 1; at batch 2 the formula gives about 30. With 2 CTAs per sequence, the unsplit global grid fills one wave of a 132-SM H100 at about 66 sequences if one CTA is resident per SM, or about 53 under FA3's 0.8-wave rule (our arithmetic).</p>
-<p>Forcing <code>TRITON_ATTN</code> changes the picture. The builder computes <code>seq_threshold_3D = 128 // num_heads_kv</code> from the model-level <code>get_num_kv_heads()</code>, not per layer group<sup class="cite">[<a href="#src-25">25</a>]</sup>. For Gemma 4 that is presumably the sliding layers' 8 KV heads, giving 16, which the default capture sizes keep at 16; H100 uses 16 segments<sup class="cite">[<a href="#src-25">25</a>, <a href="#src-6">6</a>]</sup>. That model-level value is our reading of the code, unverified at runtime.</p>
-<div class="tbl"><table>
+<h3 id="worked-example-gemma-4-26b-a4b-on-h100">9.4 Worked example:
+Gemma-4-26B-A4B on H100</h3>
+<p>Gemma-4-26B-A4B mixes two attention shapes. It has 30 layers. 25 of
+them use a 1,024-token sliding window with head size 256 and 16 query /
+8 KV heads. The other 5 are global layers with head size 512 and 16
+query / 2 KV heads, over contexts up to 262,144 tokens [83]. At long
+context the global layers carry most of the attention traffic. So their
+split decision is the one that matters.</p>
+<p>On Hopper, vLLM picks the <code>TRITON_FLASH_ATTN</code> composite
+for Gemma 4, with FA4 for causal prefill and decode [57]. vLLM passes
+FA4 <code>num_splits = 0</code> (meaning: use the kernel’s heuristic) in
+eager batches. Under full graphs it passes the cap of 32, and under
+batch invariance it passes 1. On SM90 it precompiles the head-512 kernel
+with split variants for 1, 32, 64, 128 and 256 splits [5]. FA4’s own
+heuristic isn’t in the sources. So we use FA3’s device formula as a
+stand-in [44]. By that formula, one global-layer sequence wants about
+132 / (1.1 × 2) ≈ 60 splits, so the cap only binds at concurrency 1. At
+batch 2 the formula gives about 30. Each sequence has 2 CTAs, so the
+unsplit global grid fills one wave of a 132-SM H100 at about 66
+sequences if one CTA sits on each SM. Under FA3’s 0.8-wave rule it’s
+about 53 (our own arithmetic).</p>
+<p><code>TRITON_ATTN</code> moves the decision out of the kernel and
+into vLLM. The rule is simple, and it never looks at sequence length
+[25, 6].</p>
+<p>It starts from the single-pass 2D kernel. That kernel launches one
+CTA per query block and KV head, so a decode batch gets
+<code>num_seqs × num_heads_kv</code> CTAs. vLLM treats 128 CTAs
+(<code>MIN_LAUNCH_GRID_SIZE_2D</code>) as the smallest grid worth
+running single-pass. At start-up the metadata builder turns that into a
+batch-size cutoff, <code>seq_threshold_3D = 128 // num_heads_kv</code>.
+With full decode CUDA graphs it then moves the cutoff to the nearest
+capture size, so that every captured graph contains only one of the two
+kernels. At each decode step the launcher compares
+<code>num_seqs × query blocks</code> against the cutoff. At or below it,
+the step runs the 3D kernel: 16 segments per sequence on H100, then
+<code>reduce_segments</code>. Above it, the step runs 2D. A prefill
+chunk, an image prefix or batch invariance also forces 2D.</p>
+<p>The problem with Gemma 4 is which <code>num_heads_kv</code> the
+builder uses. It calls <code>model_config.get_num_kv_heads()</code>,
+which returns one number for the whole model, not the number for the
+layer group the builder is serving [25]. Gemma-4-26B has two: 8 KV heads
+in the sliding layers and 2 in the global layers [83]. The model-level
+value is presumably the config’s <code>num_key_value_heads</code>, which
+is 8. That gives <code>128 // 8 = 16</code>, and since 16 is one of the
+default capture sizes, snapping leaves it at 16. Both layer groups split
+at batch 16 or below and run single-pass above it. This is our reading
+of the code. We haven’t checked it on a running server.</p>
+<p>For the sliding layers, 16 is the right cutoff. At batch 16 their 2D
+grid is 16 × 8 = 128 CTAs, which is exactly vLLM’s target. The global
+layers miss. At the same batch they have only 16 × 2 = 32 CTAs, and
+their grid doesn’t reach 128 until batch 64. A 132-SM H100 fills at
+about 66 sequences if one CTA fits per SM. So from batch 17 to about 65
+the global layers run single-pass on 34 to 130 CTAs, with part of the
+GPU idle. At long context those are the layers that read the most KV. If
+the builder used each group’s own count, the global layers would get a
+cutoff of <code>128 // 2 = 64</code>.</p>
+<p>Below the cutoff the error runs the other way, and it is small. The
+3D kernel cuts every sequence into 16 segments, however long it is. A
+sliding layer reads at most 1,024 tokens, so each segment gets 64 tokens
+or fewer. That sits at the low end of the 64–128-token floor in §2.4,
+where the reduce pass costs about as much as the extra parallelism buys.
+We haven’t measured this for Gemma 4.</p>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
 <thead>
 <tr>
 <th>Layer group</th>
-<th>FA4 (default)</th>
-<th><code>TRITON_ATTN</code></th>
+<th>KV heads</th>
+<th>2D grid at batch 16</th>
+<th>2D grid reaches 128 CTAs at</th>
+<th><code>TRITON_ATTN</code> behavior</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Sliding, 8 KV heads, ≤ 1,024 tokens</td>
-<td>live split choice; little to gain</td>
-<td>split at batch ≤ 16, ≤ 64 tokens per segment (near the floor)</td>
+<td>25 sliding, ≤ 1,024 tokens</td>
+<td>8</td>
+<td>128 CTAs</td>
+<td>batch 16</td>
+<td>splits at batch ≤ 16, the right cutoff; segments ≤ 64 tokens</td>
 </tr>
 <tr>
-<td>Global, 2 KV heads, full context</td>
-<td>live split choice; cap 32 binds at batch 1</td>
-<td>split at batch ≤ 16; single-pass at 17–65 with a sub-wave grid of 34–130 CTAs</td>
+<td>5 global, full context</td>
+<td>2</td>
+<td>32 CTAs</td>
+<td>batch 64</td>
+<td>splits at batch ≤ 16; runs single-pass at 17–65 on 34–130 CTAs,
+under one wave</td>
 </tr>
 </tbody>
-</table></div>
-<p>On the default backend the only useful knob is raising <code>flash_attn_max_num_splits_for_cuda_graph</code> to 64 for concurrency-1, long-context serving, with tail latency monitored<sup class="cite">[<a href="#src-59">59</a>]</sup>. On <code>TRITON_ATTN</code> nothing short of a code change moves the global layers' cutoff; a per-group KV-head count would raise it to <code>128 // 2 = 64</code>.</p>
-<h3>9.5 Ranking the decision architectures, and where this is heading</h3>
+</table>
+<p>On the default backend there’s only one useful knob. Raise
+<code>flash_attn_max_num_splits_for_cuda_graph</code> to 64 for
+concurrency-1, long-context serving, and watch tail latency [59]. On
+<code>TRITON_ATTN</code>, only a code change moves the global layers’
+cutoff. A per-group KV-head count would raise it to
+<code>128 // 2 = 64</code>.</p>
+<h3 id="ranking-the-decision-designs-and-where-this-is-heading">9.5
+Ranking the decision designs, and where this is heading</h3>
 <p>For mixed-length serving under full graphs:</p>
-<ol>
-<li>Data-driven schedulers writing into capture-sized buffers (FA3 device prep, FlashInfer's CPU plan, the in-progress persistent Triton 3D) rank first.</li>
-<li>Occupancy-scaled host heuristics with KV floors (AITER Triton, trtllm-gen's one-wave rule) rank second.</li>
-<li>Shape-only gates (vLLM Triton) rank third.</li>
-<li>Unconditional policies (HIP always-split) rank last, though on RDNA a tuned Triton kernel beat it by only 1.05–1.13x geomean<sup class="cite">[<a href="#src-54">54</a>]</sup>.</li>
+<ol type="1">
+<li>Data-driven schedulers that write into capture-sized buffers (FA3
+device prep, FlashInfer’s CPU plan, the in-progress persistent Triton
+3D) rank first.</li>
+<li>Host heuristics scaled to occupancy, with KV floors (AITER Triton,
+trtllm-gen’s one-wave rule), rank second.</li>
+<li>Gates that only look at shape (vLLM Triton) rank third.</li>
+<li>Unconditional policies (HIP always-split) rank last. But on RDNA a
+tuned Triton kernel beat it by only 1.05–1.13x geomean [54].</li>
 </ol>
-<p>The ranking rests on mechanism and on NVIDIA's opt-in experience; no head-to-head measurement exists beyond the IBM authors' bundled static-grid result<sup class="cite">[<a href="#src-44">44</a>, <a href="#src-16">16</a>, <a href="#src-26">26</a>, <a href="#src-27">27</a>]</sup>.</p>
-<p>Two trends point the same way. Every 2026 PR surveyed replaced a constant with occupancy arithmetic: XQA's cost model, AITER's occupancy-sized splits, trtllm-gen's wave-aware split, RDNA's ~128-program target<sup class="cite">[<a href="#src-4">4</a>, <a href="#src-43">43</a>, <a href="#src-3">3</a>, <a href="#src-54">54</a>]</sup>. KV heads per GPU keep shrinking under MQA, MLA, heavy TP, and speculative and diffusion decoding, and each new few-query, long-KV workload of 2026 reached vLLM against a single-pass default, spec-decode verify as a bug report<sup class="cite">[<a href="#src-1">1</a>]</sup> and the diffusion canvas as an unmerged PR<sup class="cite">[<a href="#src-52">52</a>]</sup>.</p>
-<p>The likely end state is a persistent kernel with an SM-sized static grid in which each CTA takes fixed-size KV tiles from a schedule rebuilt every iteration: short requests finish in one tile and write through, long ones span several and merge<sup class="cite">[<a href="#src-32">32</a>, <a href="#src-16">16</a>, <a href="#src-26">26</a>]</sup>. A deterministic plan would make it batch-invariant by construction, and single-pass would survive as the degenerate one-tile case, decided per request from live lengths.</p>
-
-</main>
-<section class="sources"><h2 id="sources">Sources</h2><ol>
-<li id="src-1"><span class="sn">[1]</span> <a href="https://github.com/vllm-project/vllm/issues/59054">[Bug]: Triton attention: spec-decode verify batches (q_len&gt;1) forced onto the 2D kernel — 7-20x per-call attention slowdown at long context · Issue #59054 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-2"><span class="sn">[2]</span> <a href="https://github.com/vllm-project/vllm/pull/56148">[Attention][Spec Decode] Multi-query Triton split-K for spec-decode verify, with empty-segment/padding hardening · Pull Request #56148 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-3"><span class="sn">[3]</span> <a href="https://github.com/flashinfer-ai/flashinfer/pull/6522">perf(decode): wave aware split for sm107 · Pull Request #6522 · flashinfer-ai/flashinfer</a> <span class="dom">github.com</span></li>
-<li id="src-4"><span class="sn">[4]</span> <a href="https://github.com/flashinfer-ai/flashinfer/pull/4904">perf(xqa): size the SM90 fp8 split-KV grid from occupancy · Pull Request #4904 · flashinfer-ai/flashinfer</a> <span class="dom">github.com</span></li>
-<li id="src-5"><span class="sn">[5]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/flash_attn.py">vLLM flash_attn.py (FlashAttention backend)</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-6"><span class="sn">[6]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/ops/triton_unified_attention.py">vLLM triton_unified_attention.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-7"><span class="sn">[7]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/flashinfer.py">vLLM flashinfer.py (FlashInfer backend)</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-8"><span class="sn">[8]</span> <a href="https://arxiv.org/abs/2608.14376">CoRun: Padding is Simple and Efficient</a> <span class="dom">arxiv.org</span></li>
-<li id="src-9"><span class="sn">[9]</span> <a href="https://raw.githubusercontent.com/Dao-AILab/flash-attention/main/hopper/heuristics.h">FlashAttention-3 heuristics.h</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-10"><span class="sn">[10]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/v0.6.0/vllm/attention/ops/paged_attn.py">vLLM v0.6.0 paged_attn.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-11"><span class="sn">[11]</span> <a href="https://raw.githubusercontent.com/flashinfer-ai/flashinfer/main/include/flashinfer/trtllm/fmha/fmhaKernels.cuh">FlashInfer trtllm fmhaKernels.cuh</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-12"><span class="sn">[12]</span> <a href="https://crfm.stanford.edu/2023/10/12/flashdecoding.html">Flash-Decoding for long-context inference (Stanford CRFM)</a> <span class="dom">crfm.stanford.edu</span></li>
-<li id="src-13"><span class="sn">[13]</span> <a href="https://vllm.ai/blog/2026-03-04-vllm-triton-backend-deep-dive">vLLM Triton Attention Backend Deep Dive | vLLM Blog</a> <span class="dom">vllm.ai</span></li>
-<li id="src-14"><span class="sn">[14]</span> <a href="https://github.com/vllm-project/vllm/blob/v0.21.0/csrc/attention/paged_attention_v2.cu">vllm/csrc/attention/paged_attention_v2.cu at v0.21.0 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-15"><span class="sn">[15]</span> <a href="https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/main/cpp/kernels/xqa/mha.cu">TensorRT-LLM XQA mha.cu</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-16"><span class="sn">[16]</span> <a href="https://arxiv.org/abs/2501.01005">FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving</a> <span class="dom">arxiv.org</span></li>
-<li id="src-17"><span class="sn">[17]</span> <a href="https://docs.flashinfer.ai/generated/flashinfer.cascade.merge_state.html">flashinfer.cascade.merge_state - FlashInfer documentation</a> <span class="dom">docs.flashinfer.ai</span></li>
-<li id="src-18"><span class="sn">[18]</span> <a href="https://github.com/vllm-project/vllm/pull/58482">[Attention][SM120] Occupancy-adaptive Triton split-K segment count · Pull Request #58482 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-19"><span class="sn">[19]</span> <a href="https://developer.nvidia.com/blog/nvidia-tensorrt-llm-multiblock-attention-boosts-throughput-by-more-than-3x-for-long-sequence-lengths-on-nvidia-hgx-h200/">NVIDIA TensorRT-LLM Multiblock Attention Boosts Throughput by More Than 3x for Long Sequence Lengths on NVIDIA HGX H200 | NVIDIA Technical Blog</a> <span class="dom">developer.nvidia.com</span></li>
-<li id="src-20"><span class="sn">[20]</span> <a href="https://arxiv.org/abs/2604.00028">Sequence-Aware Split Heuristic to Mitigate SM Underutilization in FlashAttention-3</a> <span class="dom">arxiv.org</span></li>
-<li id="src-21"><span class="sn">[21]</span> <a href="https://nvidia.github.io/TensorRT-LLM/0.19.0/advanced/gpt-attention.html">Multi-Head, Multi-Query, and Group-Query Attention — TensorRT-LLM</a> <span class="dom">nvidia.github.io</span></li>
-<li id="src-22"><span class="sn">[22]</span> <a href="https://raw.githubusercontent.com/Dao-AILab/flash-attention/main/csrc/flash_attn/flash_api.cpp">FlashAttention-2 flash_api.cpp</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-23"><span class="sn">[23]</span> <a href="https://raw.githubusercontent.com/flashinfer-ai/flashinfer/main/include/flashinfer/attention/scheduler.cuh">FlashInfer scheduler.cuh</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-24"><span class="sn">[24]</span> <a href="https://raw.githubusercontent.com/ROCm/aiter/main/aiter/ops/triton/attention/unified_attention.py">AITER Triton unified_attention.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-25"><span class="sn">[25]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/triton_attn.py">vLLM triton_attn.py (Triton backend)</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-26"><span class="sn">[26]</span> <a href="https://hosted-files.sched.co/pytorchconferenceeu2026/3a/2026-04-08_vanLunteren_Ringlein_PyTorch-Paris_pub.pdf">Portable High-Performance LLM Inference (PyTorch Conference Europe 2026)</a> <span class="dom">hosted-files.sched.co</span></li>
-<li id="src-27"><span class="sn">[27]</span> <a href="https://github.com/flashinfer-ai/flashinfer/pull/6331">perf(trtllm-gen): opt-in multi-wave KV split for decode when one wave gives &lt;= 2 splits · Pull Request #6331 · flashinfer-ai/flashinfer</a> <span class="dom">github.com</span></li>
-<li id="src-28"><span class="sn">[28]</span> <a href="https://github.com/ROCm/aiter/pull/5859">[Triton/Gluon] PA decode: config-driven v1/v2 dispatch, gfx950 always v2 · Pull Request #5859 · ROCm/aiter</a> <span class="dom">github.com</span></li>
-<li id="src-29"><span class="sn">[29]</span> <a href="https://raw.githubusercontent.com/ROCm/aiter/main/aiter/ops/triton/attention/pa_decode.py">AITER Triton pa_decode.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-30"><span class="sn">[30]</span> <a href="https://flashinfer.ai/2024/02/02/introduce-flashinfer.html">Accelerating Self-Attentions for LLM Serving with FlashInfer | FlashInfer</a> <span class="dom">flashinfer.ai</span></li>
-<li id="src-31"><span class="sn">[31]</span> <a href="https://raw.githubusercontent.com/sgl-project/sglang/main/python/sglang/kernels/ops/attention/decode_attention.py">SGLang decode_attention.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-32"><span class="sn">[32]</span> <a href="https://arxiv.org/abs/2405.10480">LeanAttention: Hardware-Aware Scalable Attention Mechanism for the Decode-Phase of Transformers</a> <span class="dom">arxiv.org</span></li>
-<li id="src-33"><span class="sn">[33]</span> <a href="https://arxiv.org/abs/2606.26666">PersistentKV: Page-Aware Decode Scheduling for Long-Context LLM Inference</a> <span class="dom">arxiv.org</span></li>
-<li id="src-34"><span class="sn">[34]</span> <a href="https://github.com/flashinfer-ai/flashinfer/pull/4702">fix(fmha): select CGA reduction for MLA H512 decode · Pull Request #4702 · flashinfer-ai/flashinfer</a> <span class="dom">github.com</span></li>
-<li id="src-35"><span class="sn">[35]</span> <a href="https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/main/cpp/tensorrt_llm/kernels/decoderMaskedMultiheadAttention/decoderXQARunnerUtils.h">TensorRT-LLM decoderXQARunnerUtils.h</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-36"><span class="sn">[36]</span> <a href="https://github.com/flashinfer-ai/flashinfer/pull/6267">perf(trtllm-gen decode): keep CGA reduction for small-batch long-KV decode; fuse v_scale in the decode wrapper · Pull Request #6267 · flashinfer-ai/flashinfer</a> <span class="dom">github.com</span></li>
-<li id="src-37"><span class="sn">[37]</span> <a href="https://github.com/vllm-project/vllm/pull/58650">[ROCm][Attention] Shape-aware split-KV and launch config for Triton DiffKV (gfx950) · Pull Request #58650 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-38"><span class="sn">[38]</span> <a href="https://arxiv.org/abs/2311.01282">FlashDecoding++: Faster Large Language Model Inference on GPUs</a> <span class="dom">arxiv.org</span></li>
-<li id="src-39"><span class="sn">[39]</span> <a href="https://raw.githubusercontent.com/Dao-AILab/flash-attention/main/hopper/flash_api.cpp">FlashAttention-3 flash_api.cpp (hopper)</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-40"><span class="sn">[40]</span> <a href="https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/main/cpp/tensorrt_llm/kernels/decoderMaskedMultiheadAttention/decoderXQAConstants.h">TensorRT-LLM decoderXQAConstants.h</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-41"><span class="sn">[41]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/ops/chunked_prefill_paged_decode.py">vLLM chunked_prefill_paged_decode.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-42"><span class="sn">[42]</span> <a href="https://github.com/vllm-project/flash-attention/pull/201">Enable split-KV for varlen + paged KV when explicitly requested · Pull Request #201 · vllm-project/flash-attention</a> <span class="dom">github.com</span></li>
-<li id="src-43"><span class="sn">[43]</span> <a href="https://github.com/ROCm/aiter/pull/6434">[Triton/Gluon] PA decode: split PS work on whole partitions, size the split count from kernel occupancy on gfx950 · Pull Request #6434 · ROCm/aiter</a> <span class="dom">github.com</span></li>
-<li id="src-44"><span class="sn">[44]</span> <a href="https://raw.githubusercontent.com/Dao-AILab/flash-attention/main/hopper/flash_prepare_scheduler.cu">FlashAttention-3 flash_prepare_scheduler.cu</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-45"><span class="sn">[45]</span> <a href="https://raw.githubusercontent.com/ROCm/aiter/main/aiter/ops/triton/utils/unified_attention_utils.py">AITER unified_attention_utils.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-46"><span class="sn">[46]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/csrc/rocm/attention_kernels.cuh">vLLM ROCm attention_kernels.cuh</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-47"><span class="sn">[47]</span> <a href="https://github.com/vllm-project/vllm/pull/36702">[ROCm] Attention selector reordering · Pull Request #36702 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-48"><span class="sn">[48]</span> <a href="https://github.com/vllm-project/vllm/pull/59085">[Feature][Attention] Cover a whole spec-verify in one DiffKV split-KV program · Pull Request #59085 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-49"><span class="sn">[49]</span> <a href="https://github.com/vllm-project/vllm/pull/28306">[Kernel] Support CUDA Graphs in 3D Triton Attention Kernel · Pull Request #28306 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-50"><span class="sn">[50]</span> <a href="https://github.com/vllm-project/vllm/pull/19152">[Kernel] Add Split-KV Support to Unified Triton Attention Kernel · Pull Request #19152 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-51"><span class="sn">[51]</span> <a href="https://arxiv.org/pdf/2511.11581">The Anatomy of a Triton Attention Kernel</a> <span class="dom">arxiv.org</span></li>
-<li id="src-52"><span class="sn">[52]</span> <a href="https://github.com/vllm-project/vllm/pull/46724">[Attention] Occupancy-gated 3D segmented decode for multi-query (diffusion-LM canvas) over long KV · Pull Request #46724 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-53"><span class="sn">[53]</span> <a href="https://github.com/vllm-project/vllm/pull/45450">Admit MTP/EAGLE spec-decode steps and sliding-window layers into the Triton 3D flash-decoding path (B300, NVFP4) · Pull Request #45450 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-54"><span class="sn">[54]</span> <a href="https://github.com/vllm-project/vllm/pull/60418">[ROCm] [Perf] Add tuned configs for TRITON_ATTN kernel and swap places of TRITON_ATTN and ROCM_ATTN in priority list · Pull Request #60418 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-55"><span class="sn">[55]</span> <a href="https://github.com/vllm-project/vllm/pull/56276">[ROCm][Perf] Tune the unified-attention 3D decode path for gfx1151 · Pull Request #56276 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-56"><span class="sn">[56]</span> <a href="https://github.com/vllm-project/vllm/pull/61646">[Perf][Attention] Split only the sliding window into Triton split-K decode segments · Pull Request #61646 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-57"><span class="sn">[57]</span> <a href="https://docs.vllm.ai/en/latest/design/attention_backends/">Attention Backend Feature Support - vLLM</a> <span class="dom">docs.vllm.ai</span></li>
-<li id="src-58"><span class="sn">[58]</span> <a href="https://docs.vllm.ai/en/latest/api/vllm/config/attention/">vLLM attention config API reference</a> <span class="dom">docs.vllm.ai</span></li>
-<li id="src-59"><span class="sn">[59]</span> <a href="https://github.com/vllm-project/vllm/pull/25274">[CLI env var] Add VLLM_FLASH_ATTN_MAX_NUM_SPLITS_FOR_CUDA_GRAPH in env variables · Pull Request #25274 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-60"><span class="sn">[60]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/utils/flashinfer.py">vLLM utils/flashinfer.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-61"><span class="sn">[61]</span> <a href="https://raw.githubusercontent.com/flashinfer-ai/flashinfer/main/csrc/trtllm_fmha_kernel_launcher.cu">FlashInfer trtllm_fmha_kernel_launcher.cu</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-62"><span class="sn">[62]</span> <a href="https://github.com/flashinfer-ai/flashinfer/pull/3379">KV Split Oversubscription for Mixed Sequence Lengths · Pull Request #3379 · flashinfer-ai/flashinfer</a> <span class="dom">github.com</span></li>
-<li id="src-63"><span class="sn">[63]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/platforms/rocm.py">vLLM platforms/rocm.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-64"><span class="sn">[64]</span> <a href="https://raw.githubusercontent.com/ROCm/aiter/main/aiter/ops/attention.py">AITER ops/attention.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-65"><span class="sn">[65]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/rocm_aiter_fa.py">vLLM rocm_aiter_fa.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-66"><span class="sn">[66]</span> <a href="https://github.com/ROCm/aiter/pull/6453">[Triton/Gluon] PA decode: use more splits for small grids in get_recommended_splits · Pull Request #6453 · ROCm/aiter</a> <span class="dom">github.com</span></li>
-<li id="src-67"><span class="sn">[67]</span> <a href="https://github.com/vllm-project/vllm/pull/62476">[ROCm][Perf] Use Triton split-KV unified attention for decode-width batches on gfx950 · Pull Request #62476 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-68"><span class="sn">[68]</span> <a href="https://github.com/vllm-project/vllm/issues/46596">[ROCm][Perf] ROCM_ATTN selected over ROCM_AITER_FA for MHA decode despite VLLM_ROCM_USE_AITER=1 (CDNA) · Issue #46596 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-69"><span class="sn">[69]</span> <a href="https://vllm.ai/blog/2026-02-27-rocm-attention-backend">Beyond Porting: How vLLM Orchestrates High-Performance Inference on AMD ROCm | vLLM Blog</a> <span class="dom">vllm.ai</span></li>
-<li id="src-70"><span class="sn">[70]</span> <a href="https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/rocm_attn.py">vLLM rocm_attn.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-71"><span class="sn">[71]</span> <a href="https://github.com/vllm-project/vllm/issues/61029">[Performance]: Triton decode with 64-token KV tiles beats FLASH_ATTN at kernel level on H100, but only +2.6% end to end · Issue #61029 · vllm-project/vllm</a> <span class="dom">github.com</span></li>
-<li id="src-72"><span class="sn">[72]</span> <a href="https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/">Defeating Nondeterminism in LLM Inference - Thinking Machines Lab</a> <span class="dom">thinkingmachines.ai</span></li>
-<li id="src-73"><span class="sn">[73]</span> <a href="https://docs.pytorch.org/docs/2.13/nn.attention.varlen.html">torch.nn.attention.varlen — PyTorch 2.13 documentation</a> <span class="dom">docs.pytorch.org</span></li>
-<li id="src-74"><span class="sn">[74]</span> <a href="https://raw.githubusercontent.com/flashinfer-ai/flashinfer/main/flashinfer/decode.py">FlashInfer decode.py</a> <span class="dom">raw.githubusercontent.com</span></li>
-<li id="src-75"><span class="sn">[75]</span> <a href="https://github.com/flashinfer-ai/flashinfer/pull/1675">feat: Batch-size invariant FA2 Prefill &amp; Decode · Pull Request #1675 · flashinfer-ai/flashinfer</a> <span class="dom">github.com</span></li>
-<li id="src-76"><span class="sn">[76]</span> <a href="https://github.com/sgl-project/sglang/pull/10645">[1/2] Support deterministic inference with flashinfer attention backend · Pull Request #10645 · sgl-project/sglang</a> <span class="dom">github.com</span></li>
-<li id="src-77"><span class="sn">[77]</span> <a href="https://github.com/sgl-project/sglang/pull/10651">[Feature] Support deterministic inference with FA3 backend · Pull Request #10651 · sgl-project/sglang</a> <span class="dom">github.com</span></li>
-<li id="src-78"><span class="sn">[78]</span> <a href="https://docs.sglang.io/advanced_features/deterministic_inference.html">Deterministic Inference - SGLang Documentation</a> <span class="dom">docs.sglang.io</span></li>
-<li id="src-79"><span class="sn">[79]</span> <a href="https://github.com/sgl-project/sglang/pull/10425">Add split tile size for Triton attention · Pull Request #10425 · sgl-project/sglang</a> <span class="dom">github.com</span></li>
-<li id="src-80"><span class="sn">[80]</span> <a href="https://lmsys.org/blog/2025-09-22-sglang-deterministic/">Towards Deterministic Inference in SGLang and Reproducible RL Training - LMSYS Org</a> <span class="dom">lmsys.org</span></li>
-<li id="src-81"><span class="sn">[81]</span> <a href="https://docs.vllm.ai/en/latest/features/batch_invariance/">Batch Invariance - vLLM</a> <span class="dom">docs.vllm.ai</span></li>
-<li id="src-82"><span class="sn">[82]</span> <a href="https://pytorch.org/blog/flash-decoding/">Flash-Decoding for long-context inference - PyTorch</a> <span class="dom">pytorch.org</span></li>
-<li id="src-83"><span class="sn">[83]</span> <a href="https://huggingface.co/google/gemma-4-26B-A4B-it/blob/main/config.json">config.json · google/gemma-4-26B-A4B-it at main</a> <span class="dom">huggingface.co</span></li>
-</ol></section>
-<footer class="tb">
-<div><div class="lbl">Title</div><div class="val">Single-Pass vs Split-KV Decode Attention in vLLM: Where the Boundary Sits, Who Draws It, and What It Costs</div></div>
-<div><div class="lbl">Review date</div><div class="val">2026-10-28</div></div>
-<div><div class="lbl">Sources cited</div><div class="val">83</div></div>
-</footer>
+<p>This ranking rests on how the mechanisms work and on NVIDIA’s opt-in
+experience. No head-to-head measurement exists beyond the IBM authors’
+bundled static-grid result [44, 16, 26, 27].</p>
+<p>Two trends point the same way. First, every 2026 PR we looked at
+replaced a constant with occupancy math: XQA’s cost model, AITER’s
+occupancy-sized splits, trtllm-gen’s wave-aware split, RDNA’s
+~128-program target [4, 43, 3, 54]. Second, KV heads per GPU keep
+shrinking under MQA, MLA, heavy TP, and speculative and diffusion
+decoding. Each new few-query, long-KV workload of 2026 hit vLLM’s
+single-pass default. Spec-decode verify showed up as a bug report [1],
+and the diffusion canvas as an unmerged PR [52].</p>
+<p>The likely end state is a persistent kernel with a static grid sized
+to the SMs. Each CTA takes fixed-size KV tiles from a schedule rebuilt
+every iteration. Short requests finish in one tile and write straight
+out. Long ones span several tiles and merge [32, 16, 26]. A
+deterministic plan would make it batch-invariant by design. And
+single-pass would live on as the simple one-tile case, decided per
+request from live lengths.</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<p>[1] [Bug]: Triton attention: spec-decode verify batches (q_len&gt;1)
+forced onto the 2D kernel — 7-20x per-call attention slowdown at long
+context · Issue #59054 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/issues/59054 [2] [Attention][Spec
+Decode] Multi-query Triton split-K for spec-decode verify, with
+empty-segment/padding hardening · Pull Request #56148 ·
+vllm-project/vllm. https://github.com/vllm-project/vllm/pull/56148 [3]
+perf(decode): wave aware split for sm107 · Pull Request #6522 ·
+flashinfer-ai/flashinfer.
+https://github.com/flashinfer-ai/flashinfer/pull/6522 [4] perf(xqa):
+size the SM90 fp8 split-KV grid from occupancy · Pull Request #4904 ·
+flashinfer-ai/flashinfer.
+https://github.com/flashinfer-ai/flashinfer/pull/4904 [5] vLLM
+flash_attn.py (FlashAttention backend).
+https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/flash_attn.py
+[6] vLLM triton_unified_attention.py.
+https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/ops/triton_unified_attention.py
+[7] vLLM flashinfer.py (FlashInfer backend).
+https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/flashinfer.py
+[8] CoRun: Padding is Simple and Efficient.
+https://arxiv.org/abs/2608.14376 [9] FlashAttention-3 heuristics.h.
+https://raw.githubusercontent.com/Dao-AILab/flash-attention/main/hopper/heuristics.h
+[10] vLLM v0.6.0 paged_attn.py.
+https://raw.githubusercontent.com/vllm-project/vllm/v0.6.0/vllm/attention/ops/paged_attn.py
+[11] FlashInfer trtllm fmhaKernels.cuh.
+https://raw.githubusercontent.com/flashinfer-ai/flashinfer/main/include/flashinfer/trtllm/fmha/fmhaKernels.cuh
+[12] Flash-Decoding for long-context inference (Stanford CRFM).
+https://crfm.stanford.edu/2023/10/12/flashdecoding.html [13] vLLM Triton
+Attention Backend Deep Dive | vLLM Blog.
+https://vllm.ai/blog/2026-03-04-vllm-triton-backend-deep-dive [14]
+vllm/csrc/attention/paged_attention_v2.cu at v0.21.0 ·
+vllm-project/vllm.
+https://github.com/vllm-project/vllm/blob/v0.21.0/csrc/attention/paged_attention_v2.cu
+[15] TensorRT-LLM XQA mha.cu.
+https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/main/cpp/kernels/xqa/mha.cu
+[16] FlashInfer: Efficient and Customizable Attention Engine for LLM
+Inference Serving. https://arxiv.org/abs/2501.01005 [17]
+flashinfer.cascade.merge_state - FlashInfer documentation.
+https://docs.flashinfer.ai/generated/flashinfer.cascade.merge_state.html
+[18] [Attention][SM120] Occupancy-adaptive Triton split-K segment count
+· Pull Request #58482 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/pull/58482 [19] NVIDIA TensorRT-LLM
+Multiblock Attention Boosts Throughput by More Than 3x for Long Sequence
+Lengths on NVIDIA HGX H200 | NVIDIA Technical Blog.
+https://developer.nvidia.com/blog/nvidia-tensorrt-llm-multiblock-attention-boosts-throughput-by-more-than-3x-for-long-sequence-lengths-on-nvidia-hgx-h200/
+[20] Sequence-Aware Split Heuristic to Mitigate SM Underutilization in
+FlashAttention-3. https://arxiv.org/abs/2604.00028 [21] Multi-Head,
+Multi-Query, and Group-Query Attention — TensorRT-LLM.
+https://nvidia.github.io/TensorRT-LLM/0.19.0/advanced/gpt-attention.html
+[22] FlashAttention-2 flash_api.cpp.
+https://raw.githubusercontent.com/Dao-AILab/flash-attention/main/csrc/flash_attn/flash_api.cpp
+[23] FlashInfer scheduler.cuh.
+https://raw.githubusercontent.com/flashinfer-ai/flashinfer/main/include/flashinfer/attention/scheduler.cuh
+[24] AITER Triton unified_attention.py.
+https://raw.githubusercontent.com/ROCm/aiter/main/aiter/ops/triton/attention/unified_attention.py
+[25] vLLM triton_attn.py (Triton backend).
+https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/triton_attn.py
+[26] Portable High-Performance LLM Inference (PyTorch Conference Europe
+2026).
+https://hosted-files.sched.co/pytorchconferenceeu2026/3a/2026-04-08_vanLunteren_Ringlein_PyTorch-Paris_pub.pdf
+[27] perf(trtllm-gen): opt-in multi-wave KV split for decode when one
+wave gives &lt;= 2 splits · Pull Request #6331 ·
+flashinfer-ai/flashinfer.
+https://github.com/flashinfer-ai/flashinfer/pull/6331 [28]
+[Triton/Gluon] PA decode: config-driven v1/v2 dispatch, gfx950 always v2
+· Pull Request #5859 · ROCm/aiter.
+https://github.com/ROCm/aiter/pull/5859 [29] AITER Triton pa_decode.py.
+https://raw.githubusercontent.com/ROCm/aiter/main/aiter/ops/triton/attention/pa_decode.py
+[30] Accelerating Self-Attentions for LLM Serving with FlashInfer |
+FlashInfer. https://flashinfer.ai/2024/02/02/introduce-flashinfer.html
+[31] SGLang decode_attention.py.
+https://raw.githubusercontent.com/sgl-project/sglang/main/python/sglang/kernels/ops/attention/decode_attention.py
+[32] LeanAttention: Hardware-Aware Scalable Attention Mechanism for the
+Decode-Phase of Transformers. https://arxiv.org/abs/2405.10480 [33]
+PersistentKV: Page-Aware Decode Scheduling for Long-Context LLM
+Inference. https://arxiv.org/abs/2606.26666 [34] fix(fmha): select CGA
+reduction for MLA H512 decode · Pull Request #4702 ·
+flashinfer-ai/flashinfer.
+https://github.com/flashinfer-ai/flashinfer/pull/4702 [35] TensorRT-LLM
+decoderXQARunnerUtils.h.
+https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/main/cpp/tensorrt_llm/kernels/decoderMaskedMultiheadAttention/decoderXQARunnerUtils.h
+[36] perf(trtllm-gen decode): keep CGA reduction for small-batch long-KV
+decode; fuse v_scale in the decode wrapper · Pull Request #6267 ·
+flashinfer-ai/flashinfer.
+https://github.com/flashinfer-ai/flashinfer/pull/6267 [37]
+[ROCm][Attention] Shape-aware split-KV and launch config for Triton
+DiffKV (gfx950) · Pull Request #58650 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/pull/58650 [38] FlashDecoding++:
+Faster Large Language Model Inference on GPUs.
+https://arxiv.org/abs/2311.01282 [39] FlashAttention-3 flash_api.cpp
+(hopper).
+https://raw.githubusercontent.com/Dao-AILab/flash-attention/main/hopper/flash_api.cpp
+[40] TensorRT-LLM decoderXQAConstants.h.
+https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/main/cpp/tensorrt_llm/kernels/decoderMaskedMultiheadAttention/decoderXQAConstants.h
+[41] vLLM chunked_prefill_paged_decode.py.
+https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/ops/chunked_prefill_paged_decode.py
+[42] Enable split-KV for varlen + paged KV when explicitly requested ·
+Pull Request #201 · vllm-project/flash-attention.
+https://github.com/vllm-project/flash-attention/pull/201 [43]
+[Triton/Gluon] PA decode: split PS work on whole partitions, size the
+split count from kernel occupancy on gfx950 · Pull Request #6434 ·
+ROCm/aiter. https://github.com/ROCm/aiter/pull/6434 [44]
+FlashAttention-3 flash_prepare_scheduler.cu.
+https://raw.githubusercontent.com/Dao-AILab/flash-attention/main/hopper/flash_prepare_scheduler.cu
+[45] AITER unified_attention_utils.py.
+https://raw.githubusercontent.com/ROCm/aiter/main/aiter/ops/triton/utils/unified_attention_utils.py
+[46] vLLM ROCm attention_kernels.cuh.
+https://raw.githubusercontent.com/vllm-project/vllm/main/csrc/rocm/attention_kernels.cuh
+[47] [ROCm] Attention selector reordering · Pull Request #36702 ·
+vllm-project/vllm. https://github.com/vllm-project/vllm/pull/36702 [48]
+[Feature][Attention] Cover a whole spec-verify in one DiffKV split-KV
+program · Pull Request #59085 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/pull/59085 [49] [Kernel] Support
+CUDA Graphs in 3D Triton Attention Kernel · Pull Request #28306 ·
+vllm-project/vllm. https://github.com/vllm-project/vllm/pull/28306 [50]
+[Kernel] Add Split-KV Support to Unified Triton Attention Kernel · Pull
+Request #19152 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/pull/19152 [51] The Anatomy of a
+Triton Attention Kernel. https://arxiv.org/pdf/2511.11581 [52]
+[Attention] Occupancy-gated 3D segmented decode for multi-query
+(diffusion-LM canvas) over long KV · Pull Request #46724 ·
+vllm-project/vllm. https://github.com/vllm-project/vllm/pull/46724 [53]
+Admit MTP/EAGLE spec-decode steps and sliding-window layers into the
+Triton 3D flash-decoding path (B300, NVFP4) · Pull Request #45450 ·
+vllm-project/vllm. https://github.com/vllm-project/vllm/pull/45450 [54]
+[ROCm] [Perf] Add tuned configs for TRITON_ATTN kernel and swap places
+of TRITON_ATTN and ROCM_ATTN in priority list · Pull Request #60418 ·
+vllm-project/vllm. https://github.com/vllm-project/vllm/pull/60418 [55]
+[ROCm][Perf] Tune the unified-attention 3D decode path for gfx1151 ·
+Pull Request #56276 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/pull/56276 [56] [Perf][Attention]
+Split only the sliding window into Triton split-K decode segments · Pull
+Request #61646 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/pull/61646 [57] Attention Backend
+Feature Support - vLLM.
+https://docs.vllm.ai/en/latest/design/attention_backends/ [58] vLLM
+attention config API reference.
+https://docs.vllm.ai/en/latest/api/vllm/config/attention/ [59] [CLI env
+var] Add VLLM_FLASH_ATTN_MAX_NUM_SPLITS_FOR_CUDA_GRAPH in env variables
+· Pull Request #25274 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/pull/25274 [60] vLLM
+utils/flashinfer.py.
+https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/utils/flashinfer.py
+[61] FlashInfer trtllm_fmha_kernel_launcher.cu.
+https://raw.githubusercontent.com/flashinfer-ai/flashinfer/main/csrc/trtllm_fmha_kernel_launcher.cu
+[62] KV Split Oversubscription for Mixed Sequence Lengths · Pull Request
+#3379 · flashinfer-ai/flashinfer.
+https://github.com/flashinfer-ai/flashinfer/pull/3379 [63] vLLM
+platforms/rocm.py.
+https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/platforms/rocm.py
+[64] AITER ops/attention.py.
+https://raw.githubusercontent.com/ROCm/aiter/main/aiter/ops/attention.py
+[65] vLLM rocm_aiter_fa.py.
+https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/rocm_aiter_fa.py
+[66] [Triton/Gluon] PA decode: use more splits for small grids in
+get_recommended_splits · Pull Request #6453 · ROCm/aiter.
+https://github.com/ROCm/aiter/pull/6453 [67] [ROCm][Perf] Use Triton
+split-KV unified attention for decode-width batches on gfx950 · Pull
+Request #62476 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/pull/62476 [68] [ROCm][Perf]
+ROCM_ATTN selected over ROCM_AITER_FA for MHA decode despite
+VLLM_ROCM_USE_AITER=1 (CDNA) · Issue #46596 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/issues/46596 [69] Beyond Porting:
+How vLLM Orchestrates High-Performance Inference on AMD ROCm | vLLM
+Blog. https://vllm.ai/blog/2026-02-27-rocm-attention-backend [70] vLLM
+rocm_attn.py.
+https://raw.githubusercontent.com/vllm-project/vllm/main/vllm/v1/attention/backends/rocm_attn.py
+[71] [Performance]: Triton decode with 64-token KV tiles beats
+FLASH_ATTN at kernel level on H100, but only +2.6% end to end · Issue
+#61029 · vllm-project/vllm.
+https://github.com/vllm-project/vllm/issues/61029 [72] Defeating
+Nondeterminism in LLM Inference - Thinking Machines Lab.
+https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/
+[73] torch.nn.attention.varlen — PyTorch 2.13 documentation.
+https://docs.pytorch.org/docs/2.13/nn.attention.varlen.html [74]
+FlashInfer decode.py.
+https://raw.githubusercontent.com/flashinfer-ai/flashinfer/main/flashinfer/decode.py
+[75] feat: Batch-size invariant FA2 Prefill &amp; Decode · Pull Request
+#1675 · flashinfer-ai/flashinfer.
+https://github.com/flashinfer-ai/flashinfer/pull/1675 [76] [1/2] Support
+deterministic inference with flashinfer attention backend · Pull Request
+#10645 · sgl-project/sglang.
+https://github.com/sgl-project/sglang/pull/10645 [77] [Feature] Support
+deterministic inference with FA3 backend · Pull Request #10651 ·
+sgl-project/sglang. https://github.com/sgl-project/sglang/pull/10651
+[78] Deterministic Inference - SGLang Documentation.
+https://docs.sglang.io/advanced_features/deterministic_inference.html
+[79] Add split tile size for Triton attention · Pull Request #10425 ·
+sgl-project/sglang. https://github.com/sgl-project/sglang/pull/10425
+[80] Towards Deterministic Inference in SGLang and Reproducible RL
+Training - LMSYS Org.
+https://lmsys.org/blog/2025-09-22-sglang-deterministic/ [81] Batch
+Invariance - vLLM.
+https://docs.vllm.ai/en/latest/features/batch_invariance/ [82]
+Flash-Decoding for long-context inference - PyTorch.
+https://pytorch.org/blog/flash-decoding/ [83] config.json ·
+google/gemma-4-26B-A4B-it at main.
+https://huggingface.co/google/gemma-4-26B-A4B-it/blob/main/config.json</p>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Single-Pass vs
+Split-KV Decode Attention in vLLM: Where the Boundary Sits, Who Draws
+It, and What It Costs</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-10-29</span></div>
+  <div><span class="k">Sources cited</span><span class="v">83</span></div>
+</div>
 </div></div>
 </body>
 </html>
