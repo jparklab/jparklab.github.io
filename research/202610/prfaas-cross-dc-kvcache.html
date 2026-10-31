@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Prefill-as-a-Service: cross-datacenter KVCache</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Prefill-as-a-Service: cross-datacenter KVCache</h1>
+<div class="byline">Research report · 4 cited sources · reviewed 2026-10-31</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#overview" id="toc-overview">Overview</a></li>
+<li><a href="#key-concepts" id="toc-key-concepts">Key concepts</a></li>
+<li><a href="#how-it-works" id="toc-how-it-works">How it works</a></li>
+<li><a href="#relation-to-known" id="toc-relation-to-known">Relation to
+known</a></li>
+<li><a href="#caveats" id="toc-caveats">Caveats</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>Source:</strong> <a
+href="https://www.alphaxiv.org/abs/2604.15039v1">Prefill-as-a-Service:
+KVCache of Next-Generation Models Could Go Cross-Datacenter</a> (Qin et
+al., Moonshot AI + Tsinghua, arXiv 2604.15039v1, April 2026)
+<strong>Reviewed:</strong> 2026-10-31 · <strong>Sheet:</strong> <a
+href="https://jparklab.github.io/research/202610/prfaas-cross-dc-kvcache-sheet.html">PrfaaS
+summary sheet</a></p>
+</div>
+<h2 id="overview">Overview</h2>
+<p>The paper proposes <strong>Prefill-as-a-Service (PrfaaS)</strong>.
+Long prefills run in a standalone, compute-dense “PrfaaS cluster”. The
+resulting KV cache travels over ordinary Ethernet (VPC peering or a
+dedicated line) to a separate, conventional PD-disaggregated cluster,
+which does the decoding
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.
+The authors are the Mooncake team. Their premise: PD disaggregation is
+stuck inside one RDMA fabric today because dense-attention models emit
+KV cache faster than any slower link can carry it. Hybrid-attention
+models interleave a few full-attention layers with linear-attention or
+sliding-window layers. That cuts the KV emission rate by roughly 4–13×,
+enough to make a cross-datacenter link plausible for some requests
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</p>
+<p>The authors call smaller KV “necessary but not sufficient”. The
+system contribution has four parts [1]:</p>
+<ol type="1">
+<li>A length threshold, so only long, uncached prefills cross the
+link.</li>
+<li>A hybrid prefix-cache pool that holds both recurrent state and
+block-level KV.</li>
+<li>A transport layer: layer-wise pipelining, multi-connection TCP,
+congestion signals.</li>
+<li>An analytical throughput model (Eqs. 3–8) and a two-timescale
+scheduler built on it.</li>
+</ol>
+<p>The case study runs an internal 1T model with the Kimi Linear
+architecture. It uses 32 H200 for PrfaaS and 64 H20 for local PD,
+connected by a ~100 Gbps VPC. The paper reports 1.54× throughput over a
+96-H20 homogeneous PD cluster and 1.32× over naive heterogeneous PD,
+with only 13 Gbps of cross-cluster egress
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.
+These numbers come from profiled latencies fed into the model, not from
+a live end-to-end run.</p>
+<h2 id="key-concepts">Key concepts</h2>
+<ul>
+<li><strong>Φkv, KV throughput (§2.1, Eq. 1).</strong> Φkv(l) = S_kv(l)
+/ T_prefill(l). This is the rate at which one model instance produces KV
+cache during prefill, and so the egress bandwidth that instance needs to
+avoid stalling
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.
+Prefill time grows almost quadratically with l. KV size grows linearly,
+or stays flat for recurrent state. So for hybrid models Φkv flattens or
+falls at long lengths.</li>
+<li><strong>PD disaggregation.</strong> Prefill (compute-bound) and
+decode (memory-bandwidth-bound) run on separate instances, and KV moves
+P→D once per request. The paper argues that this per-request transfer,
+not the scheduler, is what keeps PD inside one RDMA domain
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</li>
+<li><strong>Hybrid attention (§2.2, Table 1).</strong> “Type A”
+linear-complexity layers (KDA, SWA, GDN, Lightning) are interleaved with
+“Type B” full-attention layers (MLA or GQA). Example ratios: 3:1 for
+Kimi Linear and Qwen3.5-397B, 5:1 for MiMo-V2-Flash, 7:1 for Ring-2.5-1T
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.
+Only Type B layers produce KV that grows with length.</li>
+<li><strong>PrfaaS cluster vs local PD cluster (§3.1).</strong> Each
+cluster has one hardware type. The local PD cluster can serve a request
+end to end. The PrfaaS cluster only prefills the requests routed to it,
+as a “stateless KVCache producer”
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</li>
+<li><strong>PD-P / PD-D (§3.4).</strong> The prefill and decode nodes
+inside the local PD cluster. PrfaaS and PD-P are parallel producers;
+PD-D is the single consumer
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</li>
+<li><strong>Routing threshold t (§3.3).</strong> l is the
+<em>incremental</em> (uncached) length. If l &gt; t the request goes to
+PrfaaS, otherwise to PD-P. Short prefills under-use compute-dense chips
+and have no better Φkv
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</li>
+<li><strong>Hybrid prefix cache pool (§3.2, Fig. 4).</strong> Built on
+vLLM’s hybrid KV cache manager
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.
+Linear-attention state and full-attention KV live in separate groups
+with aligned block sizes, drawn from one shared block pool across host
+memory and SSD.</li>
+<li><strong>Prefix-cache vs transfer-cache blocks.</strong> Prefix-cache
+blocks are full, block-aligned, reusable and stay inside the cluster.
+Transfer-cache blocks hold the tail KV of a prefill, can be any length,
+exist only to be shipped P→D, and are freed after the send
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</li>
+</ul>
+<h2 id="how-it-works">How it works</h2>
+<h3 id="the-bandwidth-wall-2.12.3">1. The bandwidth wall (§2.1–2.3)</h3>
+<p>The asynchronous KV push never stalls the GPU only if cluster egress
+B_out exceeds the aggregate KV production rate. For an N-GPU prefill
+cluster with P GPUs per instance (Eq. 2) [1]:</p>
+<pre><code>B_out = (N/P) · E[S_kv] / E[T_prefill]  ≈  (N/P) · Φkv(L_avg)</code></pre>
+<p>L_avg is the mean <em>uncached</em> length of the requests actually
+offloaded. Model architecture sets Φkv. Length distribution, prefix-hit
+rate and routing policy set L_avg. That is why the paper needs both a
+model-side and a system-side lever.</p>
+<p><strong>Table 3: Φkv (Gbps) on 8×H200, SGLang v0.5.9</strong>
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.
+Reconstructed from the PDF and cross-checked against the prose.</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr>
+<th>Seq len</th>
+<th>Kimi Linear</th>
+<th>MiMo-V2-Flash</th>
+<th>Qwen3.5-397B</th>
+<th>Ring-2.5-1T</th>
+<th>MiniMax-M2.5 (dense)</th>
+<th>Qwen3-235B (dense)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1K</td>
+<td>1.19</td>
+<td>0.82</td>
+<td>4.13</td>
+<td>7.27</td>
+<td>4.94</td>
+<td>4.12</td>
+</tr>
+<tr>
+<td>8K</td>
+<td>2.29</td>
+<td>2.85</td>
+<td>6.28</td>
+<td>4.47</td>
+<td>32.87</td>
+<td>22.42</td>
+</tr>
+<tr>
+<td>32K</td>
+<td>3.87</td>
+<td>4.66</td>
+<td>8.25</td>
+<td>2.59</td>
+<td>59.93</td>
+<td>33.35</td>
+</tr>
+<tr>
+<td>128K</td>
+<td>4.88</td>
+<td>4.71</td>
+<td>7.47</td>
+<td>1.46</td>
+<td>47.82</td>
+<td>21.50</td>
+</tr>
+</tbody>
+</table>
+<p>At 32K, MiMo-V2-Flash is 13× lower than MiniMax-M2.5, and Qwen3.5 is
+4× lower than Qwen3. For Ring-2.5-1T the paper cites ~4.5× from MLA over
+GQA and ~8× from the 7:1 ratio, for ~36× total KV saving
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</p>
+<p><strong>Egress for 512 H200 (64 instances) at L_avg = 32K
+(§2.3)</strong> [1]:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Egress needed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MiniMax-M2.5</td>
+<td>3.8 Tbps</td>
+</tr>
+<tr>
+<td>Qwen3-235B</td>
+<td>2.1 Tbps</td>
+</tr>
+<tr>
+<td>Ring-2.5-1T</td>
+<td>~170 Gbps</td>
+</tr>
+<tr>
+<td>Ring-2.5-1T, 128K requests only</td>
+<td>&lt; 100 Gbps</td>
+</tr>
+</tbody>
+</table>
+<p>The paper’s “10,000-GPU datacenter ≈ 1.8 Tbps” equals 1,250 instances
+× 1.46 Gbps. So it assumes the 128K operating point; at 32K it would be
+~3.2 Tbps (derived).</p>
+<p><strong>Table 2</strong> (qualitative) [1]: GQA has high prefill
+latency and high Φkv. MLA has high latency and low Φkv. Sparse attention
+has low latency but <em>high</em> Φkv, because it saves compute yet
+still ships length-proportional KV. SWA and linear attention are low on
+both.</p>
+<h3 id="architecture-3.1-fig.-3">2. Architecture (§3.1, Fig. 3)</h3>
+<p>A request router sits in front of two clusters, each with
+intra-cluster RDMA and its own hybrid prefix cache pool. Cross-cluster
+Ethernet connects them. A Global KVCache Manager holds KV metadata for
+all clusters, and a global scheduler routes each request to a cluster
+and then to a cache-affine node
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</p>
+<pre><code>request (l_total)
+   │
+   ▼
+Global KVCache Manager ── prefix match per cluster → l_prfaas, l_pd
+   │
+   ├─ bandwidth scarce:    l = l_total − l_pd
+   └─ bandwidth abundant:  l = l_total − max(l_prfaas, l_pd)   (may ship prefix across clusters)
+   │
+   ├─ l ≤ t ──► PD-P prefill (local, H20) ──RDMA──────────────────────────┐
+   │                                                                      ▼
+   └─ l &gt; t ──► PrfaaS prefill (remote, H200) ──Ethernet, transfer-cache──► PD-D decode
+                         layer-wise pipelined, multi-conn TCP</code></pre>
+<p>For agentic traffic, most requests are incremental prefills on a
+cached prefix. The manager knows where every cached entry lives, so only
+the incremental part crosses clusters
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</p>
+<h3 id="hybrid-prefix-cache-pool-3.2">3. Hybrid prefix cache pool
+(§3.2)</h3>
+<p>The two kinds of state reuse differently
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.
+Linear-attention or SWA state is request-level: constant size, and
+reusable only on an <em>exact</em> length match. Full-attention KV is
+block-level: it grows linearly and supports partial prefix matches. A
+one-format cache does not fit both. The design:</p>
+<ul>
+<li>Separate groups per state type, with aligned block sizes so all
+groups allocate from one pool (vLLM’s hybrid manager design).</li>
+<li>Each block is tagged prefix-cache or transfer-cache. The partial
+last block of a prefill stays out of the reusable cache while it is in
+flight.</li>
+<li>The manager rebalances cache to relieve hotspots, and transfers
+cache across clusters when bandwidth allows (§3.4.3).</li>
+</ul>
+<h3 id="transport-3.3">4. Transport (§3.3)</h3>
+<p>The paper gives one paragraph and no measurements [1]:</p>
+<ul>
+<li><strong>Layer-wise prefill pipelining</strong> sends each layer’s KV
+as soon as it is computed, so transfer overlaps compute. This justifies
+the <code>min(compute, bandwidth)</code> form of Eq. 3.</li>
+<li><strong>Multi-connection TCP</strong> fills a long-haul link that
+one TCP flow would not saturate.</li>
+<li><strong>Congestion monitoring tied to the scheduler</strong>: loss
+and retransmission signals trigger routing changes before queues
+build.</li>
+</ul>
+<h3 id="throughput-model-3.4.13.4.2-eqs.-38">5. Throughput model
+(§3.4.1–3.4.2, Eqs. 3–8)</h3>
+<p>Simplifications: every PrfaaS request has length l_long = E[L | L
+&gt; t], every PD-P request has l_short = E[L | L ≤ t], arrivals are
+uniform at rate Λ, and a fraction p = P(L &gt; t) goes to PrfaaS
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</p>
+<pre><code>Eq. 3  Θ_prfaas = min( N_prfaas / T_prefill(l_long),  B_out / S_kv(l_long) )
+Eq. 4  Θ_pd-p   = N_p / T_prefill(l_short)                  (RDMA never binds)
+Eq. 5  Θ_pd-d   = N_d · BS_max / (T_decode · L_out)          (SLO-fixed constants)
+Eq. 6  Λ_max    = min( Θ_prfaas / p,  Θ_pd-p / (1−p),  Θ_pd-d )
+Eq. 7  Θ_prfaas / p = Θ_pd-p / (1−p)                         (both producers saturate together)
+Eq. 8  Θ_prfaas + Θ_pd-p = Θ_pd-d                            (producers match consumer)</code></pre>
+<p>Each producer sees only its share of traffic, so its capacity is
+divided by that share. Raising t sends fewer, longer requests to PrfaaS.
+For those, T_prefill grows faster than S_kv, so Φkv falls and bandwidth
+pressure eases, while PD-P takes more work. Θ_prfaas/p falls as p grows
+and Θ_pd-p/(1−p) rises, so a 2-D grid search over t and N_p/N_d finds
+the optimum
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</p>
+<h3 id="dual-timescale-scheduling-3.4.3">6. Dual-timescale scheduling
+(§3.4.3)</h3>
+<p><strong>Short term: bandwidth- and cache-aware routing</strong>
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</p>
+<ul>
+<li>The PrfaaS ceiling is B_out / S_kv(l_long) req/s. The scheduler
+watches egress utilization and queue depth. Near a threshold, it
+re-profiles and searches t again over the <em>post-prefix-match</em>
+length distribution.</li>
+<li>Bandwidth scarce: caches are judged per cluster. If l_total − l_pd ≤
+t, run in PD-P; otherwise PrfaaS. No cache shipping.</li>
+<li>Bandwidth abundant (compute is scarce): l_prefix = max(l_prfaas,
+l_pd). If l_total − l_prefix ≤ t, run in PD-P; otherwise PrfaaS. If the
+longer prefix sits in the other cluster, ship it instead of recomputing
+it.</li>
+</ul>
+<p><strong>Long term: traffic-driven re-allocation</strong>
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.
+If Θ_prfaas + Θ_pd-p ≪ Θ_pd-d, prefill binds; if ≫, decode binds. The
+scheduler reads which from per-stage queue depth and utilization. It
+then converts nodes between P and D roles <em>inside the PD cluster</em>
+and re-optimizes t. PrfaaS size stays fixed.</p>
+<h3 id="case-study-4">7. Case study (§4)</h3>
+<p><strong>Setup</strong> [1]:</p>
+<ul>
+<li>Two clusters over a VPC with ~100 Gbps aggregate.</li>
+<li>PrfaaS: 32 H200 (4 instances of 8 GPUs). Local PD: 64 H20 (8
+instances), 800 Gbps RDMA per node. Baseline: 96 H20 homogeneous
+PD.</li>
+<li>Model: internal 1T hybrid, Kimi Linear architecture, KDA:MLA = 3:1,
+profiled with in-house vLLM.</li>
+<li>Workload: truncated log-normal input lengths (μ = 9.90, σ = 1.00,
+range [128, 128K]), mean ≈ 27K. The median e^9.9 ≈ 20K explains why t ≈
+19.4K splits traffic ~50/50 (derived). Output fixed at 1024 tokens; SLO
+40 tok/s.</li>
+</ul>
+<p><strong>Table 5: internal 1T model, 8×H200</strong> [1]:</p>
+<table>
+<thead>
+<tr>
+<th>Seq len</th>
+<th>S_kv</th>
+<th>T_prefill</th>
+<th>Φkv</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1K</td>
+<td>190.8 MiB</td>
+<td>0.44 s</td>
+<td>3.61 Gbps</td>
+</tr>
+<tr>
+<td>8K</td>
+<td>308.9 MiB</td>
+<td>0.72 s</td>
+<td>3.59 Gbps</td>
+</tr>
+<tr>
+<td>32K</td>
+<td>701.3 MiB</td>
+<td>1.84 s</td>
+<td>3.19 Gbps</td>
+</tr>
+<tr>
+<td>128K</td>
+<td>2316.3 MiB</td>
+<td>7.40 s</td>
+<td>2.62 Gbps</td>
+</tr>
+</tbody>
+</table>
+<p>The 190.8 MiB at 1K is mostly fixed recurrent state, which is why Φkv
+is <em>highest</em> for short requests.</p>
+<p><strong>Search (Fig. 5).</strong> Fixing t and sweeping N_p peaks at
+N_p = 3, N_d = 5. Fixing 3/5 and sweeping t peaks where the PrfaaS-bound
+and PD-prefill-bound curves cross: t = 19.4K, Λ_max = 3.24
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</p>
+<p><strong>Table 6: results</strong> [1]:</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Metric</th>
+<th>PrfaaS-PD</th>
+<th>Homogeneous PD (96 H20)</th>
+<th>Naive heterogeneous</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Threshold t</td>
+<td>19.4K</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>N_prfaas / N_p / N_d</td>
+<td>4 / 3 / 5</td>
+<td>— / 9 / 3</td>
+<td>4 / — / 8</td>
+</tr>
+<tr>
+<td>Mean / P90 TTFT (s)</td>
+<td>2.22 / 3.51</td>
+<td>4.44 / 9.73</td>
+<td>1.74 / 3.51</td>
+</tr>
+<tr>
+<td>Θ_prfaas / Θ_pd-p / Θ_pd-d (req/s)</td>
+<td>1.61 / 1.64 / 3.91</td>
+<td>— / 2.11 / 2.35</td>
+<td>2.45 / — / 6.25</td>
+</tr>
+<tr>
+<td>Λ_max (req/s)</td>
+<td><strong>3.24</strong></td>
+<td>2.11</td>
+<td>2.45</td>
+</tr>
+<tr>
+<td>Ratio</td>
+<td><strong>1.54×</strong></td>
+<td>1.00×</td>
+<td>1.16×</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Eq. 7 holds: 1.61/0.496 ≈ 3.25 and 1.64/0.504 ≈ 3.25. Decode has
+slack at 3.91 (derived).</li>
+<li>Bandwidth: 49.6% of requests are offloaded with E[L | L &gt; t] ≈
+44K. Egress is ≈ 13 Gbps, 13% of the link, so PrfaaS is compute-bound by
+about 8×
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</li>
+<li>Against homogeneous: +54% throughput, −50% mean TTFT, −64% P90 TTFT.
+Against naive heterogeneous: 1.32× throughput. At equal cost the paper
+puts the gain at ~15%
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</li>
+</ul>
+<h3 id="worked-check-ship-vs-recompute">Worked check: ship vs
+recompute</h3>
+<p>Transfer time / prefill time = Φkv / link bandwidth (derived from Eq.
+1). For the 1T model at 128K (2.43 GB, 7.40 s prefill), transfer takes
+~1.9 s at 10 Gbps and ~0.19 s at 100 Gbps. Shipping wins. For a dense
+model at 32K (Φkv ≈ 60 Gbps), shipping over 10 Gbps takes 6× longer than
+prefill.</p>
+<h2 id="relation-to-known">Relation to known</h2>
+<p><strong><a
+href="https://blog.lmcache.ai/en/2026/10/27/internet-for-the-kv-cache/">Internet
+for the KV Cache (LMCache)</a></strong>. Both argue that KV should cross
+datacenter boundaries when moving it beats making it again, under a
+global control plane
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>,
+<a href="https://blog.lmcache.ai/en/2026/10/27/internet-for-the-kv-cache/">2</a>]</sup>.
+PrfaaS’s Φkv is the break-even test that vision needs: ship when Φkv(l)
+&lt; link bandwidth. The differences:</p>
+<ul>
+<li><strong>Per-request P→D transfer vs cross-request reuse.</strong>
+PrfaaS mostly ships transfer-cache blocks: produced once, consumed once,
+freed. KV must reach decode anyway, so the question is <em>where prefill
+runs</em>, not whether to recompute. Cross-request reuse appears only in
+the “bandwidth abundant” branch, as a binary regime switch.</li>
+<li><strong>Tiers.</strong> The PrfaaS pool spans DRAM and SSD
+<em>inside</em> each cluster. There is no hot/warm/cold hierarchy across
+clouds and no replication
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>,
+<a href="https://arxiv.org/html/2608.01526v1">3</a>]</sup>.</li>
+<li><strong>Numbers.</strong> The vision’s example (1 GB, 0.8 s at 10
+Gbps vs ~15 s recompute) implies Φkv ≈ 0.53 Gbps, below every entry in
+Tables 3 and 5
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>,
+<a href="https://arxiv.org/html/2608.01526v1">3</a>]</sup>. With the 1T
+model at 128K, shipping still wins, by ~4× rather than ~19× (derived).
+For dense models the vision’s argument mostly fails over 10 Gbps.</li>
+<li><strong>Evidence.</strong> Neither paper has a measured end-to-end
+deployment. PrfaaS is closer, with a concrete model, profiles and a
+workload.</li>
+</ul>
+<p><strong><a
+href="https://github.com/llm-d-incubation/llm-d-planner">llm-d
+planner</a>.</strong> Both size a deployment from SLOs and per-replica
+capacity. The planner’s <code>ceil(peak × 1.2 / rps_per_replica)</code>
+is the one-stage form of Eqs. 4–5, and its GQA-vs-MLA KV-per-token term
+is the S_kv(l) input
+<sup>[<a href="https://github.com/llm-d-incubation/llm-d-planner">4</a>]</sup>.
+To model PrfaaS it would need:</p>
+<ol type="1">
+<li>A hybrid KV model: fixed recurrent state plus per-token KV from Type
+B layers only. Table 5 shows 190.8 MiB already at 1K.</li>
+<li>A length distribution (P(L &gt; t), E[L | L &gt; t], E[L | L ≤ t])
+instead of one peak RPS.</li>
+<li>Three roles on possibly different hardware, combined with Eqs. 3–6
+and solved by grid search over t and N_p/N_d.</li>
+<li>A link check: B_out ≥ Θ_prfaas · S_kv(l_long).</li>
+<li>Superlinear T_prefill(l), plus T_decode and BS_max from the TPOT
+SLO.</li>
+<li>Headroom per stage (PrfaaS runs at Λ_max with none) and integer
+effects.</li>
+<li>Output of P/D role counts, a routing threshold and multi-cluster
+placement. Today the planner emits KServe + vLLM with no P/D config
+<sup>[<a href="https://github.com/llm-d-incubation/llm-d-planner">4</a>]</sup>.</li>
+</ol>
+<h2 id="caveats">Caveats</h2>
+<ul>
+<li><strong>Results are model output.</strong> “All throughput and
+bandwidth results reported below are derived by feeding the measured
+profiling data into the throughput model” (§4.1)
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.
+There is no live cross-datacenter run, no measured transfer latency and
+no burst behaviour.</li>
+<li><strong>TTFT method is unstated.</strong> Table 6 gives mean and P90
+TTFT, but the paper does not say how the model produces latency
+distributions.</li>
+<li><strong>1.54× compares unequal costs</strong> (32 H200 + 64 H20 vs
+96 H20). The same-hardware number is 1.32× over naive; the paper’s
+equal-cost figure is ~15%, with no pricing given
+<sup>[<a href="https://www.alphaxiv.org/abs/2604.15039v1">1</a>]</sup>.</li>
+<li><strong>Naive heterogeneous has better mean TTFT</strong> (1.74 s vs
+2.22 s) and equal P90. PrfaaS-PD wins on throughput, not latency,
+against it.</li>
+<li><strong>Representative-length approximation.</strong> T_prefill(E[L
+| L &gt; t]) underestimates E[T_prefill(L)] because prefill is convex in
+l and the distribution is wide. This overstates producer throughput; the
+error between configurations is unknown.</li>
+<li><strong>Uniform arrivals and steady state</strong> are assumed, yet
+bursts and fluctuating bandwidth are the stated motivation. The
+short-term scheduler, congestion monitoring and multi-connection TCP get
+no evaluation.</li>
+<li><strong>The link never binds</strong> (13% use), so the
+bandwidth-aware branches are never exercised.</li>
+<li><strong>No prefix hits in the workload.</strong> The hybrid pool and
+cache-aware routing have no quantitative result.</li>
+<li><strong>Decode is an SLO constant</strong>: per-decode-instance
+throughput is ~0.78 req/s in all three configurations, and output is
+fixed at 1024 tokens.</li>
+<li><strong>Internal model and engine.</strong> Table 5 uses in-house
+vLLM; Table 3 uses SGLang. The internal model’s Φkv trend runs opposite
+to public Kimi Linear’s.</li>
+<li><strong>No distance given.</strong> The link is “a VPC network” of
+~100 Gbps. RTT and loss are not reported.</li>
+<li><strong>Cache-transfer tension.</strong> Fig. 4 says prefix-cache
+blocks stay in-cluster, while §3.4.3 ships prefix cache across clusters
+when bandwidth is abundant. The paper does not say which block type
+carries it or how it counts against B_out.</li>
+<li><strong>H20/H200 pairing.</strong> H20 has low compute and full HBM
+bandwidth, which favours offloading prefill. A less lopsided pair would
+likely give smaller gains.</li>
+<li><strong>No code release</strong> is mentioned.</li>
+</ul>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li><a href="https://www.alphaxiv.org/abs/2604.15039v1">Prefill-as-a-Service:
+KVCache of Next-Generation Models Could Go Cross-Datacenter (arXiv
+2604.15039v1)</a><span class="dom">alphaxiv.org</span></li>
+<li><a href="https://blog.lmcache.ai/en/2026/10/27/internet-for-the-kv-cache/">LMCache
+blog: Internet for the KV Cache</a><span
+class="dom">blog.lmcache.ai</span></li>
+<li><a href="https://arxiv.org/html/2608.01526v1">Internet for the KV
+Cache (arXiv 2608.01526)</a><span class="dom">arxiv.org</span></li>
+<li><a href="https://github.com/llm-d-incubation/llm-d-planner">llm-d
+planner README</a><span class="dom">github.com</span></li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Prefill-as-a-Service:
+cross-datacenter KVCache</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-10-31</span></div>
+  <div><span class="k">Sources cited</span><span class="v">4</span></div>
+</div>
+</div></div>
+</body>
+</html>
