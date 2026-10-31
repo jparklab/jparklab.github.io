@@ -1,0 +1,1242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Open-Source Tools for Prefix and KV Cache Management in LLM
+Inference, and How Teams Build the Cache Layer with Them</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Open-Source Tools for Prefix and KV Cache Management in LLM
+Inference, and How Teams Build the Cache Layer with Them</h1>
+<div class="byline">Research report · 80 cited sources · reviewed 2026-10-31</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#the-kv-and-prefix-cache-problem-in-llm-serving"
+id="toc-the-kv-and-prefix-cache-problem-in-llm-serving">1. The KV and
+Prefix Cache Problem in LLM Serving</a></li>
+<li><a href="#engine-level-prefix-caching"
+id="toc-engine-level-prefix-caching">2. Engine-Level Prefix
+Caching</a></li>
+<li><a href="#kv-cache-offloading-tiering-and-shared-stores"
+id="toc-kv-cache-offloading-tiering-and-shared-stores">3. KV Cache
+Offloading, Tiering and Shared Stores</a></li>
+<li><a href="#kv-transfer-libraries-and-disaggregated-serving"
+id="toc-kv-transfer-libraries-and-disaggregated-serving">4. KV Transfer
+Libraries and Disaggregated Serving</a></li>
+<li><a href="#cache-aware-routing-and-global-kv-indexing"
+id="toc-cache-aware-routing-and-global-kv-indexing">5. Cache-Aware
+Routing and Global KV Indexing</a></li>
+<li><a
+href="#how-teams-build-the-cache-layer-reference-architectures-and-production-accounts"
+id="toc-how-teams-build-the-cache-layer-reference-architectures-and-production-accounts">6.
+How Teams Build the Cache Layer: Reference Architectures and Production
+Accounts</a></li>
+<li><a
+href="#choosing-and-combining-tools-trade-offs-and-recommendations"
+id="toc-choosing-and-combining-tools-trade-offs-and-recommendations">7.
+Choosing and Combining Tools: Trade-offs and Recommendations</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>The open-source KV cache stack has five layers, joined by the
+engine’s connector API and its KV-event streams: engine prefix caches
+(vLLM Automatic Prefix Caching, SGLang RadixAttention, TensorRT-LLM
+block reuse); offload and shared stores (vLLM’s OffloadingConnector,
+SGLang HiCache, LMCache, Mooncake Store, NVIDIA Dynamo KVBM, AIBrix,
+FlexKV, DeepSeek 3FS); transfer libraries (NIXL, Mooncake Transfer
+Engine); cache-aware routers (llm-d with the Gateway API Inference
+Extension, the Dynamo KV router, the SGLang Model Gateway, Ray Serve);
+and platforms that package them (KServe, llm-d, Dynamo, vLLM
+production-stack). Teams usually build in the same order: engine cache,
+then a per-replica CPU tier, then cache-aware routing blended with load,
+then a shared pool or peer fetch. Each step pays only when the prefill
+it avoids costs more than fetching the KV or queueing behind a busy
+replica. Most headline multiples come from the projects or vendors
+themselves. Independent 2026 studies find SSD and remote-tier restores
+losing to recompute below roughly 8K-17K tokens, while PCIe 5 CPU tiers
+clear the bar; no one has independently replicated the routing or pool
+claims.</strong></p>
+</div>
+<h2 id="the-kv-and-prefix-cache-problem-in-llm-serving">1. The KV and
+Prefix Cache Problem in LLM Serving</h2>
+<h3 id="what-the-cache-holds">1.1 What the cache holds</h3>
+<p>During prefill (the compute-bound pass over the prompt), each layer
+computes key and value tensors for every token; decode reads them back
+for each new token. PagedAttention (2023) found about 30% of an A100’s
+memory holding KV for a 13B model and, by managing it in fixed-size
+blocks like operating-system pages, gained 2-4x throughput [1]. SGLang’s
+RadixAttention made reuse across requests automatic with an LRU-managed
+radix tree of KV [2].</p>
+<p><strong>Prefix caching</strong> reuses KV computed for an identical
+leading token sequence instead of recomputing it [4]. Attention is
+causal, so a block is reusable only if every earlier block is present;
+llm-d’s indexer scores a pod holding B3 and B4 without B0-B2 at zero
+[3]. Engines therefore key blocks by a hash chained to the preceding
+prefix, and only exact token-prefix matches hit [3, 4, 5]. Where it
+applies the gains are large: DeepSeek’s API bills a hit at $0.014 per
+million tokens against $0.14 for a miss [6].</p>
+<h3 id="how-much-reuse-real-traffic-offers">1.2 How much reuse real
+traffic offers</h3>
+<p>Alibaba Bailian traffic has an ideal (infinite-capacity) hit rate of
+62% and 54% on two traces [7]. Alibaba coding-agent traces reuse more
+than 80% of KV blocks, about 90% of them within roughly 100 s [8], and a
+one-year Chutes trace finds about 80% of repeat arrivals from a
+user-model pair within 10 seconds [9]. The reuse is fragile: in XPerf,
+mini-SWE-agent’s hit rate fell from 91% to below 4% as load rose and
+eviction dropped idle context [10], and context truncation halved one
+LMCache customer’s hit ratio [11]. Capacity bites too: 100K tokens of
+Kimi-2.5 FP8 context take about 3.8 GB of KV [12], a 128K-token
+Qwen3-32B request about 32 GB [8].</p>
+<h3 id="the-five-layer-stack">1.3 The five-layer stack</h3>
+<p>Beyond one replica, or once the working set outgrows HBM (GPU
+high-bandwidth memory), three problems appear: capacity (idle
+conversations are evicted), locality (a cache-blind balancer scatters
+related requests) and movement (KV must cross PCIe, NVLink, RDMA or
+storage links for offload, sharing, and prefill/decode (P/D)
+disaggregation, which runs the two phases on separate instances). The
+tools meet at two seams: vLLM’s KV connector interface, which hosts
+LMCache, Mooncake, NIXL, FlexKV and the native offloader [13], and
+engine events announcing stored and removed blocks, which routers index
+[3].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Problem solved</th>
+<th>Representative tools</th>
+<th>Seam</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Engine prefix cache</td>
+<td>Reuse in one replica</td>
+<td>vLLM APC, SGLang RadixAttention, TRT-LLM</td>
+<td>Built in</td>
+</tr>
+<tr>
+<td>Offload / shared store</td>
+<td>Capacity, cross-replica reuse</td>
+<td>OffloadingConnector, HiCache, LMCache, Mooncake Store, KVBM, AIBrix,
+FlexKV, 3FS</td>
+<td>Connector API</td>
+</tr>
+<tr>
+<td>Transfer library</td>
+<td>Moving blocks</td>
+<td>NIXL, Mooncake Transfer Engine</td>
+<td>Under connectors</td>
+</tr>
+<tr>
+<td>Cache-aware router</td>
+<td>Placing requests</td>
+<td>llm-d EPP, Dynamo, SGLang Model Gateway, GIE, Ray Serve</td>
+<td>KV events or estimate</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>Deployment</td>
+<td>KServe, llm-d, Dynamo, production-stack, AIBrix</td>
+<td>CRDs, Helm</td>
+</tr>
+</tbody>
+</table>
+<h2 id="engine-level-prefix-caching">2. Engine-Level Prefix Caching</h2>
+<p>An engine prefix cache lives inside one serving process: it hashes
+each fixed-size token block with its prefix, attaches matching blocks to
+new requests, and keeps unreferenced blocks in an eviction queue. All
+three major engines enable it by default and differ in index, eviction,
+hybrid-model handling, isolation and exported events.</p>
+<h3 id="vllm-automatic-prefix-caching">2.1 vLLM Automatic Prefix
+Caching</h3>
+<p>APC has been on by default since the V1 engine (January 2025),
+costing under 1% throughput even at a 0% hit rate [14]. Blocks are keyed
+by a chained hash of parent hash, block tokens and extras such as LoRA
+ID, multimodal hash and cache salt; only full blocks are cached [4]. The
+<code>xxhash</code> seed is randomised per process, so cross-instance
+sharing needs a common <code>PYTHONHASHSEED</code> [15]. For hybrid
+models, which mix sliding-window, state-space or linear-attention layers
+with full attention, the Hybrid KV Cache Manager keys blocks by
+<code>(block_hash, group_id)</code> and intersects per-group hits, so a
+sliding-window (SWA) group needs only its last window; the docs call it
+early-stage [16]. The per-request <code>cache_salt</code>, added after
+CVE-2025-46570 showed prefixes leaking through timing, is the isolation
+primitive the rest of the stack inherits [17].</p>
+<h3 id="sglang-radixattention-and-the-unified-radix-cache">2.2 SGLang
+RadixAttention and the Unified Radix Cache</h3>
+<p>SGLang schedules longest-shared-prefix first over its radix tree,
+reporting up to 6.4x throughput over contemporary systems [2]. Its
+August 2026 Unified Radix Cache is one token-keyed tree whose FULL, SWA
+and MAMBA components each check their own reuse boundary. With HiCache
+and a 500 GiB Mooncake L3, the project reports about 98% hit rate and
+145.5K input tokens/s on DeepSeek-V4-Flash, against 9.4K GPU-only and
+14.3K with host memory [18].</p>
+<h3 id="tensorrt-llm-kv-cache-reuse">2.3 TensorRT-LLM KV cache
+reuse</h3>
+<p>TensorRT-LLM keeps blocks in a radix search tree with prioritized LRU
+(priorities 0-100); evicted blocks can spill to host memory and stay
+searchable [5]. KV becomes reusable only after the producing request
+finishes, so a batch sharing a system prompt gets no first-pass reuse,
+and the 128-token default block suits kernels but reduces reuse [19].
+The 1.4.0rc docs add a V2 manager for hybrid models,
+<code>cache_salt</code> enforced through cryptographic block hashes, and
+KV events for routers such as Dynamo [5].</p>
+<table style="width:99%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr>
+<th>Engine</th>
+<th>Index</th>
+<th>Eviction</th>
+<th>Hybrid</th>
+<th>Isolation</th>
+<th>Router events</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vLLM APC</td>
+<td>Chained hash per group</td>
+<td>LRU</td>
+<td>Hybrid manager (early)</td>
+<td><code>cache_salt</code></td>
+<td>ZMQ</td>
+</tr>
+<tr>
+<td>SGLang</td>
+<td>Radix tree (FULL/SWA/MAMBA)</td>
+<td>LRU</td>
+<td>Unified Radix Cache</td>
+<td>L3 namespacing only</td>
+<td>Used by llm-d, Dynamo</td>
+</tr>
+<tr>
+<td>TensorRT-LLM</td>
+<td>Radix search tree</td>
+<td>Priority LRU, host spill</td>
+<td>V2 manager</td>
+<td><code>cache_salt</code></td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<h2 id="kv-cache-offloading-tiering-and-shared-stores">3. KV Cache
+Offloading, Tiering and Shared Stores</h2>
+<p>An offload layer catches blocks the engine is about to evict, writes
+them to a cheaper tier, and copies them back on a later match instead of
+recomputing. The tools share one hierarchy: GPU HBM, pinned CPU DRAM,
+local NVMe or shared filesystem, then remote or object storage [20, 21,
+22]. Engine-native tiers run in the serving process; out-of-tree layers
+keep their own indexing and storage behind the connector API, trading
+deployment complexity for cross-replica sharing and backend choice
+[23].</p>
+<h3 id="engine-native-tiers">3.1 Engine-native tiers</h3>
+<p>vLLM’s <strong>OffloadingConnector</strong> (0.11.0, reworked in
+0.12.0) copies completed blocks to pinned host memory by asynchronous
+DMA [24]. <code>TieringOffloadingSpec</code> adds ordered
+<code>fs</code>, <code>obj</code> (S3 via NIXL) and <code>p2p</code>
+(peer CPU) tiers with <code>lru</code>, <code>arc</code> or custom
+eviction, and <code>self_describing_kv_events</code> lets routers index
+offloaded blocks [15]. The vLLM team reports 2-22x lower TTFT (time to
+first token) on CPU hits (project-authored) [24]. <strong>SGLang
+HiCache</strong> uses GPU as L1, host memory as a per-instance L2 and a
+storage backend as L3, shared only if the backend supports it [21];
+backends implement just <code>get</code>, <code>exist</code> and
+<code>set</code>, and project benchmarks report up to 6x throughput
+[25].</p>
+<h3 id="out-of-process-layers">3.2 Out-of-process layers</h3>
+<p><strong>LMCache</strong> (Tensormesh and the University of Chicago)
+is the most widely integrated third-party layer, with 256-token chunks,
+layer-pipelined transfers and a controller API (lookup, move, pin,
+compress) for routers; its paper’s up-to-15x throughput is
+vendor-authored, against GPU-only vLLM [11]. Its multiprocess (MP) mode
+runs a standalone server, keeps L1 in DRAM or a GPUDirect Storage (GDS)
+slab, pushes to and prefetches from L2 adapters (NIXL, filesystems,
+Mooncake Store, S3), and can load CacheBlend modules [26, 22]. Keys
+carry the <code>cache_salt</code> [22], with per-salt quotas [79].
+Hybrid models work with caveats: output is not bit-exact, unified blocks
+reach 784 tokens on Qwen3.6-27B, only text KV is validated, and opaque
+pages rule out CacheBlend [27].</p>
+<p><strong>Mooncake Store</strong> is a distributed KV object store: a
+master owns placement, leases and approximate-LRU eviction, and clients
+contribute memory, issue <code>Put</code>/<code>Get</code> and can spill
+to SSD [28]. vLLM ranks contribute DRAM directly (<code>embedded</code>)
+or call an external DRAM-plus-SSD pool (<code>standalone-store</code>)
+[29]. <code>cache_salt</code> marks request-group boundaries, and an
+opt-in <code>tenant_id</code> namespace adds quotas but is not
+authentication [30, 80]. <code>MooncakeStoreConnector</code> pools and
+<code>MooncakeConnector</code> handles P/D, combined through
+<code>MultiConnector</code> [23].</p>
+<ul>
+<li><strong>Dynamo KVBM</strong> is a Rust block manager with tiers G1
+(GPU), G2 (CPU), G3 (NVMe) and G4 (remote storage reached through NIXL),
+deduplicating by sequence hash [20]; a CPU cache smaller than the GPU
+cache churns [31].</li>
+<li><strong>AIBrix</strong> (ByteDance) v0.3.0 adds an L1 DRAM cache
+with S3FIFO eviction and pluggable L2 backends such as InfiniStore
+[32].</li>
+<li><strong>FlexKV</strong> (Tencent Cloud) serves vLLM, SGLang and
+TensorRT-LLM with SSD, GDS and Mooncake paths [33] and is experimental
+in Dynamo [34].</li>
+<li><strong>3FS</strong> (DeepSeek) is a distributed filesystem
+positioned as a cheaper, larger alternative to DRAM caching, reporting
+up to 40 GiB/s per KVCache client [35]; NIXL ships an HF3FS backend
+[48].</li>
+</ul>
+<h3 id="platform-wrappers-and-non-prefix-reuse">3.3 Platform wrappers
+and non-prefix reuse</h3>
+<p><strong>KServe</strong> declares tiering in
+<code>spec.workload.kvCacheOffloading</code> [36].
+<strong>llm-d</strong> offers native, LMCache, Mooncake and KVBM
+connectors, and ships a PVC evictor because its filesystem tier does not
+evict [23, 37]. <strong>CacheBlend</strong> (EuroSys’25) reuses
+non-prefix chunks for retrieval-augmented generation (RAG), recomputing
+a small fraction of tokens to restore cross-attention, with 2.2-3.3x
+lower TTFT in its authors’ benchmark [38].</p>
+<table style="width:99%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Engines</th>
+<th>Tiers / backends</th>
+<th>Process model</th>
+<th>Eviction</th>
+<th>Router visibility</th>
+<th>Maturity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vLLM OffloadingConnector</td>
+<td>vLLM</td>
+<td>CPU; fs, obj, p2p</td>
+<td>In-engine</td>
+<td>lru, arc</td>
+<td>KV events (≥0.24)</td>
+<td>Since 0.11</td>
+</tr>
+<tr>
+<td>SGLang HiCache</td>
+<td>SGLang</td>
+<td>Host; file, Mooncake, 3FS</td>
+<td>In-engine</td>
+<td>Tree LRU</td>
+<td>Via Dynamo, llm-d</td>
+<td>n/s</td>
+</tr>
+<tr>
+<td>TRT-LLM host offload</td>
+<td>TRT-LLM</td>
+<td>Host</td>
+<td>In-engine</td>
+<td>Priority LRU</td>
+<td>KV events</td>
+<td>1.4.0rc docs</td>
+</tr>
+<tr>
+<td>LMCache MP</td>
+<td>vLLM</td>
+<td>DRAM/GDS; NIXL, fs, Mooncake, S3</td>
+<td>Separate server</td>
+<td>Per-salt quotas</td>
+<td>Controller API</td>
+<td>v0.5.3 tested</td>
+</tr>
+<tr>
+<td>Mooncake Store</td>
+<td>vLLM, SGLang, LMCache</td>
+<td>Pooled DRAM, SSD</td>
+<td>Master + clients</td>
+<td>Approx. LRU</td>
+<td>Engine events</td>
+<td>n/s</td>
+</tr>
+<tr>
+<td>Dynamo KVBM</td>
+<td>vLLM, TRT-LLM</td>
+<td>G1-G4</td>
+<td>Rust library</td>
+<td>Hash registry</td>
+<td>Dynamo events</td>
+<td>n/s</td>
+</tr>
+<tr>
+<td>AIBrix</td>
+<td>vLLM</td>
+<td>DRAM; InfiniStore</td>
+<td>Connector + cluster</td>
+<td>S3FIFO</td>
+<td>AIBrix gateway</td>
+<td>v0.3.0</td>
+</tr>
+<tr>
+<td>FlexKV</td>
+<td>vLLM, SGLang, TRT-LLM</td>
+<td>Host, SSD, GDS</td>
+<td>Library</td>
+<td>Frequency-aware</td>
+<td>Via Dynamo</td>
+<td>Experimental in Dynamo</td>
+</tr>
+<tr>
+<td>3FS</td>
+<td>Backend</td>
+<td>Distributed NVMe</td>
+<td>Storage cluster</td>
+<td>TTL</td>
+<td>n/a</td>
+<td>n/s</td>
+</tr>
+</tbody>
+</table>
+<h3 id="contested-point-restore-versus-recompute">3.4 Contested point:
+restore versus recompute</h3>
+<p>Results on whether loading KV from a slower tier beats recomputing it
+sort by who ran the test. Cloudian reports P95 TTFT of 7.59 s against
+158.86 s for recompute at 120K tokens with KVBM over RDMA, from a test
+repeating one request [39]. VAST and Lablup (vLLM 0.20, LMCache with
+GDS, 140K-token contexts) report 2.09x lower average TTFT, with cold
+first turns about 4 s slower, and concede plain NFS can lose to
+recompute [40]. The LMCache paper finds that at 32 Gbps loading beats
+prefill only above about 256K tokens [11].</p>
+<p>Three independent 2026 studies test the other corner:</p>
+<ul>
+<li><strong>py-kvcache</strong> (VU Amsterdam and IBM) derives the rule
+load if g(P) + f(D−P) &lt; f(D), where g is hit-path TTFT for reused
+prefix P and f cold TTFT for prompt length D. On H100 the bandwidth
+needed falls from 23.2 GB/s at 1K tokens to 3.5 GB/s at 80K, so a PCIe 5
+CPU tier always clears it, but the measured ~13.5 GB/s SSD falls short
+somewhere below 8K tokens [41].</li>
+<li><strong>Multiverse Computing</strong> ran LMCache with a Valkey L2
+on 8x B300: a 16K-token hit took 0.88 s to load against 0.31 s to
+recompute, p99 rose from 3.96 s to 17.3 s, and the deployment was rolled
+back. A hit pays only above bandwidth B* = bytes per token × prefill
+rate (2.53 GB/s here) and after about 0.33 s fixed cost, so prompts
+under about 17K tokens cannot win; sharding and asynchronous loading
+later cut hit-heavy p99 from 83.32 s to 0.67 s [42].</li>
+<li><strong>EfficientAgent</strong> (HKUST and Huawei) found 79.2% of
+chunks written to a host tier evicted before reuse; offload paid only
+when working set over host capacity fell below 1 (2.3, 1.1, 0.57 at 5,
+10, 20 GiB), and a tier so sized cut recomputed tokens by 93% [43].</li>
+</ul>
+<p>The camps measure different cells of one cost model: reuse pays when
+fixed per-hit cost plus bytes over bandwidth is below the reused
+prefix’s prefill time, and only when the tier holds the working set;
+some losses reflect connector maturity, not physics [41, 42].</p>
+<h3 id="contested-point-native-offload-versus-a-plugin-layer">3.5
+Contested point: native offload versus a plugin layer</h3>
+<p>LMCache’s paper reports 400 Gbps loading against 88 Gbps for vLLM
+native offload, a comparison predating the 0.12 rework [11, 24].
+Third-party tests (a storage vendor and an IBM-coauthored study) point
+the other way: py-kvcache found native CPU-plus-disk offload ahead of
+LMCache (8.02 s against 13.48 s TTFT at 40K tokens) [41], and NetApp,
+testing LMCache v0.5.3, found that “vLLM’s native offloading connector
+delivered the best performance overall”, with LMCache in-process ahead
+of MP mode on longer prompts [44].</p>
+<p>Defaults are set per stack: KServe exposes only the native connector
+[36], llm-d calls it simplest [23], Dynamo’s router-visible offload uses
+it [45], and vLLM production-stack’s older docs still enable LMCache
+in-process through <code>lmcacheConfig</code>, a mode LMCache now marks
+deprecated [46, 75]. The plugin case rests on pooling, durable L2,
+backend breadth, the controller API and CacheBlend [11, 26].</p>
+<h3 id="contested-point-eviction-policy">3.6 Contested point: eviction
+policy</h3>
+<p>TensorRT-LLM adds priorities [5], AIBrix defaults to S3FIFO [32], and
+Bailian-trace research proposes workload-aware eviction [7]. A study of
+14 policies on more than 20B production tokens found plain LRU robust
+[47], and the Chutes trace found sophisticated policies can underperform
+FIFO and LRU [9]. Both sides agree capacity matters more: Bailian
+traffic nears its ideal hit rate at about 2x per-GPU HBM under LRU
+[7].</p>
+<h2 id="kv-transfer-libraries-and-disaggregated-serving">4. KV Transfer
+Libraries and Disaggregated Serving</h2>
+<p>A transfer library hides the mechanics of moving KV between memory
+types and machines behind one asynchronous API and picks the fastest
+transport. <strong>NIXL</strong> (NVIDIA Inference Xfer Library) runs a
+transfer agent per process over VRAM, DRAM, file, object and block
+memory, with backends such as UCX, GDS, POSIX, S3 over RDMA, Mooncake
+and HF3FS [48]. It sits under vLLM’s <code>NixlConnector</code> and
+<code>obj</code>/<code>p2p</code> tiers [13, 15], LMCache L2, KVBM G4
+and HiCache L3 [22, 20, 21], and TensorRT-LLM’s transceiver [5].</p>
+<p>The <strong>Mooncake Transfer Engine</strong> moves batches between
+registered memory segments over TCP, multi-NIC RDMA, EFA, NVMe-oF and
+NVLink [49], and its GPUDirect RDMA path uses no GPU streaming
+multiprocessors [12]. It came from Moonshot AI’s KV-centric architecture
+for Kimi, which reported 75% more requests under SLOs on real workloads
+[50].</p>
+<p>vLLM’s documentation states that “Disaggregated prefill DOES NOT
+improve throughput”; the gain is separate tuning of TTFT and inter-token
+latency (ITL) [13]. The <code>p2p</code> tier doubles as a P/D path
+[15], <code>MultiConnector</code> chains Mooncake handoff with pool
+lookups [29], and SGLang pairs
+<code>--disaggregation-transfer-backend mooncake</code> with HiCache
+[51]. In the vLLM-Mooncake design only prefill instances read the pool,
+and both phases must share namespace values [12, 30]. LMCache claims
+1.53-1.84x lower TTFT than vLLM’s native NIXL P/D path (vendor
+benchmark) [11], and AWS SageMaker HyperPod runs llm-d with NIXL over
+EFA for up to 70% more tokens/s [52].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Library</th>
+<th>Abstraction</th>
+<th>Transports / backends</th>
+<th>Main consumers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NIXL</td>
+<td>Agent over five memory types</td>
+<td>UCX, GDS, POSIX, S3/RDMA, Mooncake, HF3FS</td>
+<td>vLLM, LMCache, KVBM, HiCache, TRT-LLM</td>
+</tr>
+<tr>
+<td>Mooncake Transfer Engine</td>
+<td>Segments + batches</td>
+<td>TCP, RDMA, EFA, NVMe-oF, NVLink</td>
+<td>Mooncake Store, vLLM, SGLang, FlexKV</td>
+</tr>
+<tr>
+<td>vLLM KV connector API</td>
+<td>Scheduler + worker connector</td>
+<td>Delegates</td>
+<td>LMCache, Mooncake, NIXL, FlexKV, KVBM</td>
+</tr>
+</tbody>
+</table>
+<h2 id="cache-aware-routing-and-global-kv-indexing">5. Cache-Aware
+Routing and Global KV Indexing</h2>
+<p>A cache-aware router estimates how much of each prompt’s prefix every
+replica holds and weighs that against load. Routers differ on two axes:
+the signal, approximate (from the router’s own past decisions) or
+precise (from KV events that vLLM, SGLang and TensorRT-LLM publish over
+ZMQ or NATS) [3, 53, 5]; and the blend, how strongly that signal is
+traded against load.</p>
+<h3 id="llm-d-and-the-gateway-api-inference-extension">5.1 llm-d and the
+Gateway API Inference Extension</h3>
+<p>llm-d’s Endpoint Picker (EPP) ships both signals. The approximate
+scorer hashes fixed-size blocks estimated from characters and remembers
+where it sent each prefix; it needs no engine integration but drifts
+when pods evict [54]. The precise path tokenizes through vLLM and
+indexes KV events in memory or Redis/Valkey, weighting GPU hits 1.0 and
+CPU hits 0.8 [3]. Its guide lists the costs: a single router replica, a
+10,000-batch replay buffer that hides pre-window shared system prompts
+after a restart, matched 64-token block sizes, and a missing
+<code>--enable-scale-out</code> on vLLM 0.30 that disables cache-aware
+routing [55].</p>
+<p>The Gateway API Inference Extension (GIE), the Kubernetes standard
+beneath llm-d and GKE Inference Gateway, composes weighted queue,
+KV-utilization and prefix scorers; a second prefix scorer with
+<code>autoTune: false</code> can model a CPU tier [56, 37].</p>
+<p>llm-d’s benchmark (16 H100s, 6K-token contexts, KV demand at 73% of
+capacity) reports p90 TTFT of 0.542 s precise, 31.08 s approximate and
+92.6 s random, and 8,730 against 6,944 output tokens/s [57].</p>
+<h3 id="nvidia-dynamo-kv-router">5.2 NVIDIA Dynamo KV router</h3>
+<p>Dynamo keeps a global radix tree from worker events. It scores
+workers by
+<code>prefill_load_scale × adjusted_prefill_blocks + potential_decode_blocks + active_request_blocks</code>,
+minus overlap credits for device, host, disk and fetchable shared
+blocks. Higher credits favour reuse and TTFT, lower credits even load
+and ITL, and fetchable blocks get smaller credit because a fetch can
+miss [53]. Without events it predicts residency from its own decisions
+with a 120 s TTL [58]. With vLLM 0.24+ and Dynamo 1.3+, CPU-tier blocks
+are routable at a host-hit weight of 0.75; storage-tier events drop the
+salt, costing hits but not correctness, and shared-pool routing is
+planned [45].</p>
+<h3 id="sglang-model-gateway-ray-serve-production-stack-and-aibrix">5.3
+SGLang Model Gateway, Ray Serve, production-stack and AIBrix</h3>
+<ul>
+<li>The <strong>SGLang Model Gateway</strong> defaults to a
+<code>cache_aware</code> policy over an approximate radix tree that
+yields to load balancing past imbalance thresholds; high-availability
+replicas keep separate trees, at an estimated 10-20% hit loss [59]. At
+its 2024 debut it claimed 1.9x throughput over round-robin
+(project-authored) [60].</li>
+<li><strong>Ray Serve LLM</strong> offers a
+<code>PrefixCacheAffinityRouter</code> that follows prefix matches only
+while queue spread is under <code>imbalanced_threshold</code> [61], and
+an alpha <code>KVAwareRouter</code> on Dynamo’s indexer whose overhead
+may not pay off on uniform workloads [62].</li>
+<li>The <strong>production-stack router</strong> sends same-prefix
+requests to one LMCache-enabled instance [63].</li>
+<li><strong>AIBrix’s</strong> Envoy-based gateway offers least-KV-cache,
+least-latency and prefix-cache-aware policies, the last preferring
+instances above a hit threshold; its paper reports 19.2% lower mean and
+79% lower P99 latency but did not fully evaluate routing
+(project-authored) [76].</li>
+</ul>
+<table style="width:99%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr>
+<th>Router</th>
+<th>Signal</th>
+<th>Load blending</th>
+<th>Tier awareness</th>
+<th>HA posture</th>
+<th>Maturity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>llm-d EPP approximate</td>
+<td>Character-estimated block hashes</td>
+<td>Weighted scorers</td>
+<td>No</td>
+<td>Drifts on eviction</td>
+<td>llm-d v1.0</td>
+</tr>
+<tr>
+<td>llm-d EPP precise</td>
+<td>ZMQ events</td>
+<td>Affinity, then load</td>
+<td>GPU 1.0 / CPU 0.8</td>
+<td>Single replica</td>
+<td>llm-d v1.0</td>
+</tr>
+<tr>
+<td>Dynamo KV router</td>
+<td>Events or predicted</td>
+<td>Cost function</td>
+<td>Device, host, disk, shared</td>
+<td>Replica sync</td>
+<td>CPU tier 1.3+</td>
+</tr>
+<tr>
+<td>SGLang Model Gateway</td>
+<td>Approximate radix tree</td>
+<td>Imbalance thresholds</td>
+<td>No</td>
+<td>Per-replica trees</td>
+<td>n/s</td>
+</tr>
+<tr>
+<td>GIE prefix scorer</td>
+<td>Approximate, auto-tuned</td>
+<td>Weighted profile</td>
+<td>Extra CPU scorer</td>
+<td>Gateway-native</td>
+<td>n/s</td>
+</tr>
+<tr>
+<td>Ray Serve</td>
+<td>Prefix tree or events</td>
+<td>Queue threshold</td>
+<td>Via Dynamo</td>
+<td>Replica sync</td>
+<td>KVAwareRouter alpha</td>
+</tr>
+<tr>
+<td>production-stack</td>
+<td>Instance affinity</td>
+<td>Prefix match</td>
+<td>Via LMCache</td>
+<td>Per-engine IDs</td>
+<td>v0.1.6 docs</td>
+</tr>
+<tr>
+<td>AIBrix gateway</td>
+<td>Hit threshold</td>
+<td>Separate policies</td>
+<td>Via AIBrix cache</td>
+<td>Envoy</td>
+<td>n/s</td>
+</tr>
+</tbody>
+</table>
+<h3 id="contested-points-signal-quality-and-affinity-versus-load">5.4
+Contested points: signal quality and affinity versus load</h3>
+<p>On signal quality the only controlled comparison is llm-d’s own: its
+57x headline compares p90 tails on a workload built to stress staleness,
+where approximate routing’s mean queue was 8.1 against 0.1; the baseline
+was llm-d’s own history scorer, not SGLang’s tree, and the throughput
+gap is about 25% [57]. The approximate camp offers operating evidence
+instead: Character.AI’s sticky sessions without a global index [64],
+Ray’s caution about overhead [62], and the history-based modes Dynamo
+and SGLang retain [58, 60].</p>
+<p>On affinity versus load, most findings favour blending, though the
+answer depends on workload. Anyscale and NVIDIA found pure affinity
+piling RL rollouts onto the replica holding a shared system prompt,
+while a token-load router had the best p99 despite a lower hit rate
+[65]. Meta’s CacheRoute preprint found affinity alone raised hit rate
+from 56% to 88% but imbalance to 3.46x, leaving capacity flat until
+balanced placement doubled it. Where only about 15% of the prompt was
+reusable, affinity fell to 0.50-0.67x a flat balancer’s capacity. It
+advises gating rollout on a shadow replay [66]. DualMap (ICLR 2026)
+switches to load-aware routing when TTFT exceeds the SLO, reporting up
+to 2.25x capacity [67]. Vertex AI moved its prefix:queue:KV-utilization
+weights from 3:3:2 to 3:5:2 to skip hot nodes [68].</p>
+<p>Every production router surveyed includes a load term, yet sticky or
+affinity routing won in AgentX [71] and in llm-d’s uniform shared-prefix
+run (p50 TTFT 0.48 s against 0.73 s) [72]. Lodestar’s learned router
+replaces fixed weights with an online predictor, cutting mean TTFT 1.41x
+against AIBrix’s heuristic (authors’ benchmark) [77].</p>
+<h2
+id="how-teams-build-the-cache-layer-reference-architectures-and-production-accounts">6.
+How Teams Build the Cache Layer: Reference Architectures and Production
+Accounts</h2>
+<p>Four packaged stacks recur, and published deployments fit a four-rung
+ladder.</p>
+<h3 id="reference-stacks">6.1 Reference stacks</h3>
+<ul>
+<li><strong>KServe, llm-d and vLLM</strong> put GIE/EPP routing in front
+of vLLM APC, with native CPU and volume tiers declared in an
+<code>LLMInferenceService</code> [36, 23, 69].</li>
+<li><strong>NVIDIA Dynamo</strong> runs its KV router over vLLM, SGLang
+or TensorRT-LLM workers with one offload backend per worker and NIXL for
+P/D [34, 45, 20].</li>
+<li><strong>SGLang-native</strong> deployments pair the Model Gateway
+with HiCache and a Mooncake or 3FS L3 [59, 21, 18].</li>
+<li><strong>vLLM production-stack</strong> combines prefix-aware routing
+with LMCache sharing and launched claiming 3-10x lower delay
+(project-authored) [70, 46].</li>
+</ul>
+<h3 id="the-build-ladder-in-practice">6.2 The build ladder in
+practice</h3>
+<p><strong>Rung 1, the engine cache alone,</strong> is often enough: APC
+costs almost nothing on misses [14], and VAST and Lablup treat
+single-shared-prefix RAG as a case GPU-only caching handles [40];
+Bailian’s trace study finds a small GPU cache suffices for API-dominated
+business traffic [7].</p>
+<p><strong>Rung 2 adds a per-replica CPU tier, usually with sticky
+sessions.</strong> Character.AI built it before open tools existed,
+keeping host-memory KV between turns in an LRU tree with sticky sessions
+and a model that shrinks KV more than 20x, for a 95% cache rate [64].
+Open stacks now expose it as configuration: KServe’s
+<code>cpu: "10Gi"</code> [36], llm-d’s <code>native</code>,
+<code>lmcache-connector</code> or <code>mooncake-store</code> connector
+choice [37], Dynamo’s <code>OffloadingConnector</code> [45],
+production-stack’s <code>cpuOffloadingBufferSize</code> [46] and
+SGLang’s <code>--enable-hierarchical-cache</code> [51].</p>
+<p><strong>Rung 3 adds cache-aware routing</strong> and has the most
+accounts. Tesla, with Red Hat, replaced round-robin behind NGINX with
+KServe, llm-d and GIE, reporting 3x output tokens/s and 2x lower TTFT
+for Llama 3.1 70B on MI300X (one deployment, before/after) [69]. Vertex
+AI reports its hit rate doubling from 35% to 70% behind GKE Inference
+Gateway, with P95 TTFT 52% lower for DeepSeek V3.1 (vendor blog, no
+ablation) [68]. The llm-d v1.0 post reports IBM Research serving up to
+3,000 concurrent coding agents at about 98% hit rate [52].</p>
+<p><strong>Rung 4 adds a shared pool or peer fetch</strong> once
+sessions outgrow local DRAM or move between replicas. Mooncake’s
+Conductor picks a prefill/decode pair by prefix match and queue time;
+growing the pool from 1,000 to 50,000 blocks raised the hit ratio from
+30% to 50% [50]. The vLLM-Mooncake team, running <code>embedded</code>
+mode over RDMA [29], reports 3.8x throughput and 46x lower P50 TTFT on
+12 GB200 GPUs as hit rate rose from 1.7% to 92.2%, holding above 95% out
+to 60 GPUs (synthetic data, deliberate round-robin, project and partner
+authors) [12].</p>
+<p>vLLM AgentX runs a standalone Mooncake pool behind Dynamo and llm-d
+routers and found load-balancing policies all did worse than
+session-aware sticky routing [71]. llm-d’s P2P test found pure affinity
+worst (2.75 req/s), against 4.4 for load-aware and 6.3 req/s for
+token-aware placement with pulls gated by
+<code>minCachedTokenDelta</code> [72]. Novita AI reports hit rate rising
+from 40% to 80% with HiCache on 3FS [25].</p>
+<p>DeepSeek’s DeepInfer keeps block KV on about 100 PiB of 3FS SSD with
+3-day (agent) and 7-day (chat) TTLs so any prefill machine can hit any
+prefix, removing the conflict between affinity and load balancing. It
+still matches hit length before routing, buckets load by context length
+and keeps sliding-window KV local [73].</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Organization / stack</th>
+<th>Rung</th>
+<th>Reported result</th>
+<th>Authorship</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Character.AI</td>
+<td>2 (custom)</td>
+<td>95% cache rate</td>
+<td>Operator</td>
+</tr>
+<tr>
+<td>Tesla (KServe + llm-d)</td>
+<td>3</td>
+<td>3x tokens/s, 2x lower TTFT</td>
+<td>Operator, on project blog</td>
+</tr>
+<tr>
+<td>Vertex AI (GKE Inference Gateway)</td>
+<td>3</td>
+<td>Hit 35%→70%, P95 TTFT −52%</td>
+<td>Vendor</td>
+</tr>
+<tr>
+<td>IBM Research (llm-d)</td>
+<td>3</td>
+<td>~98% hit</td>
+<td>Project post</td>
+</tr>
+<tr>
+<td>Kimi (Mooncake)</td>
+<td>4</td>
+<td>75% more requests; hit 30%→50%</td>
+<td>Operator paper</td>
+</tr>
+<tr>
+<td>vLLM + Mooncake Store</td>
+<td>4</td>
+<td>3.8x throughput, 46x P50 TTFT</td>
+<td>Project and partner</td>
+</tr>
+<tr>
+<td>vLLM AgentX</td>
+<td>4</td>
+<td>Sticky beat load balancing</td>
+<td>Project</td>
+</tr>
+<tr>
+<td>Novita (HiCache + 3FS)</td>
+<td>4</td>
+<td>Hit 40%→80%</td>
+<td>Project post</td>
+</tr>
+<tr>
+<td>DeepSeek (3FS pool)</td>
+<td>4, pool-only</td>
+<td>155T tokens/day; ~100 PiB SSD</td>
+<td>Operator</td>
+</tr>
+<tr>
+<td>Multiverse (LMCache + Valkey)</td>
+<td>4, rolled back</td>
+<td>p99 3.96→17.3 s, later fixed</td>
+<td>Independent</td>
+</tr>
+</tbody>
+</table>
+<h3 id="contested-point-route-to-the-cache-or-make-the-cache-global">6.3
+Contested point: route to the cache or make the cache global</h3>
+<p>At the top rung the field holds three positions. Mooncake’s
+Conductor, Dynamo and llm-d keep a router and price a pool fetch as a
+score discount [50, 53, 72]. DeepSeek replaces affinity routing with a
+dedicated pool plus a pre-routing hit-length lookup [73]. AgentX keeps
+the pool but returns to sticky routing for short-gap sessions [71].
+Academic work brackets the choice: the Chutes simulation finds
+cache-first routing turns larger caches into higher hit ratios with
+modest imbalance [9], while SMetric argues a global tier lets load
+balancing coexist with reuse if the slower tier is used carefully [8].
+No source compares pool hardware cost with the recompute GPU-hours it
+saves.</p>
+<h2 id="choosing-and-combining-tools-trade-offs-and-recommendations">7.
+Choosing and Combining Tools: Trade-offs and Recommendations</h2>
+<h3 id="one-inequality-behind-every-knob">7.1 One inequality behind
+every knob</h3>
+<p>Every setting asks whether the prefill avoided is worth more than
+getting the KV to the GPU.</p>
+<ul>
+<li><strong>Offload admission</strong> compares against tier bandwidth,
+giving the independent break-even points of about 8K tokens (H100, NVMe)
+and 17K tokens (B300, remote tier, before connector fixes) [41,
+42].</li>
+<li><strong>Routing</strong> compares against queueing delay through
+Dynamo’s overlap credits, GIE scorer weights and Ray’s
+<code>imbalanced_threshold</code> [53, 56, 61].</li>
+<li><strong>Pool fetches</strong> compare against fabric cost through
+Dynamo’s shared-cache credit and llm-d’s
+<code>minCachedTokenDelta</code> [53, 72].</li>
+</ul>
+<h3 id="choosing-by-workload">7.2 Choosing by workload</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Workload shape</th>
+<th>Typical starting combination</th>
+<th>Evidence and caveats</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>One shared system prompt</td>
+<td>Engine cache only</td>
+<td>Near-zero cost [14]; TRT-LLM reuse waits for first request [19]</td>
+</tr>
+<tr>
+<td>Multi-turn chat by session</td>
+<td>Sticky routing with load spill, CPU tier</td>
+<td>Character.AI [64]; reuse within ~100 s [8]</td>
+</tr>
+<tr>
+<td>Cross-session prefixes under KV pressure</td>
+<td>Precise routing plus CPU tier</td>
+<td>Project benchmark only [57]</td>
+</tr>
+<tr>
+<td>Long-context agents, minute-scale gaps</td>
+<td>CPU tier sized to working set, then pool</td>
+<td>Misses start past 5-minute gaps [78]; pool results project-authored
+[12, 43]</td>
+</tr>
+<tr>
+<td>Short prompts on fast GPUs</td>
+<td>GPU cache plus routing; gate storage tiers</td>
+<td>SSD/remote restores lose below ~8K-17K tokens [41, 42]</td>
+</tr>
+<tr>
+<td>RAG with reordered chunks</td>
+<td>CacheBlend via LMCache, dense models</td>
+<td>Authors’ benchmark [38]; not hybrid pages [27]</td>
+</tr>
+<tr>
+<td>Very large fleet, multi-day retention</td>
+<td>Dedicated pool, load-based routing</td>
+<td>DeepSeek only [73]</td>
+</tr>
+<tr>
+<td>P/D-disaggregated serving</td>
+<td>NIXL or Mooncake connector</td>
+<td>No throughput gain from P/D [13]</td>
+</tr>
+</tbody>
+</table>
+<h3 id="composition-rules-isolation-and-hybrid-models">7.3 Composition
+rules, isolation and hybrid models</h3>
+<ul>
+<li><strong>Use one offload backend per worker;</strong> Dynamo calls
+LMCache, FlexKV and HiCache “alternatives, not cache layers to stack
+together” [34]. Backends are engine-bound: HiCache is SGLang-only, the
+OffloadingConnector vLLM-only [23].</li>
+<li><strong>Pin versions,</strong> since router-visible offload needs
+vLLM 0.24 and Dynamo 1.3 and precise routing fails on vLLM 0.30 without
+the scale-out flag [45, 55].</li>
+<li><strong>Set <code>PYTHONHASHSEED</code> consistently</strong> and
+match block sizes across engine, connector and router [15, 55].</li>
+<li><strong>Verify each tier</strong> with metrics such as
+<code>vllm:external_prefix_cache_hits_total</code> [37], size the CPU
+tier above the GPU cache [31], and gate affinity changes on a shadow
+replay [66].</li>
+</ul>
+<p>Shared prefixes leak through timing: KVGov measured a cold-to-cached
+TTFT ratio of 0.22 on vLLM 0.26 and proposes HMAC-derived per-principal
+salts [74], and CacheSolidarity keeps up to 70% more reuse than per-user
+isolation by isolating selectively (research prototype) [17]. vLLM,
+TensorRT-LLM, LMCache MP and Mooncake carry salts [4, 5, 22]; the gaps
+are Dynamo’s unsalted storage-tier index [45] and undocumented
+per-request salts in the llm-d indexer and HiCache L3. Since most reuse
+stays within a session or user [8, 9], per-tenant salting costs little
+in those traces, though system prompts supply 18-20% of reuses [8],
+exactly the cross-principal hits salting removes.</p>
+<p>Hybrid models follow the same pattern: engines, LMCache and HiCache
+handle them on validated recipes, but the llm-d and Dynamo routers model
+only full-attention groups [3, 45, 27], so hybrid fleets pin one
+validated engine-and-connector pair.</p>
+<h3 id="outlook-and-evidence-gaps">7.4 Outlook and evidence gaps</h3>
+<p>Engine-native tiering is absorbing the per-replica job because its
+events are router-visible, while third-party layers concentrate on
+pooling, durable L2, non-prefix reuse and vendor storage [36, 37, 44].
+Routing and pooling are converging on discounted-fetch scoring: Dynamo
+plans shared-pool routing, the vLLM-Mooncake team plans cache-aware
+routing over the pool, and llm-d v1.0 adds session-aware routing [45,
+12, 52]. vLLM also plans programmable pinning and inter-turn prefetch
+[71].</p>
+<p>Hybrid and compressed-KV models (DeepSeek-V4, Qwen3.5, gpt-oss)
+shrink bytes per token but multiply cache groups, pushing per-group
+semantics into router indexes, salts and offload events where support
+lags the engines [18, 3]. Each GPU generation makes recompute cheaper
+and moves the restore break-even toward longer prompts, even as
+connector fixes pull it back [42]. Offload now has independent bounds;
+routing signal quality and shared pools do not, so a team’s own shadow
+replay is the deciding measurement [41, 66].</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li>Efficient Memory Management for Large Language Model Serving with
+PagedAttention — https://arxiv.org/abs/2309.06180</li>
+<li>SGLang: Efficient Execution of Structured Language Model Programs —
+https://arxiv.org/abs/2312.07104</li>
+<li>KV-Cache Indexer, llm-d —
+https://llm-d.ai/docs/0.7/architecture/advanced/kv-management/kv-indexer</li>
+<li>Automatic Prefix Caching, vLLM —
+https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/</li>
+<li>KV Cache System, TensorRT-LLM —
+https://nvidia.github.io/TensorRT-LLM/latest/features/kvcache.html</li>
+<li>DeepSeek API introduces Context Caching on Disk —
+https://api-docs.deepseek.com/news/news0802</li>
+<li>KVCache Cache in the Wild (Alibaba Bailian) —
+https://arxiv.org/abs/2506.02634</li>
+<li>SMetric: Balanced Session-centric Scheduling for Serving Agents —
+https://arxiv.org/abs/2607.08565</li>
+<li>A Year in LLM Serving: Workload Evolution, Caching and
+Load-Balancing — https://arxiv.org/abs/2608.13573</li>
+<li>Benchmarking LLM Serving Systems for Agentic AI Workloads with XPerf
+— https://arxiv.org/abs/2608.20370</li>
+<li>LMCache: An Efficient KV Cache Layer for Enterprise-Scale LLM
+Inference — https://arxiv.org/pdf/2510.09665</li>
+<li>Serving Agentic Workloads at Scale with vLLM x Mooncake, vLLM Blog —
+https://vllm.ai/blog/mooncake-store</li>
+<li>Disaggregated Prefilling, vLLM —
+https://docs.vllm.ai/en/latest/features/disagg_prefill.html</li>
+<li>vLLM V1: A Major Upgrade to vLLM’s Core Architecture —
+https://blog.vllm.ai/2025/01/27/v1-alpha-release.html</li>
+<li>KV Offloading Usage Guide, vLLM —
+https://docs.vllm.ai/en/latest/features/kv_offloading_usage/</li>
+<li>Hybrid KV Cache Manager, vLLM —
+https://docs.vllm.ai/en/latest/design/hybrid_kv_cache_manager/</li>
+<li>CacheSolidarity: Preventing Prefix Caching Side Channels —
+https://arxiv.org/abs/2603.10726</li>
+<li>Unified Radix Cache: One Tree for Hybrid Model Prefix Caching, LMSYS
+— https://www.lmsys.org/blog/2026-08-11-unified-radix-cache</li>
+<li>KV cache reuse, TensorRT-LLM —
+https://nvidia.github.io/TensorRT-LLM/advanced/kv-cache-reuse.html</li>
+<li>KVBM Design, NVIDIA Dynamo —
+https://docs.nvidia.com/dynamo/v-0-9-0/design-docs/kvbm-design.md</li>
+<li>HiCache System Design and Optimization, SGLang —
+https://docs.sglang.io/advanced_features/hicache_design.html</li>
+<li>L2 Storage (Persistent Cache), LMCache —
+https://docs.lmcache.ai/mp/l2_storage.html</li>
+<li>KV-Cache Offloading, llm-d —
+https://llm-d.ai/docs/dev/architecture/advanced/kv-management/kv-offloader</li>
+<li>Inside vLLM’s New KV Offloading Connector, vLLM Blog —
+https://blog.vllm.ai/2026/01/08/kv-offloading-connector.html</li>
+<li>SGLang HiCache: Fast Hierarchical KV Caching, LMSYS —
+https://lmsys.org/blog/2025-09-10-sglang-hicache</li>
+<li>Architecture &amp; Developer Guide, LMCache —
+https://docs.lmcache.ai/mp/architecture.html</li>
+<li>Hybrid Attention Models, LMCache —
+https://docs.lmcache.ai/mp/hybrid_models.html</li>
+<li>Mooncake Store design —
+https://kvcache-ai.github.io/Mooncake/design/mooncake-store.html</li>
+<li>MooncakeStoreConnector Usage Guide, vLLM —
+https://docs.vllm.ai/en/latest/features/mooncake_store_connector_usage/</li>
+<li>KV Cache Sharing and Isolation, Mooncake —
+https://github.com/kvcache-ai/Mooncake/blob/main/docs/source/deployment/kv-cache-sharing-and-isolation.md</li>
+<li>KVBM Configuration Reference, NVIDIA Dynamo —
+https://docs.dynamo.nvidia.com/dynamo/dev/reference/components/kvbm-configuration.md</li>
+<li>AIBrix KVCache Offloading Framework —
+https://aibrix.readthedocs.io/latest/designs/aibrix-kvcache-offloading-framework.html</li>
+<li>taco-project/FlexKV — https://github.com/taco-project/FlexKV</li>
+<li>Offload KV Cache Locally, NVIDIA Dynamo —
+https://docs.nvidia.com/dynamo/cli/kv-cache-offloading/overview.md</li>
+<li>deepseek-ai/3FS — https://github.com/deepseek-ai/3FS</li>
+<li>KV Cache Offloading, KServe —
+https://kserve.github.io/website/docs/model-serving/generative-inference/llmisvc/kv-cache-offloading</li>
+<li>llm-d tiered-prefix-cache guide —
+https://github.com/llm-d/llm-d/tree/main/guides/tiered-prefix-cache</li>
+<li>CacheBlend: Fast LLM Serving for RAG with Cached Knowledge Fusion —
+https://arxiv.org/abs/2405.16444</li>
+<li>How KV Cache on Object Storage Transforms AI Inference, Cloudian —
+https://cloudian.com/blog/how-kv-cache-offloading-to-object-storage-transforms-ai-inference/</li>
+<li>Agent coding at long context: KV cache offloading on VAST &amp;
+Backend.AI —
+https://www.vastdata.com/blog/vastdata-lablup-kvcache-offload-benchmark</li>
+<li>Building py-kvcache: External KV Caching for vLLM with NVMe SSDs —
+https://arxiv.org/abs/2609.11744</li>
+<li>When the KV Cache Is Slower Than the GPU —
+https://arxiv.org/abs/2610.21500</li>
+<li>EfficientAgent: What Makes KV Cache Offloading Work for Concurrent
+Agents? — https://arxiv.org/abs/2609.33762</li>
+<li>Comparing KV cache offloading frameworks for vLLM, NetApp Community
+—
+https://community.netapp.com/community/discussion/468325/comparing-kv-cache-offloading-frameworks-for-vllm</li>
+<li>Native KV Offloading, NVIDIA Dynamo —
+https://docs.nvidia.com/dynamo/dev/backends/v-llm/native-kv-offloading</li>
+<li>KV Cache Offloading, vLLM production-stack —
+https://docs.vllm.ai/projects/production-stack/en/vllm-stack-0.1.5/user_manual/kv_cache/index.html</li>
+<li>When Fancy Eviction Fails: Cache Replacement for LLM Prefix Reuse —
+https://arxiv.org/abs/2609.28870</li>
+<li>NIXL Architecture, NVIDIA —
+https://docs.nvidia.com/nixl/getting-started/architecture.md</li>
+<li>Transfer Engine, Mooncake —
+https://kvcache-ai.github.io/Mooncake/design/transfer-engine/index.html</li>
+<li>Mooncake: A KVCache-centric Disaggregated Architecture for LLM
+Serving — http://arxiv.org/abs/2407.00079</li>
+<li>SGLang HiCache Best Practices —
+https://docs.sglang.ai/advanced_features/hicache_best_practices.html</li>
+<li>llm-d v1.0: State-of-the-art inference, ready for Day 2 —
+https://llm-d.ai/blog/llm-d-v1.0-state-of-the-art-inference-ready-for-day-2</li>
+<li>Router Design, NVIDIA Dynamo —
+https://docs.nvidia.com/dynamo/dev/knowledge-base/modular-components/router/router-design.md</li>
+<li>Prefix-Cache Aware Routing, llm-d —
+https://llm-d.ai/docs/architecture/advanced/kv-management/prefix-cache-aware-routing</li>
+<li>Enable Precise Prefix-Cache Aware Routing, llm-d —
+https://llm-d.ai/docs/dev/well-lit-paths/foundations/precise-prefix-cache-routing</li>
+<li>Add AutoTune config to prefix scorer (GIE PR #1888) —
+https://github.com/kubernetes-sigs/gateway-api-inference-extension/pull/1888</li>
+<li>KV-Cache Wins You Can See, llm-d —
+https://llm-d.ai/blog/kvcache-wins-you-can-see</li>
+<li>Router Guide, NVIDIA Dynamo —
+https://docs.nvidia.com/dynamo/v-0-9-0/components/router/router-guide</li>
+<li>SGLang Model Gateway —
+https://docs.sglang.io/advanced_features/sgl_model_gateway.html</li>
+<li>SGLang v0.4: Cache-Aware Load Balancer, LMSYS —
+https://www.lmsys.org/blog/2024-12-04-sglang-v0-4/</li>
+<li>Prefix-aware routing, Ray Serve —
+https://docs.ray.io/en/latest/serve/llm/prefix-aware-request-router.html</li>
+<li>KV-aware routing, Ray Serve —
+https://docs.ray.io/en/master/serve/llm/user-guides/kv-aware-routing.html</li>
+<li>KV Cache Aware Routing, vLLM production-stack —
+https://docs.vllm.ai/projects/production-stack/en/vllm-stack-0.1.6/tutorials/kvaware.html</li>
+<li>Optimizing AI Inference at Character.AI —
+https://web.archive.org/web/2024/https://research.character.ai/optimizing-inference/</li>
+<li>Token-Load Awareness with Ray Serve LLM, Anyscale —
+https://anyscale.com/blog/llm-kv-token-aware-routing</li>
+<li>CacheRoute: Planned Prefix-Affinity Routing —
+https://arxiv.org/abs/2608.19677</li>
+<li>DualMap: Cache Affinity and Load Balancing for Distributed LLM
+Serving — https://arxiv.org/pdf/2602.06502</li>
+<li>How GKE Inference Gateway improved latency for Vertex AI —
+https://cloud.google.com/blog/products/containers-kubernetes/how-gke-inference-gateway-improved-latency-for-vertex-ai/</li>
+<li>Production-Grade LLM Inference at Scale with KServe, llm-d, and vLLM
+—
+https://llm-d.ai/blog/production-grade-llm-inference-at-scale-kserve-llm-d-vllm</li>
+<li>vLLM production-stack release, vLLM Blog —
+https://blog.vllm.ai/2025/01/21/stack-release.html</li>
+<li>vLLM x AgentX: Optimizing for Real-World Agentic Serving —
+https://vllm.ai/blog/2026-09-08-vllm-agentx</li>
+<li>Enable P2P Prefix Cache Sharing, llm-d —
+https://llm-d.ai/docs/dev/well-lit-paths/foundations/enable-p2p-prefix-cache-sharing</li>
+<li>DeepInfer inference deployment Q&amp;A —
+https://github.com/deepseek-ai/DeepInfer/blob/main/doc/inference_deployment_qa.md</li>
+<li>Governing the KV Cache: Preventing Timing Side-Channel Leakage —
+https://arxiv.org/abs/2608.09225</li>
+<li>Blending, LMCache —
+https://docs.lmcache.ai/kv_cache_optimizations/blending.html</li>
+<li>AIBrix: Towards Scalable, Cost-Effective Large Language Model
+Inference Infrastructure — https://arxiv.org/abs/2504.03648</li>
+<li>Lodestar: An Online-Learning LLM Inference Router —
+https://arxiv.org/abs/2606.00946</li>
+<li>TraceLab: Characterizing Coding Agent Workloads for LLM Serving —
+https://arxiv.org/abs/2606.30560</li>
+<li>lmcache quota, LMCache —
+https://docs.lmcache.ai/zh_CN/cli/quota.html</li>
+<li>KV Pool, vLLM Ascend —
+https://docs.vllm.ai/projects/ascend/en/v0.27.1rc1/user_guide/feature_guide/kv_pool.html</li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Open-Source Tools for
+Prefix and KV Cache Management in LLM Inference, and How Teams Build the
+Cache Layer with Them</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-10-31</span></div>
+  <div><span class="k">Sources cited</span><span class="v">80</span></div>
+</div>
+</div></div>
+</body>
+</html>
