@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>A Year in LLM Serving: workload evolution, caching and load
+balancing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>A Year in LLM Serving: workload evolution, caching and load
+balancing</h1>
+<div class="byline">Research report · 3 cited sources · reviewed 2026-11-01</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#overview" id="toc-overview">Overview</a></li>
+<li><a href="#key-concepts" id="toc-key-concepts">Key concepts</a></li>
+<li><a href="#how-it-works" id="toc-how-it-works">How it works</a></li>
+<li><a href="#where-things-live" id="toc-where-things-live">Where things
+live</a></li>
+<li><a href="#gotchas" id="toc-gotchas">Gotchas</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p>Source: <a href="https://arxiv.org/abs/2608.13573">arXiv
+2608.13573v2</a> · Trace: <a
+href="https://github.com/HarvardMadSys/chutes_workload">HarvardMadSys/chutes_workload</a>
+· Reviewed 2026-10-31</p>
+</div>
+<h2 id="overview">Overview</h2>
+<p>This is a measurement paper with a dataset release, not a new system.
+Authors from UChicago, Harvard and Chutes characterize one year of
+unsampled, request-level production traffic from “CompanyX”
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>. The repo
+name and author list show it is Chutes, a serverless platform that
+serves both platform-hosted and user-deployed models
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>,
+<a href="https://github.com/HarvardMadSys/chutes_workload">2</a>]</sup>.
+The trace runs from 2025-04-11 to 2026-04-12 and covers 6,122,413,756
+requests, 314,970 users, 9,174 models (3,922 public, 5,252 private) and
+875,921 serving instances
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</p>
+<p>Three things are new [1]:</p>
+<ol type="1">
+<li><strong>Scale and fidelity.</strong> It is the only public trace
+with 12 months of data, thousands of models, and user and instance IDs
+together.</li>
+<li><strong>A longitudinal view.</strong> The workload is non-stationary
+over a year.</li>
+<li><strong>Two systems results.</strong> Simple FIFO and LRU match or
+beat smarter web and storage eviction policies for prefix caching.
+Routing for cache locality conflicts with load balancing, but a
+cache-first router with a load-aware fallback pays only about 5–7%
+imbalance.</li>
+</ol>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Time span</td>
+<td>2025-04-11 → 2026-04-12</td>
+</tr>
+<tr>
+<td>Requests</td>
+<td>6,122,413,756</td>
+</tr>
+<tr>
+<td>Input tokens</td>
+<td>35,795,761 million</td>
+</tr>
+<tr>
+<td>Output tokens</td>
+<td>2,522,394 million</td>
+</tr>
+<tr>
+<td>Users</td>
+<td>314,970</td>
+</tr>
+<tr>
+<td>Models</td>
+<td>9,174 (3,922 public, 5,252 private)</td>
+</tr>
+<tr>
+<td>Serving instances</td>
+<td>875,921</td>
+</tr>
+<tr>
+<td>Mean input / output per request (derived)</td>
+<td>≈ 5,850 / ≈ 410 tokens (O/I ≈ 0.07)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="key-concepts">Key concepts</h2>
+<ul>
+<li><strong>Token hit ratio</strong>:
+<code>cached_tokens / input_tokens</code> per request. The
+<code>cached_tokens</code> field exists only for the last two months of
+the trace
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>CV(IAT)</strong>: the coefficient of variation of
+inter-arrival times. A value above 1 means bursty traffic
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Lag-1 IAT autocorrelation</strong>: whether one gap predicts
+the next. A positive value means busy and quiet periods persist
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>(user, model) IAT</strong>: the gap between consecutive
+requests from one user to one model, which the paper uses as its proxy
+for reuse distance
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Reconstructed session</strong>: there are no prompts or
+session IDs, so sessions are inferred from token counts
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Replication ratio</strong>: the number of distinct instances
+that serve one session. A value of 1.0 means one instance served the
+whole session
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Load imbalance</strong>: max/mean tokens/s across instances
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+</ul>
+<h2 id="how-it-works">How it works</h2>
+<h3 id="aggregate-shape-3">1. Aggregate shape (§3)</h3>
+<p><strong>Non-stationary demand.</strong> Daily requests rise through
+mid-2025, peak in late summer and fall, then decline into early 2026.
+Token volume grows faster early and drops more sharply at the end, so
+equal request counts can mean different amounts of work. Daily active
+models grow from fewer than 100 to more than 400, with private models
+driving most of the churn. The API mix shifts toward chat and
+non-streaming calls. A weekly and diurnal peak in UTC weekday afternoons
+and evenings persists all year
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</p>
+<p><strong>Prompt-heavy token shape.</strong> Inputs span about 10²–10⁵
+tokens and outputs mostly 10¹–10³, and most requests have O/I &lt; 1
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>. The three
+reference models show distinct profiles [1]:</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr>
+<th>Model</th>
+<th>Main use</th>
+<th>Token shape</th>
+<th>Latency driver</th>
+<th>Per-user IAT</th>
+<th>Prefix hits</th>
+<th>Cache simulation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Global</td>
+<td>Mixed</td>
+<td>In 10²–10⁵, out 10¹–10³</td>
+<td>Decode dominates E2E</td>
+<td>Minutes, falling over the year</td>
+<td>Bimodal</td>
+<td>—</td>
+</tr>
+<tr>
+<td>DeepSeek V3.2</td>
+<td>Chat, role-play</td>
+<td>Near global</td>
+<td>Between the two</td>
+<td>Middle</td>
+<td>Many zero</td>
+<td>Cache-bound; persistent gap to Belady</td>
+</tr>
+<tr>
+<td>DeepSeek R1</td>
+<td>Reasoning</td>
+<td>Highest O/I</td>
+<td>Decode; longest E2E</td>
+<td>Longest (human pace)</td>
+<td>Many zero</td>
+<td>—</td>
+</tr>
+<tr>
+<td>MiniMax-M2.5</td>
+<td>Coding, agentic</td>
+<td>Longest inputs, lowest O/I</td>
+<td>Larger TTFT share</td>
+<td>Shortest</td>
+<td>Broad, high</td>
+<td>Near Belady at moderate size</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Latency.</strong> TTFT is usually a small fraction of
+end-to-end time, so decode dominates. Median duration scales with output
+length, and TTFT scales with input length. At a fixed input length a
+higher hit ratio lowers TTFT, mostly for long inputs. For short inputs
+even a full hit saves little
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</p>
+<h3 id="users-and-models-4">2. Users and models (§4)</h3>
+<ul>
+<li>Models with similar request counts differ by orders of magnitude in
+how many distinct users they serve. Most models, including heavy ones,
+get most of their traffic from a few users
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li>Most users send few requests to few models. A sparse tail of power
+users hits many models; the authors read them as routers, proxies or
+agents
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li>30-day rasters show periodic, long-lived user bands on one popular
+model and correlated mid-month bursts on another. One heavy user
+(133,867 requests, 24 models) keeps to a stable set; another (124,182
+requests, 11 models) briefly tries many
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Finding 1:</strong> per-user and per-model histories give a
+coarser, more learnable signal for caching, prefetching, routing,
+placement and provisioning
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Finding 2:</strong> most models have CV(IAT) &gt; 1 at every
+rate, with positive lag-1 autocorrelation. Bursts persist, so long-tail
+models whose active windows don’t overlap can share GPUs instead of each
+getting always-on capacity
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+</ul>
+<h3 id="one-year-evolution-5">3. One-year evolution (§5)</h3>
+<ul>
+<li><strong>Model turnover.</strong> DeepSeek-V3-0324 and R1 dominate
+early. Qwen3-32B and DeepSeek-V3.2 rise later. The “Others” share grows,
+so traffic spreads across more models
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Token drift.</strong> Median input stays in the thousands.
+Median output falls from a few hundred tokens to below 100, and the
+spread widens
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Cohorts.</strong> Users who joined later send longer inputs
+with more variance
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Finding 3:</strong> both model usage and token profiles
+drift, so short measurement windows mislead capacity planning
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+</ul>
+<h3 id="prefix-caching-6">4. Prefix caching (§6)</h3>
+<p><strong>Production, last two months.</strong> Request-level hit
+ratios are bimodal: near 0 or near 1, with partial hits rare. Inputs
+under 1K tokens skew toward high reuse and inputs over 8K toward low
+reuse. Both DeepSeek models have many zero-hit requests, while
+MiniMax-M2.5 spreads across intermediate and high hits. Some low-volume
+models reach high hit ratios, so cacheability depends on the user base
+and use case, not on the model alone
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</p>
+<p><strong>Arrival locality.</strong> For consecutive requests from one
+(user, model) pair [1]:</p>
+<table>
+<thead>
+<tr>
+<th>Gap to next request</th>
+<th>Share of repeat requests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>≤ 0.1 s</td>
+<td>≈ 50%</td>
+</tr>
+<tr>
+<td>≤ 10 s</td>
+<td>≈ 80%</td>
+</tr>
+<tr>
+<td>≤ 15 min</td>
+<td>99%</td>
+</tr>
+</tbody>
+</table>
+<p>A TTL of a few seconds keeps most reuse, and a TTL of minutes
+captures nearly all of it (<strong>Finding 4</strong>)
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>. Per-user
+IAT trends down over the year, which the authors attribute to agents.
+MiniMax-M2.5 has the shortest per-user IAT and R1 the longest
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</p>
+<p><strong>Simulation.</strong> For each request B, the authors search
+the user’s last K = 10 requests for an unpaired request A with the same
+endpoint and model where
+<code>input(A) + output(A) &lt; input(B)</code>. They pick the A with
+the smallest residual, and B joins A’s session. The method ignores
+<code>cached_tokens</code> and <code>instance_id</code>, so it measures
+reuse inherent in the workload
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>. A
+libCacheSim replay with the session as the cache unit compares FIFO,
+LRU, ARC, S3FIFO, GDSF, LHD, LRB, Sieve and a size-aware Belady oracle
+[1, 3]:</p>
+<ul>
+<li>FIFO and LRU match or beat the more complex policies.</li>
+<li>ARC does worse at intermediate sizes, especially on DeepSeek
+V3.2.</li>
+<li>MiniMax-M2.5 approaches Belady at moderate sizes. DeepSeek V3.2
+keeps a gap even at large capacities.</li>
+<li><strong>Finding 5:</strong> reuse is recency-driven, and the gap to
+Belady leaves room for session-aware LLM cache policies
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+</ul>
+<p>The paper gives no “you need X GB” number. MiniMax-M2.5 saturates in
+the low millions of tokens on a single cache, while V3.2 keeps gaining
+toward 100M
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>. At 27 GB
+per 100K tokens, 1M tokens is about 270 GB of KV (derived), which is
+more than one replica’s HBM.</p>
+<h3 id="load-balancing-7">5. Load balancing (§7)</h3>
+<p><strong>Production (DeepSeek-V3.2, two months).</strong> The request
+rate stays roughly flat while active instances fall in step with token
+volume, so scaling tracks tokens, not requests. Max/mean imbalance rises
+as the fleet shrinks. P90 TTFT jumps once an instance passes a high
+tokens/s threshold, especially for long inputs, while decode time barely
+moves. Overload hurts prefill, so input-heavy traffic is the most
+exposed
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</p>
+<p>The production router first picks the few least-loaded instances,
+then chooses the one with the highest expected prefix hit. Under low
+load one (user, model) stays on about one instance. Under high load it
+spreads across about 11 instances, and the same prefix ends up copied in
+several KV caches (<strong>Finding 6</strong>)
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</p>
+<p><strong>Why not move the KV?</strong> A 100K-token MiniMax-M2.5
+context is about 27 GB of KV, or about 2.7 s one way over a 10 GB/s link
+before contention. Most reuse arrives within seconds, so the paper
+routes to the KV instead
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</p>
+<p><strong>Routing simulation.</strong> N ∈ {5, 10, 15, 20} instances,
+an LRU cache per instance, and per-instance caches from 1.1K to 5M
+tokens [1]:</p>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr>
+<th>Policy</th>
+<th>Rule</th>
+<th>Token hit ratio</th>
+<th>Replication</th>
+<th>Imbalance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>round_robin</td>
+<td>i mod N</td>
+<td>Low, flat as cache grows</td>
+<td>High; grows with N</td>
+<td>Lowest</td>
+</tr>
+<tr>
+<td>load_first</td>
+<td>Least in-flight tokens</td>
+<td>Low, flat</td>
+<td>High; grows with N</td>
+<td>Lowest</td>
+</tr>
+<tr>
+<td>sticky</td>
+<td>Pin user to first instance</td>
+<td>Limited to one replica’s cache</td>
+<td>1.0 by construction</td>
+<td>Orders of magnitude higher</td>
+</tr>
+<tr>
+<td>cache_first</td>
+<td>Largest cached prefix, else least-loaded</td>
+<td>Approaches single-cache bound</td>
+<td>Falls toward 1.0 as cache grows; MiniMax-M2.5 goes from ≈1.4 to ≈1.1
+as N grows</td>
+<td>5–7%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Finding 7:</strong> larger caches alone cannot recover reuse
+when routing scatters sessions. cache_first stays balanced mainly
+because many sessions are single-turn and can fill the least-loaded
+instances
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</p>
+<h2 id="where-things-live">Where things live</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Section</th>
+<th>Content</th>
+<th>Figures</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>§1, Table 1</td>
+<td>Motivation; comparison with prior traces</td>
+<td>Table 1</td>
+</tr>
+<tr>
+<td>§2.2, Tables 2–3</td>
+<td>Trace summary and schema</td>
+<td>Tables 2–3</td>
+</tr>
+<tr>
+<td>§3</td>
+<td>Volume, token shape, latency</td>
+<td>Figs 1–4</td>
+</tr>
+<tr>
+<td>§4</td>
+<td>Heterogeneity, rasters, burstiness</td>
+<td>Figs 5–9</td>
+</tr>
+<tr>
+<td>§5</td>
+<td>Model turnover, token drift, cohorts</td>
+<td>Figs 10–12</td>
+</tr>
+<tr>
+<td>§6</td>
+<td>Production cache, arrival locality, eviction simulation</td>
+<td>Figs 13–17</td>
+</tr>
+<tr>
+<td>§7</td>
+<td>Production balancing, routing simulation</td>
+<td>Figs 18–21</td>
+</tr>
+</tbody>
+</table>
+<p>Trace schema: <code>request_id</code>, <code>endpoint</code>,
+<code>model</code>, <code>user_id</code> (anonymized),
+<code>instance_id</code>, <code>started_at</code>,
+<code>completed_at</code>, <code>input_token</code>,
+<code>output_token</code>, <code>ttft</code>, <code>cached_tokens</code>
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>. It
+contains no prompts, no session IDs and no hardware type.</p>
+<p>Comparison with prior public traces [1]:</p>
+<table>
+<thead>
+<tr>
+<th>Work</th>
+<th>Duration</th>
+<th>Requests</th>
+<th>Models</th>
+<th>User ID</th>
+<th>Instance ID</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>This trace</td>
+<td>12 mo.</td>
+<td>6.12B</td>
+<td>9,174</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>ServeGen</td>
+<td>4 mo.</td>
+<td>3.54B</td>
+<td>12</td>
+<td>✓</td>
+<td>–</td>
+</tr>
+<tr>
+<td>BurstGPT</td>
+<td>4 mo.</td>
+<td>5.29M</td>
+<td>2</td>
+<td>–</td>
+<td>–</td>
+</tr>
+<tr>
+<td>WildChat</td>
+<td>13 mo.</td>
+<td>1.0M convs</td>
+<td>2</td>
+<td>✓</td>
+<td>–</td>
+</tr>
+<tr>
+<td>LMSYS-Chat-1M</td>
+<td>4 mo.</td>
+<td>1.0M convs</td>
+<td>25</td>
+<td>–</td>
+<td>–</td>
+</tr>
+<tr>
+<td>ModServe</td>
+<td>1 wk</td>
+<td>–</td>
+<td>–</td>
+<td>–</td>
+<td>–</td>
+</tr>
+<tr>
+<td>Qwen-Bailian</td>
+<td>2 h</td>
+<td>–</td>
+<td>1</td>
+<td>–</td>
+<td>–</td>
+</tr>
+<tr>
+<td>Mooncake</td>
+<td>1 h</td>
+<td>35.6K</td>
+<td>–</td>
+<td>–</td>
+<td>–</td>
+</tr>
+</tbody>
+</table>
+<h2 id="gotchas">Gotchas</h2>
+<ul>
+<li><strong>Cache data covers only two months.</strong> Hit-ratio change
+over the year is not observable
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Sessions are inferred.</strong> Token-count matching can
+mis-pair concurrent conversations, misses shared system prompts across
+sessions, and assumes no cross-user reuse. Every simulated hit ratio and
+routing result inherits this
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>The simulator idealizes the router.</strong> It assumes one
+router with exact, instant knowledge of every cache and every load, and
+does not model prefill/decode disaggregation
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Only two models are simulated.</strong> §7.1 names
+DeepSeek-V3, Fig 18 says V3.2, and Fig 20 shows “-TEE” variants
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>The 0.1 s IAT is ambiguous.</strong> The paper doesn’t say
+whether it measures start-to-start or completion-to-start. Half of
+repeats arriving within 0.1 s suggests parallel fan-out, where the
+previous output isn’t cached yet
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>The 27 GB / 100K figure has no derivation.</strong> It
+depends on precision and attention layout
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>IAT and TTL claims are request-weighted.</strong>
+Long-context traffic, where caching matters most, may behave differently
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>875,921 instances for 9,174 models</strong> suggests
+ephemeral serverless instances, not stable hosts
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Platform bias.</strong> Chutes is a cheap, open-weight,
+serverless API heavily used by proxies and role-play, so its traffic may
+not transfer to an enterprise internal stack. The serving engine and
+hardware are not disclosed
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+<li><strong>Text tensions.</strong> The Fig 12 caption says later
+cohorts have larger inputs <em>and</em> outputs, while the body says the
+output change is weaker. The intro says inputs get longer, while §5.2
+calls aggregate inputs stable; the increase comes from the cohort view
+<sup>[<a href="https://arxiv.org/abs/2608.13573">1</a>]</sup>.</li>
+</ul>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2608.13573">A Year in LLM Serving:
+Workload Evolution, Caching and Load-Balancing (arXiv
+2608.13573v2)</a><span class="dom">arxiv.org</span></li>
+<li><a href="https://github.com/HarvardMadSys/chutes_workload">HarvardMadSys/chutes_workload
+trace repository</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/1a1a11a/libCacheSim">libCacheSim: a
+high-performance cache simulator</a><span
+class="dom">github.com</span></li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">A Year in LLM
+Serving: workload evolution, caching and load balancing</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-11-01</span></div>
+  <div><span class="k">Sources cited</span><span class="v">3</span></div>
+</div>
+</div></div>
+</body>
+</html>
