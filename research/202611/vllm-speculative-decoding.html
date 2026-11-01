@@ -86,7 +86,7 @@ sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
 <header>
 <h1>Running Speculative Decoding in vLLM: How to Configure It and What
 Decides Performance</h1>
-<div class="byline">Research report · 44 cited sources · reviewed 2026-11-01</div>
+<div class="byline">Research report · 46 cited sources · reviewed 2026-11-01</div>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -828,6 +828,52 @@ Use the Speculators library
 <sup>[<a href="https://docs.vllm.ai/projects/speculators/en/stable/">17</a>]</sup>
 and select checkpoints by served acceptance length
 <sup>[<a href="https://vllm.ai/blog/2026-07-13-eagle-3-amd-instinct">28</a>]</sup>.</p>
+<h3 id="qwen3-models">4.5 Qwen3 models</h3>
+<p>Plain Qwen3 showed no native MTP head in these sources. Qwen3-Next
+has an MTP type in v0.32.0, though its checkpoints were not confirmed
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup>.
+Hugging Face listings, checked 2026-11-01 and not run:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Method</th>
+<th>Qwen3 checkpoints</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>eagle3</code></td>
+<td>4B, 8B, 14B, 32B, 30B-A3B, 235B-A22B
+<sup>[<a href="https://github.com/deepseek-ai/DeepSpec">33</a>,
+<a href="https://huggingface.co/RedHatAI">35</a>]</sup></td>
+</tr>
+<tr>
+<td><code>dflash</code></td>
+<td>4B, 8B, 14B, 30B-A3B
+<sup>[<a href="https://github.com/deepseek-ai/DeepSpec">33</a>,
+<a href="https://huggingface.co/RedHatAI">35</a>,
+<a href="https://huggingface.co/z-lab">36</a>]</sup></td>
+</tr>
+<tr>
+<td><code>dspark</code></td>
+<td>4B, 8B, 14B
+<sup>[<a href="https://github.com/deepseek-ai/DeepSpec">33</a>,
+<a href="https://huggingface.co/RedHatAI">35</a>]</sup></td>
+</tr>
+<tr>
+<td>PARD</td>
+<td><code>amd/PARD-Qwen3-0.6B</code>
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/parallel_draft_model/">29</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p><code>draft_model</code>, <code>ngram_gpu</code> and
+<code>suffix</code> need no Qwen3-specific head. Measured results cover
+only Qwen3-8B, and they are mixed (Sections 4.1 and 5.5).</p>
 <h2 id="getting-the-best-performance">5. Getting the Best
 Performance</h2>
 <h3 id="what-the-load-evidence-supports">5.1 What the load evidence
@@ -884,13 +930,13 @@ a 7B target with a 0.5B draft (vLLM 0.8.2, RTX 4090, high load)
 <sup>[<a href="https://arxiv.org/html/2512.22420v2">9</a>]</sup>. vLLM’s
 2024 V0-engine post reported 1.4x and 1.8x slowdowns on Llama3-70B (4x
 H100, high QPS, value not given)
-<sup>[<a href="https://blog.vllm.ai/2024/10/17/spec-decode.html">35</a>]</sup>.
+<sup>[<a href="https://blog.vllm.ai/2024/10/17/spec-decode.html">37</a>]</sup>.
 The MLSys study cannot refute the rule: it shows no vLLM result below 1x
 at k=3 up to batch 128, but with a closed loop, greedy decoding and one
 k. Its statement about slowing under load is background from the goodput
 paper
 <sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>,
-<a href="https://arxiv.org/html/2406.14066v1">36</a>]</sup>.</p>
+<a href="https://arxiv.org/html/2406.14066v1">38</a>]</sup>.</p>
 <p>PR #47808 is the strongest modern evidence, because its chart varies
 k. Approximate readings by eye at C=256: adaptive 11,500 tok/s, k=1
 10,000, k=2 8,850, no speculation 7,850, k=3 6,450, k=7 5,800. Among
@@ -920,7 +966,7 @@ already lost at C=128
 <p>The crossover also depends on the drafter. In SGLang, not vLLM,
 original EAGLE fell to 0.93x at batch 24 while EAGLE-3 gave 1.38x at
 batch 64 (v0.4.4, H100, Llama-3.1-8B, MT-Bench, chain of 3)
-<sup>[<a href="https://arxiv.org/abs/2503.01840">37</a>]</sup>. No
+<sup>[<a href="https://arxiv.org/abs/2503.01840">39</a>]</sup>. No
 current source gives a crossover for a given model and GPU.</p>
 <h3 id="state-your-objective-first">5.2 State your objective first</h3>
 <p>A high-load loss is a matched-concurrency claim. A service targeting,
@@ -930,7 +976,7 @@ at higher load. By this report’s inference, a loss at C=256 matters only
 if you would run at C=256.</p>
 <p>On InferenceX, DeepSeek R1 on B200 FP4 gives 8906.5 tok/s/chip with
 MTP against 1518.4 with it off, at a matched 62 tok/s/user, about 5.9x
-<sup>[<a href="https://inferencex.semianalysis.com/compare-spec-decode/deepseek-r1-b200-fp4-mtp-vs-none">38</a>]</sup>.
+<sup>[<a href="https://inferencex.semianalysis.com/compare-spec-decode/deepseek-r1-b200-fp4-mtp-vs-none">40</a>]</sup>.
 The engine is not stated and values are interpolated, so it is not a
 vLLM result. vLLM’s own post plots adaptive DSpark well outside no
 speculation on the best-trade-off curve, as a figure with no table
@@ -942,7 +988,7 @@ the baseline nears its limit. DSpark’s authors report nominal +661% and
 85% and 57 to 78% per-user gains at matched throughput as more stable.
 Those are DeepSeek’s own serving system against MTP-1 and need kernel
 changes the paper describes, so they are not vLLM results
-<sup>[<a href="https://arxiv.org/abs/2607.05147">39</a>]</sup>. Batch
+<sup>[<a href="https://arxiv.org/abs/2607.05147">41</a>]</sup>. Batch
 jobs have no speed target, so peak throughput decides, and under
 overload queues grow however good the curve looks.</p>
 <h3 id="adaptive-verification">5.3 Adaptive verification</h3>
@@ -970,13 +1016,13 @@ they appear stale
 In the code, <code>BaseSpeculator</code> assigns the flag for all
 speculators. Drafters with no confidence head use an online acceptance
 estimator, and validators do not check the method
-<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/worker/gpu/spec_decode/speculator.py">40</a>,
-<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/worker/gpu/spec_decode/adaptive_verification.py">41</a>,
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/worker/gpu/spec_decode/speculator.py">42</a>,
+<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/worker/gpu/spec_decode/adaptive_verification.py">43</a>,
 <a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup>.
 Benchmarks exist only for DSpark. SmartSpec, an earlier goodput policy,
 claims up to 3.2x lower latency at low rates and only maintained
 performance at high rates
-<sup>[<a href="https://arxiv.org/html/2406.14066v1">36</a>]</sup>. This
+<sup>[<a href="https://arxiv.org/html/2406.14066v1">38</a>]</sup>. This
 report reads that as the ceiling for a costly drafter: a budget can stop
 a loss without producing a win.</p>
 <h3 id="load-policy-by-deployment-shape">5.4 Load policy by deployment
@@ -1102,7 +1148,7 @@ the drafter.</p>
 means something</h3>
 <p>Lab numbers are not forecasts. DFlash’s 5.1x in SGLang (Qwen3-8B
 Math500, C=1, single B200) compares with 1.08 to 1.27x on AMD’s vLLM
-sweep <sup>[<a href="https://arxiv.org/html/2602.06036v1">42</a>,
+sweep <sup>[<a href="https://arxiv.org/html/2602.06036v1">44</a>,
 <a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>,
 though GPU, backend, checkpoint and load all differ. One EAGLE-3 head on
 Llama-3.1-8B gave 1.84x on code (mean acceptance length 2.54) and 0.99x
@@ -1110,10 +1156,10 @@ on chat (1.19) on vLLM 0.19.1, one A30, T=0, one concurrent request
 <sup>[<a href="https://docs.alauda.io/ai/2.8/deploy/inference_service/guides/vllm_speculative_decoding.html">4</a>]</sup>.
 Temperature matters less than domain: EAGLE-3 accepted length falls
 about 4 to 21% from T=0 to T=1 at the method level, not in vLLM
-<sup>[<a href="https://arxiv.org/abs/2503.01840">37</a>]</sup>, while
+<sup>[<a href="https://arxiv.org/abs/2503.01840">39</a>]</sup>, while
 Qwen3-8B Eagle3 at T=1.0 ranges from 5.30 on GSM8K to 2.54 on Alpaca in
 DSpark’s method-level table
-<sup>[<a href="https://arxiv.org/abs/2607.05147">39</a>]</sup>.</p>
+<sup>[<a href="https://arxiv.org/abs/2607.05147">41</a>]</sup>.</p>
 <p>Compare <code>output_throughput</code> and TPOT against a baseline
 with identical prompts, order and temperature, on equal nodes
 <sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.
@@ -1130,7 +1176,7 @@ fixed k, k one step shorter, and adaptive or a schedule where supported.
 Judge time to first token separately: on vLLM Neuron it rose from 51.07
 to 63.65 ms while TPOT fell from 10.52 to 6.41 ms (Trn2, Llama-3.1-8B,
 k=3, concurrency 2, version unstated)
-<sup>[<a href="https://awsdocs-neuron.readthedocs-hosted.com/en/latest/vllm-neuron/docs/tutorials/tutorial-eagle3-speculative-decoding-llama-3-1.html">43</a>]</sup>.</p>
+<sup>[<a href="https://awsdocs-neuron.readthedocs-hosted.com/en/latest/vllm-neuron/docs/tutorials/tutorial-eagle3-speculative-decoding-llama-3-1.html">45</a>]</sup>.</p>
 <h3 id="memory-and-graphs">5.7 Memory and graphs</h3>
 <p>Reserve headroom. AMD ran draft-weight methods at
 <code>--gpu-memory-utilization</code> 0.8 to 0.85
@@ -1277,7 +1323,7 @@ incompatibility note covers only <code>vllm&lt;=0.15.0</code>
 Structured output with speculation and async scheduling landed in PR
 #29821, merged 2026-01-06, so older warnings are out of date. However,
 nobody has benchmarked the scheduler CPU its grammar checks add
-<sup>[<a href="https://github.com/vllm-project/vllm/pull/29821">44</a>]</sup>.
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/29821">46</a>]</sup>.
 <code>min_p</code> and <code>logit_bias</code> were ignored with a
 warning on vLLM 0.19.1
 <sup>[<a href="https://docs.alauda.io/ai/2.8/deploy/inference_service/guides/vllm_speculative_decoding.html">4</a>]</sup>.
@@ -1382,6 +1428,10 @@ NGram GPU Implementation compatible with Async Scheduler, PR
 DeepSeek GitHub</a><span class="dom">github.com</span></li>
 <li><a href="https://vllm.ai/blog/2026-05-26-eagle-3-1">EAGLE 3.1 - vLLM
 Blog</a><span class="dom">vllm.ai</span></li>
+<li><a href="https://huggingface.co/RedHatAI">RedHatAI models - Hugging
+Face</a><span class="dom">huggingface.co</span></li>
+<li><a href="https://huggingface.co/z-lab">z-lab models - Hugging
+Face</a><span class="dom">huggingface.co</span></li>
 <li><a href="https://blog.vllm.ai/2024/10/17/spec-decode.html">How
 Speculative Decoding Boosts vLLM Performance by up to 2.8x - vLLM
 Blog</a><span class="dom">blog.vllm.ai</span></li>
@@ -1417,7 +1467,7 @@ Async Scheduling + Speculative Decoding + Structured Outputs, PR
 Decoding in vLLM: How to Configure It and What Decides
 Performance</span></div>
   <div><span class="k">Reviewed</span><span class="v">2026-11-01</span></div>
-  <div><span class="k">Sources cited</span><span class="v">44</span></div>
+  <div><span class="k">Sources cited</span><span class="v">46</span></div>
 </div>
 </div></div>
 </body>
