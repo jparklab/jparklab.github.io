@@ -1,0 +1,1424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Running Speculative Decoding in vLLM: How to Configure It and
+What Decides Performance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Running Speculative Decoding in vLLM: How to Configure It and What
+Decides Performance</h1>
+<div class="byline">Research report · 44 cited sources · reviewed 2026-11-01</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#how-speculative-decoding-works-in-vllm"
+id="toc-how-speculative-decoding-works-in-vllm">1. How Speculative
+Decoding Works in vLLM</a></li>
+<li><a href="#running-speculative-decoding"
+id="toc-running-speculative-decoding">2. Running Speculative
+Decoding</a></li>
+<li><a href="#configuration-reference"
+id="toc-configuration-reference">3. Configuration Reference</a></li>
+<li><a href="#which-configuration-to-use"
+id="toc-which-configuration-to-use">4. Which Configuration to
+Use</a></li>
+<li><a href="#getting-the-best-performance"
+id="toc-getting-the-best-performance">5. Getting the Best
+Performance</a></li>
+<li><a href="#limitations-and-compatibility"
+id="toc-limitations-and-compatibility">6. Limitations and
+Compatibility</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>Speculative decoding takes one JSON flag to enable,
+<code>--speculative-config</code> on the CLI or
+<code>speculative_config</code> in Python
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup>.
+No configuration is best in general. Claims here apply to vLLM 0.32.0,
+the latest release (2026-10-18), unless marked as main
+<sup>[<a href="https://pypi.org/project/vllm/">2</a>]</sup>. Try a
+native multi-token prediction (MTP) head first, then an EAGLE-3, DFlash
+or DSpark checkpoint matched to your exact target, and reserve
+<code>ngram_gpu</code> or <code>suffix</code> for copy-heavy traffic.
+Keep a setting only if it beats a no-speculation run at your real
+concurrency and objective. Load is only one way to lose: fixed 7-token
+DSpark fell about 26 to 33% below no speculation at concurrency 256
+(main 32881ec177, four-GPU B300)
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>,
+and n-gram lost at a single request (vLLM 0.19.1, one A30)
+<sup>[<a href="https://docs.alauda.io/ai/2.8/deploy/inference_service/guides/vllm_speculative_decoding.html">4</a>]</sup>.
+At high load, test speculation only with a budgeted or short draft, and
+keep it only if it wins at your latency target and survives an overload
+test.</strong></p>
+</div>
+<h2 id="how-speculative-decoding-works-in-vllm">1. How Speculative
+Decoding Works in vLLM</h2>
+<h3 id="the-trade">1.1 The trade</h3>
+<p>Ordinary decoding produces one token per forward pass. Speculative
+decoding adds a fast predictor, the drafter, which guesses the next k
+tokens (<code>num_speculative_tokens</code>). The target model checks
+all k in one pass, keeps the accepted prefix and adds one token of its
+own
+<sup>[<a href="https://docs.coreweave.com/products/inference/speculative-decoding">5</a>]</sup>.
+With the standard verifier, the output distribution is preserved up to
+numerical limits
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup>.
+You pay for drafting and for verification slots spent on rejected
+guesses.</p>
+<p>With per-token acceptance a, and c as the cost of a draft step
+relative to a target step, tokens per step are L = (1 − a^(k+1)) / (1 −
+a), and speedup is S = L / (kc + 1)
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup>.
+This assumes verifying k+1 tokens costs about the same as verifying one.
+That holds while the GPU is memory-bound, waiting on memory bandwidth
+with compute to spare, and can fail once it is compute-bound
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">7</a>]</sup>.
+The docs therefore scope the feature to medium-to-low queries per second
+(QPS) on memory-bound workloads
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup>.
+The same page’s qualitative table still rates every method medium gain
+or better at high QPS, without numbers. The long fixed-draft losses in
+Section 5.1 contradict it
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>,
+<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.
+By this report’s calculation, at a = 0.5 the model gives 1.63x for k=3
+and c=0.05 but 0.98x for k=5 and c=0.20.</p>
+<h3 id="three-ways-to-lose">1.2 Three ways to lose</h3>
+<p><strong>Saturation</strong> happens when the verification batch uses
+up the available compute. The docs frame that batch as batch size times
+k
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/dynamic_speculative_decoding/">8</a>]</sup>;
+this report counts k+1 to include the extra token the target adds. A
+load policy fixes it, and PR #47808 is the measured case
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.</p>
+<p><strong>Cost loss</strong> happens when the drafter, per-step
+overhead or a badly chosen k returns less than it costs, even with no
+queue. Only a different method, k or setup helps. Alauda’s n-gram test
+is one example: 0.98x on code refactoring and 0.85x on chat (Qwen3-8B
+BF16, vLLM 0.19.1 V1 engine, one A30 24 GB, temperature (T) 0, k=5, one
+concurrent request, median of 3 runs)
+<sup>[<a href="https://docs.alauda.io/ai/2.8/deploy/inference_service/guides/vllm_speculative_decoding.html">4</a>]</sup>.
+Alauda blames proposer work, verification and disabled async scheduling
+together, and calls it a reminder to measure, not a verdict on n-gram.
+<code>ngram_gpu</code> keeps async but has no such test.</p>
+<p><strong>Memory pressure</strong> is the third: draft weights and KV
+compete with the target’s KV cache, so fewer requests fit. Neither a k
+schedule nor a verification budget frees that memory. Nightjar offloads
+the draft
+<sup>[<a href="https://arxiv.org/html/2512.22420v2">9</a>]</sup>; no
+such vLLM mechanism was found.</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Method</th>
+<th>Proposer</th>
+<th>GPU memory cost</th>
+<th>Drafting share of step time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mtp</code></td>
+<td>Heads inside the target; Gemma 4 adds an assistant checkpoint
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/mtp/">10</a>]</sup></td>
+<td>Low per NVIDIA, no figure
+<sup>[<a href="https://docs.nvidia.com/nim/large-language-models/2.0.13/advanced-use-cases/speculative-decoding.html">11</a>]</sup></td>
+<td>Not measured on current vLLM</td>
+</tr>
+<tr>
+<td><code>eagle</code>, <code>eagle3</code></td>
+<td>Small trained head fed by target hidden states</td>
+<td>+1.4 to 5.3% of weights
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup></td>
+<td>12 to 20% at batch 1
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup></td>
+</tr>
+<tr>
+<td><code>dflash</code>, <code>dspark</code></td>
+<td>Matched block drafters emitting many tokens per pass
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup></td>
+<td>No figure published</td>
+<td>Not measured</td>
+</tr>
+<tr>
+<td><code>draft_model</code></td>
+<td>Separate small LLM</td>
+<td>+1.8% (1B on 70B), +7.3% (0.6B on 8B)
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup></td>
+<td>21% and about 47% at batch 1
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup></td>
+</tr>
+<tr>
+<td><code>ngram</code>, <code>ngram_gpu</code></td>
+<td>Prompt lookup</td>
+<td>Zero for CPU <code>ngram</code>
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup>;
+negligible per NVIDIA
+<sup>[<a href="https://docs.nvidia.com/nim/large-language-models/2.0.13/advanced-use-cases/speculative-decoding.html">11</a>]</sup></td>
+<td>Under 2% for CPU <code>ngram</code>
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup></td>
+</tr>
+<tr>
+<td><code>suffix</code></td>
+<td>CPU suffix trees over prompt and past outputs
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/suffix/">13</a>]</sup></td>
+<td>CPU side</td>
+<td>About 10% total overhead at concurrency 64, version unstated
+<sup>[<a href="https://www.snowflake.com/en/engineering-blog/suffixdecoding-arctic-inference-vllm/">14</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>The study figures are from vLLM v0.10.1.1 on H100 with greedy
+sampling, and memory numbers are analytical. Verification took 42 to 95%
+of runtime there, so tuning mainly aims to avoid verifying tokens that
+will be rejected
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup>.</p>
+<h2 id="running-speculative-decoding">2. Running Speculative
+Decoding</h2>
+<p><strong>No command in this report has been run.</strong> Each is
+composed from v0.32.0 code and current docs, so check
+<code>--help</code> on your build.</p>
+<h3 id="pin-the-version-and-take-a-baseline">2.1 Pin the version and
+take a baseline</h3>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">&quot;vllm==0.32.0&quot;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve <span class="st">&quot;</span><span class="va">$TARGET</span><span class="st">&quot;</span> <span class="at">--tensor-parallel-size</span> <span class="st">&quot;</span><span class="va">$TP</span><span class="st">&quot;</span> <span class="at">--max-model-len</span> <span class="st">&quot;</span><span class="va">$MML</span><span class="st">&quot;</span> <span class="at">--max-num-seqs</span> 256</span></code></pre></div>
+<p>Pin because the docs site follows main (Section 3.2). Tensor
+parallelism (TP) splits one model across GPUs. The
+<code>--max-num-seqs</code> default of 128 caps the batch below the top
+of a high-concurrency sweep
+<sup>[<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>]</sup>.
+Save output throughput and time per output token (TPOT) at each
+concurrency.</p>
+<h3 id="launch-the-first-drafter-that-fits">2.2 Launch the first drafter
+that fits</h3>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Native MTP head: no draft weights.</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve XiaomiMiMo/MiMo-7B-Base <span class="at">--tensor-parallel-size</span> 1 <span class="dt">\</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--speculative-config</span> <span class="st">&#39;{&quot;method&quot;:&quot;mtp&quot;,&quot;num_speculative_tokens&quot;:1}&#39;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Gemma 4: MTP with an assistant checkpoint</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve google/gemma-4-26B-A4B-it <span class="at">--max-model-len</span> 8192 <span class="at">--language-model-only</span> <span class="dt">\</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">--speculative-config</span> <span class="st">&#39;{&quot;method&quot;:&quot;mtp&quot;,&quot;model&quot;:&quot;google/gemma-4-26B-A4B-it-assistant&quot;,&quot;num_speculative_tokens&quot;:1}&#39;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co"># EAGLE-3 with a released head</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve Qwen/Qwen3-8B <span class="at">--tensor-parallel-size</span> 1 <span class="dt">\</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">--speculative-config</span> <span class="st">&#39;{&quot;method&quot;:&quot;eagle3&quot;,&quot;model&quot;:&quot;RedHatAI/Qwen3-8B-speculator.eagle3&quot;,&quot;num_speculative_tokens&quot;:3}&#39;</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Block drafter (DSpark example in the load policy below)</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve Qwen/Qwen3-8B <span class="dt">\</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">--speculative-config</span> <span class="st">&#39;{&quot;method&quot;:&quot;dflash&quot;,&quot;model&quot;:&quot;z-lab/Qwen3-8B-DFlash-b16&quot;,&quot;num_speculative_tokens&quot;:7}&#39;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="co"># Separate draft on a large same-vocabulary target. Untested; the draft is gated and needs approval.</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve <span class="st">&quot;</span><span class="va">$TARGET</span><span class="st">&quot;</span> <span class="at">--tensor-parallel-size</span> <span class="st">&quot;</span><span class="va">$TP</span><span class="st">&quot;</span> <span class="at">--gpu-memory-utilization</span> 0.8 <span class="dt">\</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">--speculative-config</span> <span class="st">&#39;{&quot;method&quot;:&quot;draft_model&quot;,&quot;model&quot;:&quot;meta-llama/Llama-3.2-1B-Instruct&quot;,&quot;num_speculative_tokens&quot;:3}&#39;</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="co"># Copy-heavy traffic. This ngram_gpu window is an untested combination.</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve <span class="st">&quot;</span><span class="va">$TARGET</span><span class="st">&quot;</span> <span class="dt">\</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>  <span class="at">--speculative-config</span> <span class="st">&#39;{&quot;method&quot;:&quot;ngram_gpu&quot;,&quot;num_speculative_tokens&quot;:5,&quot;prompt_lookup_min&quot;:3,&quot;prompt_lookup_max&quot;:5}&#39;</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="co"># Suffix, after: pip install arctic-inference==0.1.1</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve <span class="st">&quot;</span><span class="va">$TARGET</span><span class="st">&quot;</span> <span class="at">--speculative-config</span> <span class="st">&#39;{&quot;method&quot;:&quot;suffix&quot;}&#39;</span></span></code></pre></div>
+<p>If the Gemma startup log shows
+<code>SpeculativeConfig(method='draft_model', ...)</code>, your vLLM is
+too old for this path
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/mtp/">10</a>]</sup>.
+The long EAGLE-3 form lets you change k or pair the head with a
+quantized target
+<sup>[<a href="https://docs.vllm.ai/projects/speculators/en/latest/user_guide/tutorials/serve_vllm/">16</a>]</sup>,
+while <code>vllm serve RedHatAI/Qwen3-8B-speculator.eagle3</code> reads
+the target from the checkpoint’s <code>speculators_config</code>
+<sup>[<a href="https://docs.vllm.ai/projects/speculators/en/stable/">17</a>]</sup>.
+Block-drafter settings follow AMD’s runs
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>.
+The docs’ <code>draft_model</code> examples pair
+<code>Qwen/Qwen3-0.6B</code> with 4B or 8B targets at k=5
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/draft_model/">18</a>]</sup>.
+Do not copy them, since that draft costs about 37.5% of an 8B step
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup>.</p>
+<h3 id="run-offline">2.3 Run offline</h3>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> vllm <span class="im">import</span> LLM</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>llm <span class="op">=</span> LLM(model<span class="op">=</span><span class="st">&quot;Qwen/Qwen3-8B&quot;</span>, tensor_parallel_size<span class="op">=</span><span class="dv">1</span>, disable_log_stats<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>          speculative_config<span class="op">=</span>{<span class="st">&quot;method&quot;</span>: <span class="st">&quot;eagle3&quot;</span>, <span class="st">&quot;num_speculative_tokens&quot;</span>: <span class="dv">3</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>                              <span class="st">&quot;model&quot;</span>: <span class="st">&quot;RedHatAI/Qwen3-8B-speculator.eagle3&quot;</span>})</span></code></pre></div>
+<p>The keys match the CLI, and <code>disable_log_stats=False</code> lets
+<code>llm.get_metrics()</code> report acceptance
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/main/examples/features/speculative_decoding/spec_decode_offline.py">19</a>]</sup>.</p>
+<h3 id="check-what-actually-ran">2.4 Check what actually ran</h3>
+<p>The startup log should show your method. vLLM warns when it falls
+back to the older V1 runner, and logs when a method turns async
+scheduling off
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup>.
+Then read the counters:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-s</span> localhost:8000/metrics <span class="kw">|</span> <span class="fu">grep</span> spec_decode</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co"># mean acceptance length = 1 + _num_accepted_tokens_total / _num_drafts_total</span></span></code></pre></div>
+<p>A mean acceptance length of 1 means nothing is accepted, which
+usually points to a mismatched drafter
+<sup>[<a href="https://docs.coreweave.com/products/inference/speculative-decoding">5</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/acceptance_metrics/">21</a>]</sup>.
+<code>--speculative-model</code> is deprecated
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/draft_model/">18</a>]</sup>.
+<code>--speculative-disable-by-batch-size</code> has no matching field
+in v0.32.0’s config. The gauge
+<code>vllm:spec_decode_draft_acceptance_rate</code> is absent from
+main’s metrics code, so ignore guides built on them
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>,
+<a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/spec_decode/metrics.py">23</a>]</sup>.
+Allow for slow startup in readiness probes: about 5 minutes for an
+EAGLE-3 head on one A30 (vLLM 0.19.1)
+<sup>[<a href="https://docs.alauda.io/ai/2.8/deploy/inference_service/guides/vllm_speculative_decoding.html">4</a>]</sup>.</p>
+<h3 id="sweep-on-your-own-prompts">2.5 Sweep on your own prompts</h3>
+<p>Run once per arm. Repeating <code>vllm bench serve</code> on one
+server can reuse prefix-cached prompts and inflate throughput, so
+restart the server before every level of every arm [3, 24]:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> conc <span class="kw">in</span> 1 4 16 32 64 128 256<span class="kw">;</span> <span class="cf">do</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="ex">restart_server_and_warm_up</span>  <span class="co"># your own step; warm up on other prompts</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="ex">vllm</span> bench serve <span class="at">--backend</span> openai-chat <span class="at">--endpoint</span> /v1/chat/completions <span class="dt">\</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">--base-url</span> http://127.0.0.1:8000 <span class="at">--model</span> <span class="st">&quot;</span><span class="va">$MODEL</span><span class="st">&quot;</span> <span class="at">--tokenizer</span> <span class="st">&quot;</span><span class="va">$MODEL</span><span class="st">&quot;</span> <span class="dt">\</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">--dataset-name</span> custom <span class="at">--dataset-path</span> prompts.jsonl <span class="at">--skip-chat-template</span> <span class="dt">\</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">--custom-output-len</span> <span class="st">&quot;</span><span class="va">$PROD_OUTPUT_LEN</span><span class="st">&quot;</span> <span class="at">--num-prompts</span> 256 <span class="dt">\</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">--max-concurrency</span> <span class="st">&quot;</span><span class="va">$conc</span><span class="st">&quot;</span> <span class="at">--request-rate</span> inf <span class="at">--disable-shuffle</span> <span class="dt">\</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">--temperature</span> <span class="st">&quot;</span><span class="va">$PROD_TEMP</span><span class="st">&quot;</span> <span class="at">--seed</span> 0 <span class="dt">\</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">--save-result</span> <span class="at">--result-filename</span> <span class="st">&quot;</span><span class="va">${ARM}</span><span class="st">_c</span><span class="va">${conc}</span><span class="st">.json&quot;</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="cf">done</span></span></code></pre></div>
+<p><code>vllm bench sweep serve</code> resets caches between runs; check
+<code>--help</code> for these flags
+<sup>[<a href="https://docs.vllm.ai/en/latest/benchmarking/cli/">24</a>]</sup>.
+Without a prompt log, use <code>--dataset-name speed_bench</code> with
+<code>--speed-bench-dataset-subset</code> (<code>qualitative</code> for
+acceptance, <code>throughput_1k</code> through
+<code>throughput_32k</code> for speed)
+<sup>[<a href="https://docs.vllm.ai/en/latest/benchmarking/cli/">24</a>]</sup>.
+Add <code>--speed-bench-output-len</code> as in PR #47808’s harness
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.
+This sweep is closed-loop, meaning each client waits for its last
+response, so it cannot show queueing. Repeat the winner and the baseline
+with a finite <code>--request-rate</code> and
+<code>--burstiness 1.0</code> (Poisson arrivals) at and above your
+traffic rate
+<sup>[<a href="https://docs.vllm.ai/en/latest/benchmarking/cli/">24</a>]</sup>.</p>
+<h2 id="configuration-reference">3. Configuration Reference</h2>
+<p>Everything lives in one object: a JSON string on the CLI, a dict in
+Python, or a nested mapping in YAML
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup>.
+The keys also select a runner, vLLM’s internal execution path: V2 is
+modern, and V1 is the older path some methods force.</p>
+<h3 id="keys-that-affect-performance-v0.32.0">3.1 Keys that affect
+performance (v0.32.0)</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>What to know</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>method</code></td>
+<td>Inferred from <code>model</code> where possible</td>
+<td><code>ngram</code>, <code>ngram_gpu</code>,
+<code>draft_model</code>, <code>suffix</code>,
+<code>custom_class</code>, <code>eagle</code>, <code>eagle3</code>,
+<code>dflash</code>, <code>dspark</code>, <code>mtp</code>,
+<code>extract_hidden_states</code>, <code>medusa</code>,
+<code>mlp_speculator</code>
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>None</td>
+<td>Draft path or repository. Omit for <code>ngram</code>,
+<code>ngram_gpu</code>, <code>suffix</code> and native <code>mtp</code>
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup></td>
+</tr>
+<tr>
+<td><code>num_speculative_tokens</code></td>
+<td>From draft config, else required</td>
+<td>Must exceed 0, so disable speculation by removing the config. DFlash
+maximum is block size minus 1
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>,
+<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup></td>
+</tr>
+<tr>
+<td><code>num_speculative_tokens_per_batch_size</code></td>
+<td>None</td>
+<td><code>[[start, end, K], ...]</code> by concurrency; K=0 stops
+drafting
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/dynamic_speculative_decoding/">8</a>]</sup></td>
+</tr>
+<tr>
+<td><code>enable_adaptive_verification</code></td>
+<td><code>false</code></td>
+<td>Budgets verification per step
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">7</a>]</sup></td>
+</tr>
+<tr>
+<td><code>draft_tensor_parallel_size</code></td>
+<td>Target TP</td>
+<td>Must be 1 or the target TP, else <code>ValueError</code>
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup>.
+<code>tensor_parallel_size</code> is not valid here
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup></td>
+</tr>
+<tr>
+<td><code>draft_sample_method</code></td>
+<td><code>greedy</code></td>
+<td><code>probabilistic</code> uses full draft logits and more GPU
+memory
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup></td>
+</tr>
+<tr>
+<td><code>rejection_sample_method</code></td>
+<td><code>standard</code></td>
+<td><code>standard</code>, <code>synthetic</code>, <code>block</code>
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup></td>
+</tr>
+<tr>
+<td><code>synthetic_acceptance_rates</code>,
+<code>synthetic_acceptance_length</code></td>
+<td>None</td>
+<td>Measure system cost apart from draft quality
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup></td>
+</tr>
+<tr>
+<td><code>prompt_lookup_min</code>, <code>prompt_lookup_max</code></td>
+<td>Both 5 if omitted; one set mirrors to the other</td>
+<td><code>ngram</code> and <code>ngram_gpu</code>; the docstring’s
+default of 1 is stale. Set both, since the window is a tuning choice
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup></td>
+</tr>
+<tr>
+<td><code>suffix_decoding_max_tree_depth</code></td>
+<td>24</td>
+<td>Caps prefix match plus speculation length
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup></td>
+</tr>
+<tr>
+<td><code>suffix_decoding_max_cached_requests</code></td>
+<td>10000</td>
+<td>0 disables the cross-request cache
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup></td>
+</tr>
+<tr>
+<td><code>suffix_decoding_max_spec_factor</code>,
+<code>suffix_decoding_min_token_prob</code></td>
+<td>1.0, 0.1</td>
+<td>Limit speculation by match length and token probability
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup></td>
+</tr>
+<tr>
+<td><code>parallel_drafting</code></td>
+<td><code>false</code></td>
+<td>Auto-set for <code>dflash</code> and <code>dspark</code>, so do not
+set it. On other methods it forces V1
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>,
+<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup></td>
+</tr>
+<tr>
+<td><code>use_heterogeneous_vocab</code></td>
+<td><code>false</code></td>
+<td><code>draft_model</code> only, greedy only; forces V1
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>,
+<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup></td>
+</tr>
+<tr>
+<td><code>attention_backend</code>, <code>moe_backend</code>,
+<code>kv_cache_dtype</code>, <code>quantization</code></td>
+<td>None</td>
+<td>Draft-side overrides
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup></td>
+</tr>
+<tr>
+<td><code>use_local_argmax_reduction</code></td>
+<td><code>false</code></td>
+<td>Cheaper greedy drafting; rejected with adaptive verification unless
+a confidence head exists
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">7</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-differs-on-main">3.2 What differs on main</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Item</th>
+<th>v0.32.0</th>
+<th>Main or latest docs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>medusa</code>, <code>mlp_speculator</code></td>
+<td>Accepted</td>
+<td>Removed
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>,
+<a href="https://github.com/vllm-project/vllm/blob/main/vllm/config/speculative.py">25</a>]</sup></td>
+</tr>
+<tr>
+<td><code>parallel_drafting</code></td>
+<td>Not marked deprecated</td>
+<td>Marked deprecated, V1 only
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>,
+<a href="https://github.com/vllm-project/vllm/blob/main/vllm/config/speculative.py">25</a>]</sup></td>
+</tr>
+<tr>
+<td><code>rejection_sample_method: "fly"</code>, <code>fly_*</code></td>
+<td>Not accepted</td>
+<td>Documented, main only; lossy
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/fly/">26</a>]</sup></td>
+</tr>
+<tr>
+<td><code>speculator_options</code>,
+<code>draft_lm_head_quantization</code></td>
+<td>Not fields</td>
+<td>In latest docs, main only
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<h3 id="how-the-runner-is-chosen">3.3 How the runner is chosen</h3>
+<p>On main, <code>VLLM_USE_V2_MODEL_RUNNER</code> defaults to
+<code>None</code>
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/main/vllm/envs.py">27</a>]</sup>.
+With it unset, the v0.32.0 code path uses V2 unless the config has an
+unsupported feature, then warns and falls back to V1
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup>.
+On v0.32.0, the Section 6 matrix shows which methods force V1 or lose
+async scheduling. Async scheduling lets the engine prepare the next step
+while the current one runs
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup>.</p>
+<p>Leave the variable unset, because setting it skips the fallback logic
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup>.
+The Dynamic Speculative Decoding page’s examples set it to 0, yet on V1
+that feature gets only piecewise and not full CUDA graphs. Do not copy
+that prefix
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/dynamic_speculative_decoding/">8</a>]</sup>.</p>
+<h2 id="which-configuration-to-use">4. Which Configuration to Use</h2>
+<p>CoreWeave and NVIDIA both order methods as MTP, then EAGLE-3, then
+n-gram as a fallback
+<sup>[<a href="https://docs.coreweave.com/products/inference/speculative-decoding">5</a>,
+<a href="https://docs.nvidia.com/nim/large-language-models/2.0.13/advanced-use-cases/speculative-decoding.html">11</a>]</sup>.
+That order follows effort and is not a ranking, because no source
+compares these methods on one build, GPU and load.</p>
+<h3 id="starting-points">4.1 Starting points</h3>
+<p>AMD sweep below means vLLM 0.23.1rc1.dev1120 on MI300X and MI355X
+with concurrency unstated
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>.</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Method</th>
+<th>First k, then sweep</th>
+<th>Measured result and conditions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Native MTP head (DeepSeek, GLM, Qwen3.5/3.6, MiMo)</td>
+<td><code>mtp</code></td>
+<td>1 as a smoke test; judge at 3, sweep to 7</td>
+<td>2.20x, Qwen3.5-122B-A10B, k=7, AMD sweep
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup></td>
+</tr>
+<tr>
+<td>Gemma 4</td>
+<td><code>mtp</code> with assistant</td>
+<td>1, sweep to 5</td>
+<td>2.74x, gemma-4-26B-A4B, GSM8K, k=5, AMD sweep
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup></td>
+</tr>
+<tr>
+<td>Matched EAGLE-3 or 3.1 head</td>
+<td><code>eagle3</code></td>
+<td>3, sweep 2 to 5</td>
+<td>1.69 to 2.00x, Kimi-K2.5, k=3, v0.19.0 and nightly, MI355X, TP=4,
+1K/1K random prompts
+<sup>[<a href="https://vllm.ai/blog/2026-07-13-eagle-3-amd-instinct">28</a>]</sup></td>
+</tr>
+<tr>
+<td>DFlash checkpoint</td>
+<td><code>dflash</code></td>
+<td>7, sweep 3, 11, 15 within block limit</td>
+<td>2.87x Gemma-4-26B, 2.68x Kimi-K2.5, 1.08 to 1.27x Qwen3-8B, AMD
+sweep
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup></td>
+</tr>
+<tr>
+<td>DSpark checkpoint</td>
+<td><code>dspark</code>,
+e.g. <code>deepseek-ai/dspark_qwen3_8b_block7</code></td>
+<td>7, then sweep; AMD launched at 11</td>
+<td>1.15 to 1.63x Qwen3-8B, full proposal verified, confidence selection
+inactive, AMD sweep
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup></td>
+</tr>
+<tr>
+<td>Large target, small same-vocabulary model</td>
+<td><code>draft_model</code>,
+e.g. <code>meta-llama/Llama-3.2-1B-Instruct</code> (gated, needs
+approval)</td>
+<td>3 to 5</td>
+<td>Wins most settings on Llama3-70B with a 1B draft; trails EAGLE-3 on
+Qwen3-8B with a 0.6B draft (v0.10.1.1, H100, k=3)
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup></td>
+</tr>
+<tr>
+<td>Output copies the prompt</td>
+<td><code>ngram_gpu</code></td>
+<td>5, lookup 3 to 5 (untested combination)</td>
+<td>No like-for-like test exists</td>
+</tr>
+<tr>
+<td>Output repeats across requests</td>
+<td><code>suffix</code></td>
+<td>Cap left at default</td>
+<td>Vendor and merge benchmarks only</td>
+</tr>
+</tbody>
+</table>
+<p>On AMD’s sweep native MTP beat DFlash on Qwen3.5-27B,
+Qwen3.5-122B-A10B and Qwen3.6-27B, while DFlash won on Qwen3.6-35B-A3B,
+1.77 to 2.06x against 1.28 to 1.49x
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>.
+The docs suggest starting MTP at k=1
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/mtp/">10</a>]</sup>,
+but on that model it gave 0.87 to 0.89x at k=1 and 1.49x at k=6
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>.
+<code>amd/PARD-Qwen3-0.6B</code> with <code>parallel_drafting</code>
+falls back to V1 on v0.32.0, and no benchmark on a current release was
+found
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/parallel_draft_model/">29</a>,
+<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup>.</p>
+<p>Small dense targets such as Qwen3-8B are the danger zone, and the
+table’s figures for them are per-workload peaks. On AMD’s sweep a
+Thinking EAGLE-3 head gave 0.71, 0.91 and 0.99x on GSM8K at k=1, 2 and
+3, rising with k, so shorter is not safer there. DSpark gave 0.73x at
+k=3 on MATH500
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>.
+The 2.2 Qwen3-8B commands show syntax, not a recommended pairing.</p>
+<h3 id="matched-drafters-and-when-a-draft-model-pays">4.2 Matched
+drafters, and when a draft model pays</h3>
+<p>A matched drafter was trained against your exact target; one from
+another base model can fail to load or give near-zero acceptance
+<sup>[<a href="https://docs.coreweave.com/products/inference/speculative-decoding">5</a>]</sup>.
+Look for drafters here [12]:</p>
+<ul>
+<li>Red Hat AI (<code>-speculator.eagle3</code>, <code>.dflash</code>,
+<code>.dspark</code>)</li>
+<li>Z-Lab (<code>&lt;target&gt;-DFlash</code>)</li>
+<li>DeepSeek DeepSpec</li>
+<li>LightSeek (Kimi)</li>
+<li>Inferact (MiniMax, Kimi)</li>
+<li>Google (Gemma 4)</li>
+</ul>
+<p>Quantization is less clear-cut: CoreWeave warns a different
+quantization can fail to load
+<sup>[<a href="https://docs.coreweave.com/products/inference/speculative-decoding">5</a>]</sup>.
+Yet Speculators documents pairing a head with a quantized target
+<sup>[<a href="https://docs.vllm.ai/projects/speculators/en/latest/user_guide/tutorials/serve_vllm/">16</a>]</sup>,
+and AMD ran BF16 and FP8 drafts against an MXFP4 target
+<sup>[<a href="https://vllm.ai/blog/2026-07-13-eagle-3-amd-instinct">28</a>]</sup>.
+Test the pair and read the logs. LiLiCorr, a variant run through
+<code>method: dflash</code>, strongly recommends k at exactly block size
+minus 1
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/lilicorr/">30</a>]</sup>.</p>
+<p>A separate draft model costs about 12.5% of a target step for 1B on
+70B and an estimated 37.5% for 0.6B on 8B. That explains why it wins on
+the first and trails on the second despite higher acceptance there
+(about 81% against 76% on GSM8K)
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup>.
+A draft about 8x cheaper than the target is a rough guide inferred from
+those two ratios, never a measured threshold. CoreWeave’s view that
+<code>draft_model</code> is rarely the better choice
+<sup>[<a href="https://docs.coreweave.com/products/inference/speculative-decoding">5</a>]</sup>
+fits 8B-class targets and is too broad for 70B-class ones.</p>
+<h3 id="copy-heavy-traffic-n-gram-or-suffix">4.3 Copy-heavy traffic:
+n-gram or suffix</h3>
+<p>Above about 0.6 BLEU-4 (a text-similarity score) between prompt and
+output, n-gram beat EAGLE and EAGLE-3 by up to 53% at k=3 on
+Llama3.1-8B; at low overlap it lost 10 to 17% at small batch (v0.10.1.1,
+H100, T=0)
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup>.
+Overlap alone is not sufficient: CoreWeave saw <code>ngram</code> slow a
+mixture-of-experts model below no speculation, without publishing
+numbers
+<sup>[<a href="https://docs.coreweave.com/products/inference/speculative-decoding">5</a>]</sup>.</p>
+<p>vLLM’s merge benchmark (PR #25784, H200, SpecBench, version not
+stated, C for concurrency) gives the window evidence. At k=5, lookup 3
+to 5 beat 5 to 5 at every concurrency, and suffix with its cache led
+both:</p>
+<table>
+<thead>
+<tr>
+<th>Arm</th>
+<th>TPOT at C=1</th>
+<th>TPOT at C=64</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lookup 3 to 5</td>
+<td>5.21 ms</td>
+<td>10.66 ms</td>
+</tr>
+<tr>
+<td>Lookup 5 to 5</td>
+<td>5.6 ms</td>
+<td>11.07 ms</td>
+</tr>
+<tr>
+<td>Suffix with cache</td>
+<td>4.4 ms</td>
+<td>10.55 ms</td>
+</tr>
+</tbody>
+</table>
+<p>Keep n-gram k low: at k=32 and C=64, 3-to-5 reached 13.37 ms against
+11.83 ms for 5-to-5, a k effect and not a load flip
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/25784">31</a>]</sup>.
+That table has no no-speculation arm. Against vanilla decoding,
+Snowflake reports 1.96 to 3.12x on BlazeEdit and 1.0 to 1.28x on
+SpecBench, a vendor figure with no stated vLLM version
+<sup>[<a href="https://www.snowflake.com/en/engineering-blog/suffixdecoding-arctic-inference-vllm/">14</a>]</sup>.</p>
+<p>Start with <code>ngram_gpu</code> on v0.32.0 as the lower-risk arm,
+not the expected winner, and choose suffix when outputs repeat across
+requests
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/suffix/">13</a>]</sup>.
+Suffix forces V1 and turns async off
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup>,
+while async added 20.6 to 39.4% over sync <code>ngram_gpu</code> (PR
+#29184, H20, Qwen3-1.7B, CMU-DoG, k=3, 2 to 16 prompts, late 2025 build)
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/29184">32</a>]</sup>.
+Snowflake reports suffix 1.11 to 1.17x over best n-gram on SpecBench and
+1.02 to 1.31x on BlazeEdit, vendor-run
+<sup>[<a href="https://www.snowflake.com/en/engineering-blog/suffixdecoding-arctic-inference-vllm/">14</a>]</sup>.
+Nobody has measured suffix against <code>ngram_gpu</code> directly, so
+A/B them. Snowflake’s cap of 16 or 32 assumes its depth of 64
+<sup>[<a href="https://www.snowflake.com/en/engineering-blog/suffixdecoding-arctic-inference-vllm/">14</a>]</sup>.
+With vLLM’s 24, leave the cap at its default, which logs a warning, or
+no higher than the depth
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>]</sup>.</p>
+<h3 id="train-last">4.4 Train last</h3>
+<p>No controlled trained-versus-released head comparison was found.
+NVIDIA says a head tuned to your traffic “will usually beat the
+default”, without numbers
+<sup>[<a href="https://docs.nvidia.com/nim/large-language-models/2.0.13/advanced-use-cases/speculative-decoding.html">11</a>]</sup>.
+DeepSpec’s default Qwen3-4B setup needs roughly 38 TB of target cache
+and assumes one 8-GPU node
+<sup>[<a href="https://github.com/deepseek-ai/DeepSpec">33</a>]</sup>.
+Try EAGLE 3.1 first: it loads through <code>method: eagle3</code>, and
+its authors claim up to 2x longer acceptance length on long context
+<sup>[<a href="https://vllm.ai/blog/2026-05-26-eagle-3-1">34</a>]</sup>.
+Train when no head exists for your target, or when acceptance falls
+short on your domain or in thinking mode
+<sup>[<a href="https://github.com/deepseek-ai/DeepSpec">33</a>]</sup>.
+Use the Speculators library
+<sup>[<a href="https://docs.vllm.ai/projects/speculators/en/stable/">17</a>]</sup>
+and select checkpoints by served acceptance length
+<sup>[<a href="https://vllm.ai/blog/2026-07-13-eagle-3-amd-instinct">28</a>]</sup>.</p>
+<h2 id="getting-the-best-performance">5. Getting the Best
+Performance</h2>
+<h3 id="what-the-load-evidence-supports">5.1 What the load evidence
+supports</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Setup</th>
+<th>Version, hardware</th>
+<th>Load</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>EAGLE, Llama3.1-8B, GSM8K, k=3</td>
+<td>v0.10.1.1, H100, greedy</td>
+<td>Closed loop, batch 1 to 128</td>
+<td>1.73x falling to 1.21x
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup></td>
+</tr>
+<tr>
+<td>EAGLE 3.1, Kimi-K2.6-NVFP4, k=3</td>
+<td>Main before v0.22.0, GB200, TP=4</td>
+<td>C=1, 4, 16, coding</td>
+<td>2.03x, 1.71x, 1.66x per user
+<sup>[<a href="https://vllm.ai/blog/2026-05-26-eagle-3-1">34</a>]</sup></td>
+</tr>
+<tr>
+<td>Fixed DSpark, V4-Flash, k=7</td>
+<td>Main 32881ec177, B300, TP=4, T=1.0</td>
+<td>Closed loop, C up to 256</td>
+<td>About 26% (chart) to 33% (text) below no speculation at C=256
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup></td>
+</tr>
+<tr>
+<td>Adaptive DSpark, same model</td>
+<td>Same</td>
+<td>Same</td>
+<td>Above no speculation at C=256; within 3% of fixed k at C≤64
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>The rule that speculation loses at high load has real support, but
+older evidence is dated. Nightjar’s open-loop loss of up to 30.25% used
+a 7B target with a 0.5B draft (vLLM 0.8.2, RTX 4090, high load)
+<sup>[<a href="https://arxiv.org/html/2512.22420v2">9</a>]</sup>. vLLM’s
+2024 V0-engine post reported 1.4x and 1.8x slowdowns on Llama3-70B (4x
+H100, high QPS, value not given)
+<sup>[<a href="https://blog.vllm.ai/2024/10/17/spec-decode.html">35</a>]</sup>.
+The MLSys study cannot refute the rule: it shows no vLLM result below 1x
+at k=3 up to batch 128, but with a closed loop, greedy decoding and one
+k. Its statement about slowing under load is background from the goodput
+paper
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>,
+<a href="https://arxiv.org/html/2406.14066v1">36</a>]</sup>.</p>
+<p>PR #47808 is the strongest modern evidence, because its chart varies
+k. Approximate readings by eye at C=256: adaptive 11,500 tok/s, k=1
+10,000, k=2 8,850, no speculation 7,850, k=3 6,450, k=7 5,800. Among
+fixed arms only k=1 and k=2 beat no speculation. At C=128, k=7 already
+lost, 4,700 against 5,750. The PR is inconsistent: text says 33% and 256
+prompts, chart about 26% and 880. Its no-speculation arm shared a node
+and was modestly depressed, so the true fixed-k deficit is probably
+larger and adaptive’s margin smaller
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.</p>
+<p>On the docs’ batch-size-times-k framing
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/dynamic_speculative_decoding/">8</a>]</sup>,
+this report’s arithmetic with k+1 gives 512 tokens per step for the
+MLSys study and 2,048 for the PR
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>,
+<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.
+That helps explain how the results coexist. By this report’s arithmetic,
+every losing arm has C times (k+1) of at least 1,024, the run’s CUDA
+graph capture size. Cost jumps past captured graphs
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>,
+<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>]</sup>.
+That may contribute, but k=3 at C=256 and k=7 at C=128 sit exactly at
+the limit, so leaving captured graphs cannot explain those two. The
+default <code>--max-num-seqs</code> of 128 is no protection, since k=7
+already lost at C=128
+<sup>[<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>,
+<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.</p>
+<p>The crossover also depends on the drafter. In SGLang, not vLLM,
+original EAGLE fell to 0.93x at batch 24 while EAGLE-3 gave 1.38x at
+batch 64 (v0.4.4, H100, Llama-3.1-8B, MT-Bench, chain of 3)
+<sup>[<a href="https://arxiv.org/abs/2503.01840">37</a>]</sup>. No
+current source gives a crossover for a given model and GPU.</p>
+<h3 id="state-your-objective-first">5.2 State your objective first</h3>
+<p>A high-load loss is a matched-concurrency claim. A service targeting,
+say, 60 tokens per second per user runs each configuration at whatever
+load still meets the target. A faster per-user configuration reaches it
+at higher load. By this report’s inference, a loss at C=256 matters only
+if you would run at C=256.</p>
+<p>On InferenceX, DeepSeek R1 on B200 FP4 gives 8906.5 tok/s/chip with
+MTP against 1518.4 with it off, at a matched 62 tok/s/user, about 5.9x
+<sup>[<a href="https://inferencex.semianalysis.com/compare-spec-decode/deepseek-r1-b200-fp4-mtp-vs-none">38</a>]</sup>.
+The engine is not stated and values are interpolated, so it is not a
+vLLM result. vLLM’s own post plots adaptive DSpark well outside no
+speculation on the best-trade-off curve, as a figure with no table
+(DeepSeek-V4-Pro-0813, TP=8, 8x B300, T=1.0, C=1 to 256, main 73b8394)
+<sup>[<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>]</sup>.</p>
+<p>Sizes do not transfer, because ratios at matched speed inflate when
+the baseline nears its limit. DSpark’s authors report nominal +661% and
++406% at their strictest target for that reason. They treat their 60 to
+85% and 57 to 78% per-user gains at matched throughput as more stable.
+Those are DeepSeek’s own serving system against MTP-1 and need kernel
+changes the paper describes, so they are not vLLM results
+<sup>[<a href="https://arxiv.org/abs/2607.05147">39</a>]</sup>. Batch
+jobs have no speed target, so peak throughput decides, and under
+overload queues grow however good the curve looks.</p>
+<h3 id="adaptive-verification">5.3 Adaptive verification</h3>
+<p>Adaptive verification scores each draft slot by survival probability
+and admits the best slots until a budget from a startup cost profile is
+spent
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">7</a>]</sup>.
+On DeepSeek-V4-Pro-0813 the last of 7 drafted tokens survives under 10%
+of the time against over 70% for the first (main 73b8394, TP=8, 8x B300)
+<sup>[<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>]</sup>.
+In PR #47808, accepted length fell only from about 3.9 to 3.5, and GSM8K
+accuracy held at 0.945 to 0.951 (256 prompts, 512 output tokens)
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.</p>
+<p>That test is closed-loop, capped at C=256, and on main. A user
+comment on the PR, with no numbers, reports minimal gain with long
+contexts and mixed prefill (prompt processing) and decode batches. An
+open issue (#54046) says the profiler measures a batch shape the
+scheduler cannot produce
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.
+Neither is a measurement.</p>
+<p>The v0.32.0 docstring and the docs’ method table say DSpark only, and
+they appear stale
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">22</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup>.
+In the code, <code>BaseSpeculator</code> assigns the flag for all
+speculators. Drafters with no confidence head use an online acceptance
+estimator, and validators do not check the method
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/worker/gpu/spec_decode/speculator.py">40</a>,
+<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/worker/gpu/spec_decode/adaptive_verification.py">41</a>,
+<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>]</sup>.
+Benchmarks exist only for DSpark. SmartSpec, an earlier goodput policy,
+claims up to 3.2x lower latency at low rates and only maintained
+performance at high rates
+<sup>[<a href="https://arxiv.org/html/2406.14066v1">36</a>]</sup>. This
+report reads that as the ceiling for a costly drafter: a budget can stop
+a loss without producing a win.</p>
+<h3 id="load-policy-by-deployment-shape">5.4 Load policy by deployment
+shape</h3>
+<ol type="1">
+<li><strong>DSpark on one rank.</strong> A/B adaptive verification first
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.
+Without it, short k is the measured fallback (Section 5.1).</li>
+</ol>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># PR #47808&#39;s flags (TP=4, B300). Adaptive&#39;s full graphs depend on SM100 and the backend (Section 6).</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve deepseek-ai/DeepSeek-V4-Flash-DSpark <span class="at">--tokenizer-mode</span> deepseek_v4 <span class="at">--trust-remote-code</span> <span class="dt">\</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--dtype</span> bfloat16 <span class="at">--max-model-len</span> 8192 <span class="at">--tensor-parallel-size</span> 4 <span class="at">--enable-expert-parallel</span> <span class="at">--block-size</span> 256 <span class="dt">\</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--gpu-memory-utilization</span> 0.5 <span class="at">--kv-cache-dtype</span> fp8 <span class="at">--max-num-batched-tokens</span> 16384 <span class="at">--max-num-seqs</span> 256 <span class="dt">\</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--compilation-config</span> <span class="st">&#39;{&quot;max_cudagraph_capture_size&quot;:1024}&#39;</span> <span class="dt">\</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--speculative-config</span> <span class="st">&#39;{&quot;method&quot;:&quot;dspark&quot;,&quot;model&quot;:&quot;deepseek-ai/DeepSeek-V4-Flash-DSpark&quot;,&quot;attention_backend&quot;:&quot;FLASH_ATTN&quot;,</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="st">    &quot;num_speculative_tokens&quot;:7,&quot;draft_sample_method&quot;:&quot;probabilistic&quot;,&quot;enable_adaptive_verification&quot;:true}&#39;</span></span></code></pre></div>
+<ol start="2" type="1">
+<li><strong>Other drafters on one rank.</strong> Write a k schedule
+ending at 0, then A/B adaptive verification. This schedule follows the
+docs’ example shape and is not a measured optimum, so set the k=0
+boundary where your sweep shows parity with no speculation. Schedules
+are tested on Eagle, Eagle-3 and DFlash only
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/dynamic_speculative_decoding/">8</a>]</sup>.</li>
+</ol>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve meta-llama/Llama-3.1-8B-Instruct <span class="at">--speculative-config</span> <span class="st">&#39;{&quot;method&quot;:&quot;eagle3&quot;,</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="st">  &quot;model&quot;:&quot;yuhuili/EAGLE3-LLaMA3.1-Instruct-8B&quot;,&quot;num_speculative_tokens&quot;:3,</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="st">  &quot;num_speculative_tokens_per_batch_size&quot;:[[1,16,5],[17,32,4],[33,64,3],[65,128,1],[129,512,0]]}&#39;</span></span></code></pre></div>
+<ol start="3" type="1">
+<li><strong><code>--data-parallel-size</code> above 1 (several engine
+replicas, or ranks).</strong> vLLM disables the schedule, because ranks
+could pick different k and deadlock
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/dynamic_speculative_decoding/">8</a>]</sup>.
+Use a static k chosen at each rank’s peak concurrency, leaning low
+(Section 5.1). Adaptive verification lists no data-parallel restriction,
+but no source tests it
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">7</a>]</sup>.</li>
+<li><strong>N-gram and suffix.</strong> No load mechanism is documented
+or tested
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">7</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/dynamic_speculative_decoding/">8</a>]</sup>.
+If peak load puts them below baseline, route peak traffic to a pool
+without speculation, which is this report’s suggestion and not a tested
+design.</li>
+</ol>
+<h3 id="use-acceptance-to-diagnose-and-to-choose-k">5.5 Use acceptance
+to diagnose and to choose k</h3>
+<p>vLLM’s acceptance rate is accepted over drafted tokens, so it falls
+mechanically as k grows
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/acceptance_metrics/">21</a>]</sup>.
+By this report’s calculation, independent per-token acceptance of 0.8
+reads as 0.65, 0.54 and 0.45 at k=3, 5 and 7. Break-even runs from 0.13
+(c=0.05, k=3) to 0.75 (c=0.375, k=7), so fixed cut-offs such as
+disabling below 0.5 do not transfer. This report’s calculation, no
+queueing:</p>
+<table>
+<thead>
+<tr>
+<th>Best k</th>
+<th>c=0.05</th>
+<th>c=0.10</th>
+<th>c=0.20</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a=0.8</td>
+<td>8</td>
+<td>6</td>
+<td>4</td>
+</tr>
+<tr>
+<td>a=0.5</td>
+<td>3</td>
+<td>2</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>Overshoot is cheap for a good cheap drafter (a=0.8, c=0.1: k=5 2.46x,
+k=7 2.45x) and costly otherwise (a=0.5, c=0.2: k=1 1.25x, k=5
+0.98x).</p>
+<p>Divide mean acceptance length by measured speedup to get R, the real
+cost of a speculative step relative to a plain step. By definition,
+speculation wins only while acceptance length exceeds R. MiniMax-M3
+EAGLE-3 on MBPP (0.23.1rc1.dev1120, MI355X, load unstated) gives 3.82
+tokens at 1.97x with k=4, so R = 1.94, and 4.18 tokens at 1.93x with
+k=5, so R = 2.17
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>.
+Position 5 returned 0.36 tokens and cost 0.23 of a plain step.</p>
+<p>A position pays only if its survival probability exceeds its cost
+times the current speedup. Here 0.23 × 1.97 = 0.45, above the 0.36
+returned, and throughput did fall. With a cheap head (c=0.1) at 2x, keep
+positions above about 0.2; with an expensive draft (c=0.375) at 1.5x,
+only those above about 0.56. R and this rule are this report’s
+derivation. The MiniMax check cannot fail, because R comes from the
+measured speedup: the rule is an identity on that example. The 0.2 and
+0.56 thresholds are untested and assume flat verification cost, so the
+throughput A/B decides. The rule fits autoregressive drafters best,
+since block drafters spend little more as k grows. Read survival from
+<code>_num_accepted_tokens_per_pos</code> divided by
+<code>_num_drafts</code>
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/main/examples/features/speculative_decoding/spec_decode_offline.py">19</a>]</sup>.
+DFlash at k=15 on Qwen3.5-122B fell to 0.94 to 0.95x with about 1%
+acceptance at the last slot, against 1.66x at k=7 on HumanEval (AMD
+sweep)
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>.</p>
+<p>A Qwen3-8B EAGLE-3 Thinking head gave 0.44x at k=1 on MATH500 and
+never passed 0.88x there (AMD sweep)
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>.
+The source does not identify the cause. The MLSys study measured EAGLE-3
+at 1.64 to 1.80x on Qwen3-8B-Thinking (v0.10.1.1, H100, GPQA and AIME,
+medium batch)
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup>,
+so the conflict is unresolved. Head cost alone cannot explain it: by
+this report’s arithmetic, 0.44x at k=1 needs c of at least 1.27, while
+EAGLE-family drafting took 12 to 20% of step time in the MLSys study
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup>.
+If k=1 runs far below 1x, check the runner and async logs before blaming
+the drafter.</p>
+<h3 id="measure-so-the-number-means-something">5.6 Measure so the number
+means something</h3>
+<p>Lab numbers are not forecasts. DFlash’s 5.1x in SGLang (Qwen3-8B
+Math500, C=1, single B200) compares with 1.08 to 1.27x on AMD’s vLLM
+sweep <sup>[<a href="https://arxiv.org/html/2602.06036v1">42</a>,
+<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>,
+though GPU, backend, checkpoint and load all differ. One EAGLE-3 head on
+Llama-3.1-8B gave 1.84x on code (mean acceptance length 2.54) and 0.99x
+on chat (1.19) on vLLM 0.19.1, one A30, T=0, one concurrent request
+<sup>[<a href="https://docs.alauda.io/ai/2.8/deploy/inference_service/guides/vllm_speculative_decoding.html">4</a>]</sup>.
+Temperature matters less than domain: EAGLE-3 accepted length falls
+about 4 to 21% from T=0 to T=1 at the method level, not in vLLM
+<sup>[<a href="https://arxiv.org/abs/2503.01840">37</a>]</sup>, while
+Qwen3-8B Eagle3 at T=1.0 ranges from 5.30 on GSM8K to 2.54 on Alpaca in
+DSpark’s method-level table
+<sup>[<a href="https://arxiv.org/abs/2607.05147">39</a>]</sup>.</p>
+<p>Compare <code>output_throughput</code> and TPOT against a baseline
+with identical prompts, order and temperature, on equal nodes
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.
+Prefer TPOT to inter-token latency, because one streamed chunk can hold
+several tokens
+<sup>[<a href="https://docs.vllm.ai/en/latest/benchmarking/cli/">24</a>]</sup>.
+Keep the server’s <code>--enable-per-request-metrics</code> off in timed
+runs, since it adds server CPU overhead
+<sup>[<a href="https://docs.vllm.ai/en/latest/benchmarking/cli/">24</a>]</sup>.
+<code>--per-request-spec-decode-metrics</code> is experimental
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/acceptance_metrics/">21</a>]</sup>,
+so do the same as a precaution. Use four arms: no speculation, best
+fixed k, k one step shorter, and adaptive or a schedule where supported.
+Judge time to first token separately: on vLLM Neuron it rose from 51.07
+to 63.65 ms while TPOT fell from 10.52 to 6.41 ms (Trn2, Llama-3.1-8B,
+k=3, concurrency 2, version unstated)
+<sup>[<a href="https://awsdocs-neuron.readthedocs-hosted.com/en/latest/vllm-neuron/docs/tutorials/tutorial-eagle3-speculative-decoding-llama-3-1.html">43</a>]</sup>.</p>
+<h3 id="memory-and-graphs">5.7 Memory and graphs</h3>
+<p>Reserve headroom. AMD ran draft-weight methods at
+<code>--gpu-memory-utilization</code> 0.8 to 0.85
+<sup>[<a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">12</a>]</sup>.
+On computed v0.10.1.1 figures, a 0.6B draft on Qwen3-8B raises KV cache
+from 144 to 256 KiB per token
+<sup>[<a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">6</a>]</sup>.
+On out-of-memory errors, shorten the max model length, lower
+concurrency, adjust utilization or pick a lighter method
+<sup>[<a href="https://docs.nvidia.com/nim/large-language-models/2.0.13/advanced-use-cases/speculative-decoding.html">11</a>]</sup>.</p>
+<p>Keep verification batches inside captured CUDA graphs (pre-recorded
+execution paths for given batch sizes). Set the limit with
+<code>--compilation-config '{"max_cudagraph_capture_size":N}'</code>.
+The DSpark authors set <code>max_cudagraph_capture_size</code> to (k+1)
+times <code>--max-num-seqs</code>. That ran out of memory at default
+utilization, so they used 0.8 (DeepSeek-V4-Pro-0813, TP=8, 8x B300, main
+73b8394)
+<sup>[<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>]</sup>.
+Sources conflict: that formula gives 2,048 for k=7 and 256 sequences,
+the blog’s run used 4,096, and the PR 1,024
+<sup>[<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>,
+<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>]</sup>.
+For long contexts with adaptive verification, raise
+<code>VLLM_ADAPTIVE_VERIFICATION_PROFILE_CONTEXT_LEN</code> from its
+8192 default
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">7</a>]</sup>.
+Above T=0, A/B <code>draft_sample_method</code>: neither mode is
+universally faster per LiLiCorr’s docs
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/lilicorr/">30</a>]</sup>,
+and DSpark’s runs used <code>probabilistic</code>
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>,
+<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>]</sup>.</p>
+<h2 id="limitations-and-compatibility">6. Limitations and
+Compatibility</h2>
+<p>Compatibility is decided by explicit allowlists in the code, so
+anything unlisted falls back or fails at startup. The matrix was read
+from v0.32.0 code and not run, so confirm it on your platform
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/dynamic_speculative_decoding/">8</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">7</a>]</sup>.</p>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr>
+<th>Method</th>
+<th>Runner</th>
+<th>Async</th>
+<th>Dynamic k</th>
+<th>Adaptive verification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>eagle</code>, <code>eagle3</code></td>
+<td>V2</td>
+<td>Yes</td>
+<td>Tested</td>
+<td>Online estimator, no benchmark</td>
+</tr>
+<tr>
+<td><code>mtp</code></td>
+<td>V2</td>
+<td>Yes</td>
+<td>Not listed as tested</td>
+<td>Online estimator, no benchmark</td>
+</tr>
+<tr>
+<td><code>dflash</code></td>
+<td>V2</td>
+<td>Yes</td>
+<td>Tested</td>
+<td>Online estimator, no benchmark</td>
+</tr>
+<tr>
+<td><code>dspark</code></td>
+<td>V2 only</td>
+<td>Yes</td>
+<td>Not listed as tested</td>
+<td>Benchmarked</td>
+</tr>
+<tr>
+<td><code>draft_model</code></td>
+<td>V2; V1 with <code>parallel_drafting</code> or heterogeneous
+vocabulary</td>
+<td>Yes</td>
+<td>Not listed as tested</td>
+<td>Online estimator, no benchmark</td>
+</tr>
+<tr>
+<td><code>ngram_gpu</code></td>
+<td>V2</td>
+<td>Yes</td>
+<td>Not listed as tested</td>
+<td>Not listed</td>
+</tr>
+<tr>
+<td><code>ngram</code></td>
+<td>V2</td>
+<td>Off; error if forced</td>
+<td>Not listed as tested</td>
+<td>Not listed</td>
+</tr>
+<tr>
+<td><code>suffix</code></td>
+<td>V1</td>
+<td>Off; error if forced</td>
+<td>Not listed as tested</td>
+<td>Not listed</td>
+</tr>
+<tr>
+<td><code>medusa</code>, <code>mlp_speculator</code>,
+<code>custom_class</code></td>
+<td>V1</td>
+<td>Off</td>
+<td>Not listed as tested</td>
+<td>Not listed</td>
+</tr>
+</tbody>
+</table>
+<p>Adaptive verification rejects <code>--enforce-eager</code> and output
+logprobs, and does not support LoRA adapters or pipeline parallelism
+(splitting model layers across nodes)
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">7</a>,
+<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>]</sup>.
+Sources disagree on unsupported backends: the PR describes a piecewise
+fallback, the later blog says rejection at startup. A startup failure on
+FA2 GPUs (#62094) was still open in October 2026
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/47808">3</a>,
+<a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">15</a>]</sup>.
+Test startup on your exact GPU. LiLiCorr with adaptive verification is
+not validated end to end
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/lilicorr/">30</a>]</sup>.</p>
+<p>Draft pipeline parallelism is fixed at 1, while target pipeline
+parallelism works with static speculation on V2. The docs’
+incompatibility note covers only <code>vllm&lt;=0.15.0</code>
+<sup>[<a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">20</a>,
+<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">1</a>]</sup>.
+Structured output with speculation and async scheduling landed in PR
+#29821, merged 2026-01-06, so older warnings are out of date. However,
+nobody has benchmarked the scheduler CPU its grammar checks add
+<sup>[<a href="https://github.com/vllm-project/vllm/pull/29821">44</a>]</sup>.
+<code>min_p</code> and <code>logit_bias</code> were ignored with a
+warning on vLLM 0.19.1
+<sup>[<a href="https://docs.alauda.io/ai/2.8/deploy/inference_service/guides/vllm_speculative_decoding.html">4</a>]</sup>.
+Per-request metrics report only when <code>n == 1</code>
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/acceptance_metrics/">21</a>]</sup>.
+FLy, main only, is lossy: its docs report 1.04 to 1.31x over standard
+speculation (V2, MI355X and B300, batch 1 to 64, version not stated)
+with accuracy retention down to 96.3%. Avoid it where output fidelity
+matters
+<sup>[<a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/fly/">26</a>]</sup>.</p>
+<p>The evidence has gaps: no same-build comparison of methods, no
+open-loop EAGLE-3 curve on a current release, and no V1-against-V2
+comparison for one configuration. Most figures come from main or
+development builds, not v0.32.0.</p>
+<p>Turning speculation off at high load will likely look dated within a
+year for checkpoints with good confidence signals. It will likely stay
+correct for costly drafters on small targets and memory-limited
+deployments. An open-loop sweep on a current release with a clean
+no-speculation arm and a non-DSpark drafter would settle it. Until then,
+rerun your sweep on every upgrade.</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/">Speculative
+Decoding - vLLM</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://pypi.org/project/vllm/">vllm · PyPI</a><span
+class="dom">pypi.org</span></li>
+<li><a href="https://github.com/vllm-project/vllm/pull/47808">[Spec
+Decode] DSpark confidence-scheduled verification, PR #47808</a><span
+class="dom">github.com</span></li>
+<li><a href="https://docs.alauda.io/ai/2.8/deploy/inference_service/guides/vllm_speculative_decoding.html">Speculative
+Decoding for vLLM Inference Services - Alauda AI</a><span
+class="dom">docs.alauda.io</span></li>
+<li><a href="https://docs.coreweave.com/products/inference/speculative-decoding">Speculative
+decoding - CoreWeave Docs</a><span
+class="dom">docs.coreweave.com</span></li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2026/file/554e056fe2b6d9fd27ffcd3367ae1267-Paper-Conference.pdf">Speculative
+Decoding: Performance or Illusion? (MLSys 2026)</a><span
+class="dom">proceedings.mlsys.org</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/">Adaptive
+Verification - vLLM</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/dynamic_speculative_decoding/">Dynamic
+Speculative Decoding - vLLM</a><span
+class="dom">docs.vllm.ai</span></li>
+<li><a href="https://arxiv.org/html/2512.22420v2">Nightjar: Dynamic
+Adaptive Speculative Decoding for Large Language Models Serving</a><span
+class="dom">arxiv.org</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/mtp/">MTP
+(Multi-Token Prediction) - vLLM</a><span
+class="dom">docs.vllm.ai</span></li>
+<li><a href="https://docs.nvidia.com/nim/large-language-models/2.0.13/advanced-use-cases/speculative-decoding.html">Speculative
+Decoding - NVIDIA NIM for LLM and VLM</a><span
+class="dom">docs.nvidia.com</span></li>
+<li><a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">Exploring
+Speculative Decoding in vLLM on AMD GPUs - vLLM Blog</a><span
+class="dom">vllm.ai</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/suffix/">Suffix
+Decoding - vLLM</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://www.snowflake.com/en/engineering-blog/suffixdecoding-arctic-inference-vllm/">SuffixDecoding
+at Production Scale with Arctic Inference and vLLM - Snowflake</a><span
+class="dom">snowflake.com</span></li>
+<li><a href="https://vllm.ai/blog/2026-08-14-dspark-adaptive-verification">Adaptive
+Verification in vLLM: DSpark confidence-scheduled verification - vLLM
+Blog</a><span class="dom">vllm.ai</span></li>
+<li><a href="https://docs.vllm.ai/projects/speculators/en/latest/user_guide/tutorials/serve_vllm/">Serve
+in vLLM - Speculators Docs</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://docs.vllm.ai/projects/speculators/en/stable/">Speculators
+Docs</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/draft_model/">Draft
+Models - vLLM</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://github.com/vllm-project/vllm/blob/main/examples/features/speculative_decoding/spec_decode_offline.py">spec_decode_offline.py,
+vLLM examples</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/vllm.py">vllm/config/vllm.py
+at v0.32.0</a><span class="dom">github.com</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/acceptance_metrics/">Per-Request
+Acceptance Metrics - vLLM</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/speculative.py">vllm/config/speculative.py
+at v0.32.0</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/spec_decode/metrics.py">vllm/v1/spec_decode/metrics.py
+at main</a><span class="dom">github.com</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/benchmarking/cli/">Benchmark
+CLI - vLLM</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://github.com/vllm-project/vllm/blob/main/vllm/config/speculative.py">vllm/config/speculative.py
+at main</a><span class="dom">github.com</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/fly/">FLy
+Verification - vLLM</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://github.com/vllm-project/vllm/blob/main/vllm/envs.py">vllm/envs.py
+at main</a><span class="dom">github.com</span></li>
+<li><a href="https://vllm.ai/blog/2026-07-13-eagle-3-amd-instinct">EAGLE3
+Speculative Decoding on AMD Instinct GPUs - vLLM Blog</a><span
+class="dom">vllm.ai</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/parallel_draft_model/">Parallel
+Draft Models - vLLM</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/lilicorr/">LiLiCorr
+- vLLM</a><span class="dom">docs.vllm.ai</span></li>
+<li><a href="https://github.com/vllm-project/vllm/pull/25784">[Spec
+Decode] Integrate Suffix Decoding from Arctic Inference, PR
+#25784</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/vllm-project/vllm/pull/29184">[Core]
+NGram GPU Implementation compatible with Async Scheduler, PR
+#29184</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/deepseek-ai/DeepSpec">DeepSpec -
+DeepSeek GitHub</a><span class="dom">github.com</span></li>
+<li><a href="https://vllm.ai/blog/2026-05-26-eagle-3-1">EAGLE 3.1 - vLLM
+Blog</a><span class="dom">vllm.ai</span></li>
+<li><a href="https://blog.vllm.ai/2024/10/17/spec-decode.html">How
+Speculative Decoding Boosts vLLM Performance by up to 2.8x - vLLM
+Blog</a><span class="dom">blog.vllm.ai</span></li>
+<li><a href="https://arxiv.org/html/2406.14066v1">Optimizing Speculative
+Decoding for Serving Large Language Models Using Goodput</a><span
+class="dom">arxiv.org</span></li>
+<li><a href="https://arxiv.org/abs/2503.01840">EAGLE-3: Scaling up
+Inference Acceleration of Large Language Models</a><span
+class="dom">arxiv.org</span></li>
+<li><a href="https://inferencex.semianalysis.com/compare-spec-decode/deepseek-r1-b200-fp4-mtp-vs-none">DeepSeek
+R1 on B200 FP4: MTP vs Off - InferenceX</a><span
+class="dom">inferencex.semianalysis.com</span></li>
+<li><a href="https://arxiv.org/abs/2607.05147">DSpark:
+Confidence-Scheduled Speculative Decoding with Semi-Autoregressive
+Generation</a><span class="dom">arxiv.org</span></li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/worker/gpu/spec_decode/speculator.py">vllm/v1/worker/gpu/spec_decode/speculator.py
+at v0.32.0</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/worker/gpu/spec_decode/adaptive_verification.py">vllm/v1/worker/gpu/spec_decode/adaptive_verification.py
+at v0.32.0</a><span class="dom">github.com</span></li>
+<li><a href="https://arxiv.org/html/2602.06036v1">DFlash: Block
+Diffusion for Flash Speculative Decoding</a><span
+class="dom">arxiv.org</span></li>
+<li><a href="https://awsdocs-neuron.readthedocs-hosted.com/en/latest/vllm-neuron/docs/tutorials/tutorial-eagle3-speculative-decoding-llama-3-1.html">Tutorial:
+Deploy EAGLE3 speculative decoding with vLLM Neuron using Llama 3.1 8B
+Instruct - AWS Neuron Documentation</a><span
+class="dom">awsdocs-neuron.readthedocs-hosted.com</span></li>
+<li><a href="https://github.com/vllm-project/vllm/pull/29821">[Perf]
+Async Scheduling + Speculative Decoding + Structured Outputs, PR
+#29821</a><span class="dom">github.com</span></li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Running Speculative
+Decoding in vLLM: How to Configure It and What Decides
+Performance</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-11-01</span></div>
+  <div><span class="k">Sources cited</span><span class="v">44</span></div>
+</div>
+</div></div>
+</body>
+</html>
