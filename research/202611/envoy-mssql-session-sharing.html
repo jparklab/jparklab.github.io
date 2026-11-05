@@ -1,0 +1,2586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Writing an Envoy Extension That Lets MSSQL Sessions Share Server
+Connections</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Writing an Envoy Extension That Lets MSSQL Sessions Share Server
+Connections</h1>
+<div class="byline">Research report · 113 cited sources · reviewed 2026-11-04</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#what-sharing-a-connection-can-mean-on-tds"
+id="toc-what-sharing-a-connection-can-mean-on-tds">1. What Sharing a
+Connection Can Mean on TDS</a></li>
+<li><a href="#choosing-the-envoy-extension-mechanism"
+id="toc-choosing-the-envoy-extension-mechanism">2. Choosing the Envoy
+Extension Mechanism</a></li>
+<li><a href="#writing-the-terminal-tds-network-filter"
+id="toc-writing-the-terminal-tds-network-filter">3. Writing the Terminal
+TDS Network Filter</a></li>
+<li><a href="#parsing-and-rewriting-the-tds-protocol"
+id="toc-parsing-and-rewriting-the-tds-protocol">4. Parsing and Rewriting
+the TDS Protocol</a></li>
+<li><a href="#session-state-reset-and-pinning"
+id="toc-session-state-reset-and-pinning">5. Session State, Reset, and
+Pinning</a></li>
+<li><a href="#authentication-and-encryption"
+id="toc-authentication-and-encryption">6. Authentication and
+Encryption</a></li>
+<li><a href="#connection-pool-design-and-failure-handling"
+id="toc-connection-pool-design-and-failure-handling">7. Connection Pool
+Design and Failure Handling</a></li>
+<li><a href="#lessons-from-existing-proxies"
+id="toc-lessons-from-existing-proxies">8. Lessons from Existing
+Proxies</a></li>
+<li><a href="#build-test-and-rollout-plan"
+id="toc-build-test-and-rollout-plan">9. Build, Test, and Rollout
+Plan</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>Executive summary.</strong> Write one terminal C++ network
+filter, compiled into Envoy, that terminates TDS (Tabular Data Stream,
+the SQL Server wire protocol), logs in to SQL Server itself, and holds
+exclusive <code>Tcp::ConnectionPool</code> leases in per-principal
+pools. Pin by default, meaning a session keeps its backend until release
+is provably safe, and close on doubt. Make the release moment a
+per-listener setting: <code>one_to_one</code>, <code>sticky</code> (at
+client disconnect), or <code>transaction</code> (at a clean transaction
+boundary). Of the mechanisms whose APIs were read, only compiled C++ can
+hold a lease while a session is dirty and release it when clean
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/upstream.cc">1</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/api/envoy/extensions/filters/network/generic_proxy/router/v3/router.proto">2</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/dynamic_modules/abi/abi.h">3</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/golang/common/go/api/filter.go">4</a>]</sup>.
+This is serial reuse. Concurrent multiplexing through MARS (Multiple
+Active Result Sets) should not host independent clients.</p>
+<p>Sticky ships first because the transaction setting contains it: it
+proves login offload, a cap, and the parser against real drivers, with
+no connection savings for idle pools. Without the request scanner it
+must close each backend at disconnect. Going further is decided per
+login key and server build, because no measured TDS sharing ratio or
+official list of what a reset clears was found. The only SQL Server
+proxy found publishing its rules contradicts itself on whether
+transactions pin
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.md">5</a>]</sup>.
+The transaction setting must be earned through a census, a reset test
+matrix, and shadow measurement.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Fleet</th>
+<th>Build</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Churn from one process; client pools untuned</td>
+<td>Nothing: tune client pools</td>
+<td>ADO.NET already pools per process and connection string
+<sup>[<a href="https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql-server-connection-pooling">6</a>]</sup></td>
+</tr>
+<tr>
+<td>Only a hard ceiling</td>
+<td>Stock <code>tcp_proxy</code> plus breaker limits</td>
+<td>No TDS parsing or TLS termination; breaker fit inferred, untested
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/upstream/circuit_breaking.rst">7</a>]</sup></td>
+</tr>
+<tr>
+<td>Short-lived connections, no client pool, session state</td>
+<td><code>sticky</code>, recycling after scanner and matrix</td>
+<td>Disconnect preserves each client’s session, as in tdspool (FreeTDS’s
+pooler)
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/user.c">8</a>]</sup>;
+handoff needs the scanner</td>
+</tr>
+<tr>
+<td>Idle client pools, few logins, short transactions</td>
+<td><code>transaction</code>, after the gates</td>
+<td>Pooled clients never disconnect, so sticky reclaims nothing
+(inference)</td>
+</tr>
+<tr>
+<td>Declared read-only autocommit traffic</td>
+<td>Generic Proxy spike</td>
+<td>Per-request release needs no surviving state
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/api/envoy/extensions/filters/network/generic_proxy/router/v3/router.proto">2</a>]</sup></td>
+</tr>
+<tr>
+<td>Per-user Windows logins, Extended Protection (TLS channel binding)
+<code>Required</code>, MARS-dependent code</td>
+<td>TCP passthrough</td>
+<td>Identity or framing cannot be shared</td>
+</tr>
+</tbody>
+</table>
+<p><strong>All code here is an unbuilt illustration, never
+compiled.</strong> <code>Tds*</code> names, helpers, and config fields
+are invented; Envoy identifiers come from the sources read.</p>
+</div>
+<h2 id="what-sharing-a-connection-can-mean-on-tds">1. What Sharing a
+Connection Can Mean on TDS</h2>
+<p>A SQL Server client logs in on a TCP connection and sends requests
+for as long as it stays open. The server keeps state against that
+session: transactions, <code>SET</code> options, temporary tables,
+prepared handles. MS-TDS (the protocol specification) says a session
+“persists until the transport-level connection is terminated” and has no
+concept of a proxy
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Sharing is therefore a policy imposed from outside, and policies differ
+in when a backend may move to another client.</p>
+<h3 id="the-release-boundaries">1.1 The release boundaries</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Boundary</th>
+<th>Backend moves</th>
+<th>Risk or cost</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Per request</td>
+<td>After every response</td>
+<td>Severe: <code>BEGIN TRAN</code> and the next batch split across
+connections</td>
+<td>Generic Proxy (Envoy’s request/response framework) unbound
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/upstream.cc">1</a>]</sup></td>
+</tr>
+<tr>
+<td>Per transaction</td>
+<td>After a response leaving no transaction or pin</td>
+<td>Needs detection, reset, scrub; recovers idle clients’
+connections</td>
+<td>PgBouncer, ProxySQL
+<sup>[<a href="https://www.pgbouncer.org/config.html">10</a>]</sup>
+<sup>[<a href="https://www.proxysql.com/documentation/multiplexing">11</a>]</sup>;
+unproven on SQL Server</td>
+</tr>
+<tr>
+<td>Per logical session</td>
+<td>At the driver’s next reset bit</td>
+<td>Driver reset semantics</td>
+<td>None published; proposed here</td>
+</tr>
+<tr>
+<td>Per connection (sticky)</td>
+<td>At client disconnect</td>
+<td>One reset point; saves only across disconnects, plus a queueing
+cap</td>
+<td>FreeTDS tdspool
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/user.c">8</a>]</sup></td>
+</tr>
+<tr>
+<td>Concurrent on one socket</td>
+<td>Never; sessions interleave</td>
+<td>Shared identity and environment</td>
+<td>SMP (Session Multiplex Protocol), one client</td>
+</tr>
+</tbody>
+</table>
+<h3 id="concurrent-multiplexing-is-wire-capable-and-wrong">1.2
+Concurrent multiplexing is wire-capable and wrong</h3>
+<p>MARS runs on SMP, and SMP really is a multiplexer: its header carries
+a 2-byte session ID, per-session sequence numbers, and a receiver-driven
+window
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/mc-smp/4ada62f7-33c2-45bb-980c-f566f5a6c11a">12</a>]</sup>
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/mc-smp/2c8a1328-d2e0-434b-a0e8-8a72bbb5505a">13</a>]</sup>.
+The server models each session as a row with a
+<code>parent_connection_id</code>
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/main/docs/relational-databases/system-dynamic-management-views/sys-dm-exec-connections-transact-sql.md">14</a>]</sup>.
+Nothing in the header forbids session IDs from different clients. The
+trouble sits above it:</p>
+<ul>
+<li><strong>Identity.</strong> Login is per connection, with no
+per-session LOGIN7 (the login message), so every session inherits one
+principal
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.</li>
+<li><strong>Environment.</strong> Each batch “receives a copy of the
+default environment”, and finished batches copy settings back
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql/enable-multiple-active-result-sets?view=sql-server-2017">15</a>]</sup>.</li>
+<li><strong>Throughput.</strong> MARS “is defined in terms of
+interleaving, not in terms of parallel execution”
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/native-client/features/using-multiple-active-result-sets-mars?view=sql-server-ver16">16</a>]</sup>.</li>
+<li><strong>Transactions.</strong> One left open at batch exit is rolled
+back
+<sup>[<a href="https://msdn.microsoft.com/en-IN/library/ms131686(v=sql.100)">17</a>]</sup>.</li>
+</ul>
+<p>Those facts jointly imply that fan-in would hand one client another’s
+login and let settings flow between tenants, without parallelism.
+Whether a server accepts foreign session IDs is untested, and the
+argument does not need refusal: a small serial pool beats the resulting
+queue. Redis-style pipelining fails likewise. A server should queue a
+request arriving during execution
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>,
+but it would run in its predecessor’s session.</p>
+<p>On one shared service login the identity objection falls, and fan-in
+stays plausible and untested. It is still rejected (inference):
+settings, security context, and top-level temp tables share one default
+environment
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql/enable-multiple-active-result-sets?view=sql-server-2017">15</a>]</sup>,
+and the proxy would run SMP flow control for interleaving without
+parallelism.</p>
+<h3 id="stacked-partitioning-decides-the-project">1.3 Stacked
+partitioning decides the project</h3>
+<p>No source states this; it is inference from sourced parts. Pools are
+per worker, and a connection stays on its worker for life
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/connection_pooling">18</a>]</sup>
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/_sources/intro/arch_overview/intro/threading_model.rst.txt">19</a>]</sup>.
+Identity is fixed on the connection, so pools are keyed by principal, as
+in Microsoft’s driver
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/connect/ado-net/sql/azure-active-directory-authentication.md">20</a>]</sup>.
+Reset returns to the login’s defaults, so database and option flags join
+the key
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Reusable capacity therefore exists only inside one (worker, principal,
+database, login options) cell, among sessions unpinned and between
+transactions at the same moment.</p>
+<p>With K login keys, W workers, L peak concurrent leases, P pinned
+sessions, and no measured inputs:</p>
+<pre><code>backends ≈ L + P + idle cache, with an idle floor approaching K × W</code></pre>
+<p>Three inferences follow:</p>
+<ol type="1">
+<li><strong>Sharing requires sessions far above K × W.</strong> Per-user
+logins push K toward the session count, and then no implementation
+helps.</li>
+<li><strong>Sticky only helps churners.</strong> When a driver closes a
+pooled connection, “SQL Server receives nothing”
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/ialonso/misconceptions-around-connection-pooling">21</a>]</sup>.
+A client pool holding its socket never disconnects from a sticky proxy’s
+viewpoint, so its backend is never reclaimed. This report assumes that
+idle pool is a common motive; no source establishes it.</li>
+<li><strong>Long pins decay.</strong> Where a pin lasts until
+disconnect, as on RDS Proxy and Vitess
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.md">5</a>]</sup>
+<sup>[<a href="https://vitess.io/docs/reference/query-serving/reserved-conn/">22</a>]</sup>,
+the pinned fraction under long-lived pools only grows. Watch it against
+connection age.</li>
+</ol>
+<h3 id="when-no-extension-is-the-answer">1.4 When no extension is the
+answer</h3>
+<p>A client pool already shares sessions. ADO.NET defaults to 100
+connections, queues excess requests for 15 seconds, and evicts idle
+connections after about 4 to 8 minutes
+<sup>[<a href="https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql-server-connection-pooling">6</a>]</sup>.
+If replicas times pool size exceeds the server’s limit and replicas are
+few, lowering the maximum gives a hard ceiling with no new failure
+domain (inference). A proxy earns its place when processes are too many
+or too short-lived, or one ceiling must span heterogeneous clients.
+tdspool’s motivating example is 35 Apache/PHP children sharing a
+10-connection license
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/README">23</a>]</sup>.</p>
+<h2 id="choosing-the-envoy-extension-mechanism">2. Choosing the Envoy
+Extension Mechanism</h2>
+<p>Envoy accepts behaviour through compiled filters, loadable modules,
+sandboxes, and a request/response framework. It has no TDS filter: a
+maintainer said “This will require a new protocol aware filter for
+MSSQL”, and the issue closed as not planned
+<sup>[<a href="https://github.com/envoyproxy/envoy/issues/2545">24</a>]</sup>.
+The deciding test is whether a mechanism can:</p>
+<ul>
+<li>Hold an upstream lease across requests.</li>
+<li>Release it on a state-driven condition.</li>
+<li>Run a login on a pooled connection.</li>
+</ul>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Lease a shared upstream?</th>
+<th>Maturity or cost</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C++ terminal network filter</td>
+<td>Yes, any policy
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">25</a>]</sup></td>
+<td>Custom build
+<sup>[<a href="https://github.com/envoyproxy/envoy-filter-example">26</a>]</sup>;
+contrib packaging later
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/mysql_proxy/filters/network/source/mysql_filter.cc">27</a>]</sup></td>
+<td><strong>Use this</strong></td>
+</tr>
+<tr>
+<td>C++ passive filter ahead of <code>tcp_proxy</code></td>
+<td>No, one-to-one</td>
+<td>Postgres proxy’s shape
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/postgres_proxy_filter">28</a>]</sup></td>
+<td>Pin census, if climbing</td>
+</tr>
+<tr>
+<td>Generic Proxy codec and router</td>
+<td>Per request, or bound with no reuse
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/upstream.cc">1</a>]</sup></td>
+<td>Router API work in progress
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/api/envoy/extensions/filters/network/generic_proxy/router/v3/router.proto">2</a>]</sup></td>
+<td>Stateless spike</td>
+</tr>
+<tr>
+<td>Generic Proxy router clone</td>
+<td>Could hold a lease (inference)
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/router.h">29</a>]</sup></td>
+<td>Router API work in progress
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/api/envoy/extensions/filters/network/generic_proxy/router/v3/router.proto">2</a>]</sup></td>
+<td>Fits poorly</td>
+</tr>
+<tr>
+<td>Dynamic module (Rust, Go, C++)</td>
+<td>No: writes go downstream; no lease callback
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/dynamic_modules/abi/abi.h">3</a>]</sup></td>
+<td>“Released ABI is frozen.”
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/advanced/dynamic_modules">30</a>]</sup></td>
+<td>Pin census, if stopping</td>
+</tr>
+<tr>
+<td>Go network filter</td>
+<td>Takes a pool lease on a hardcoded <code>plainText</code> cluster
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/golang/filters/network/source/upstream.cc">31</a>]</sup>;
+its API has no release
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/golang/common/go/api/filter.go">4</a>]</sup></td>
+<td>“Failure to set this environment variable will cause Envoy to
+crash!”
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/golang_filter">32</a>]</sup></td>
+<td>Rejected: cannot return a lease (inference)</td>
+</tr>
+<tr>
+<td>Wasm network filter</td>
+<td>Host API not read</td>
+<td>“The Wasm filter is experimental”
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/wasm_filter">33</a>]</sup></td>
+<td>Not shown capable</td>
+</tr>
+<tr>
+<td>Lua</td>
+<td>Not established</td>
+<td>No source documents a network filter</td>
+<td>Not a candidate</td>
+</tr>
+</tbody>
+</table>
+<p>Parsing is not the constraint: C++, Generic Proxy, modules, and Go
+can read TDS bytes, Wasm plausibly can, and only Lua is unestablished.
+For Wasm, only Envoy’s configuration page was read, not the proxy-wasm
+host API, so that row is unproven.</p>
+<h3 id="generic-proxy-the-strongest-rival">2.1 Generic Proxy: the
+strongest rival</h3>
+<p>Generic Proxy offers codec-only development with routing and stats
+included
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/generic_proxy_filter">34</a>]</sup>.
+<code>writeToConnection</code> lets a codec answer locally, fitting a
+forged login, and the client codec lives in connection filter state, so
+it could remember reset debt across leases
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/codec_callbacks.h">35</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/upstream.h">36</a>]</sup>.</p>
+<p>It fails on the decisive requirement. The router has one
+listener-wide boolean, <code>bind_upstream_connection</code>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/api/envoy/extensions/filters/network/generic_proxy/router/v3/router.proto">2</a>]</sup>.
+Unbound, each request gets its own <code>OwnedGenericUpstream</code>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/upstream.cc">1</a>]</sup>.
+Bound, “Shared upstream manager never release the connection back to the
+pool”
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/upstream.cc">1</a>]</sup>.
+Hold while dirty and release when clean has no setting.
+<code>drainClose()</code> on a dirty response protects isolation but
+silently loses the client’s transaction (inference)
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/router.cc">37</a>]</sup>.</p>
+<p>Three smaller problems compound this:</p>
+<ul>
+<li><strong>The seams are not configuration:</strong>
+<code>RouterFilter</code> takes its upstream factory only as a
+constructor argument, <code>config.cc</code> registers only
+<code>RouterFactory</code>, and <code>ProxyFactory</code> replaces the
+read filter, so a custom factory means a registered router clone or your
+own read filter
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/router.h">29</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/config.cc">38</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/interface/codec.h">39</a>]</sup>.
+A clone could hold a lease (inference), but PRELOGIN, TLS, and LOGIN7
+fit a request router poorly: a judgment on fit, not an
+impossibility.</li>
+<li><strong>Attention (the TDS cancel message) maps poorly:</strong>
+inferred from code, not run, a later Attention arrives as a new request
+and, unbound, reaches a different connection
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/proxy.cc">40</a>]</sup>.</li>
+<li><strong><code>couldRetry</code> can reissue non-idempotent
+T-SQL</strong> after a reset
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/router.h">29</a>]</sup>.</li>
+</ul>
+<p>This judgment rests on files read, not a repository-wide search, so a
+factory registry elsewhere would reopen it. A spike can show framing and
+driver behaviour for read-only <code>sp_executesql</code> traffic. It
+proves nothing about transactions.</p>
+<h3 id="dynamic-modules-and-the-safer-language-argument">2.2 Dynamic
+modules and the safer-language argument</h3>
+<p>Modules offer three SDKs, no custom binary
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/advanced/dynamic_modules">30</a>]</sup>,
+and StartTLS callbacks
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/dynamic_modules/abi/abi.h">3</a>]</sup>.
+Tracking Envoy’s internal C++ headers for years is a legitimate
+objection (inference). The header settles it anyway. Writes go only
+downstream, upstream calls report on <code>tcp_proxy</code>’s
+connection, and the one raw-upstream path is an HTTP-scoped bridge
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/dynamic_modules/abi/abi.h">3</a>]</sup>.
+A header search for <code>tcp_conn_pool</code>,
+<code>upstream_tcp</code>, and <code>cluster_manager</code> at the
+fetched snapshot found nothing; re-check at your commit. A module owning
+its own sockets loses cluster membership, TLS contexts, health checks,
+and stats.</p>
+<h3 id="the-first-extension-is-a-decoder">2.3 The first extension is a
+decoder</h3>
+<p>A passive filter ahead of <code>tcp_proxy</code> changes nothing in
+the data path and sees everything, provided Envoy terminates TLS
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/postgres_proxy_filter">28</a>]</sup>.
+Run the release rule there in shadow, computing the decision without
+acting on it, and record how many leases each cell would hold. Write it
+in C++ if you expect to climb, or as a dynamic module if the measurement
+might end the project.</p>
+<h2 id="writing-the-terminal-tds-network-filter">3. Writing the Terminal
+TDS Network Filter</h2>
+<p>A network filter is an object Envoy creates per TCP connection and
+feeds with bytes. A terminal filter is last in the chain and decides
+where those bytes go. Here it answers the handshake locally, acquires a
+backend only when a request needs one, and returns it when the session
+holds no server state. The whole filter is a per-session state machine
+around one lease.</p>
+<h3 id="templates-build-and-registration">3.1 Templates, build, and
+registration</h3>
+<p>“As of this writing there is no high level extension developer
+documentation.”
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/extending/extending">41</a>]</sup>
+Copy <code>tcp_proxy</code> for plumbing: a
+<code>Network::ReadFilter</code> that is also a
+<code>LoadBalancerContextBase</code>, with watermark handling
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/tcp_proxy/tcp_proxy.h">42</a>]</sup>.
+Copy Redis <code>ClientImpl</code> for protocol clients, whose init
+machine will “hold user requests so they cannot race ahead of the
+in-flight init command”
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/common/redis/client_impl.cc">43</a>]</sup>.
+Postgres and MySQL are passive, so they are only decoder and StartTLS
+templates
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/postgres_proxy/filters/network/source/postgres_decoder.cc">44</a>]</sup>.</p>
+<p>Start from <code>envoy-filter-example</code>: Envoy as a Bazel
+submodule, with static-initialization registration, built by
+<code>git submodule update --init</code> then
+<code>bazel build //:envoy</code>
+<sup>[<a href="https://github.com/envoyproxy/envoy-filter-example">26</a>]</sup>.
+Derive factories from
+<code>Extensions::NetworkFilters::Common::FactoryBase&lt;Proto&gt;</code>,
+overriding <code>createFilterFactoryFromProtoTyped</code> to return a
+<code>Network::FilterFactoryCb</code> that calls
+<code>filter_manager.addReadFilter(...)</code>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/test/integration/tcp_proxy_integration_test.cc">45</a>]</sup>.
+Use <code>REGISTER_FACTORY</code>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/config.cc">38</a>]</sup>.
+The base interface is reported as
+<code>NamedNetworkFilterConfigFactory</code>, and the factory must
+declare itself terminal. Confirm both at your pinned commit, since no
+source read verified them. <code>typed_config</code> needs your own
+proto message carrying cluster, release mode, and verified-builds path;
+BUILD rules were not read.</p>
+<p>Build in this order:</p>
+<ol type="1">
+<li>Framer, walker, and scanner in a passive filter (Stage 1).</li>
+<li>PRELOGIN and LOGIN7 codecs against a scripted backend.</li>
+<li>Envoy glue and lease in <code>one_to_one</code>.</li>
+<li>Framing-only sticky (Stage 2).</li>
+<li>Scrub and recycling with the scanner inline (Stage 3).</li>
+<li><code>mayRelease()</code> for <code>transaction</code> (Stage
+4).</li>
+</ol>
+<p>Keeping parsers and codecs free of Envoy types makes them fuzzable
+(inference).</p>
+<h3 id="the-object-model">3.2 The object model</h3>
+<p>Connections stay on one worker, filters are fresh per connection, and
+nothing may block
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/_sources/intro/arch_overview/intro/threading_model.rst.txt">19</a>]</sup>
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/intro/life_of_a_request">46</a>]</sup>.
+FreeTDS’s comment “// FIXME not wait for server !!! asyncronous” is the
+warning
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/member.c">47</a>]</sup>:
+every wait must be a state plus a dispatcher timer.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Object (proposed)</th>
+<th>Lifetime</th>
+<th>Owns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TdsProxyConfig</code></td>
+<td>Filter chain</td>
+<td>Cluster, mode, pin policy, timeouts</td>
+</tr>
+<tr>
+<td><code>TdsSessionFilter</code></td>
+<td>Downstream connection</td>
+<td>State machine, lease, tracked SETs, pin reasons</td>
+</tr>
+<tr>
+<td><code>TdsBackendState : Tcp::ConnectionPool::ConnectionState</code></td>
+<td>Upstream connection</td>
+<td>Pool key, last owner, expiry, dirty flag</td>
+</tr>
+<tr>
+<td><code>TdsWorkerRegistry</code></td>
+<td>Worker (thread-local slot)</td>
+<td>Login templates, admission counts</td>
+</tr>
+<tr>
+<td><code>TdsFramer</code>, <code>TdsRequestScanner</code>,
+<code>TdsTokenWalker</code></td>
+<td>Session</td>
+<td>Resumable parsers</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-lease-contract">3.3 The lease contract</h3>
+<p>Acquire through <code>getThreadLocalCluster(name)</code>,
+<code>tcpConnPool(Upstream::ResourcePriority::Default, this)</code>, and
+<code>newConnection(*this)</code>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/golang/filters/network/source/upstream.cc">31</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/upstream/thread_local_cluster.h">48</a>]</sup>.
+The contract shapes every callback:</p>
+<ol type="1">
+<li><strong>Exclusive.</strong> TCP pool clients have a concurrent
+stream limit of 1
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/tcp/conn_pool.cc">49</a>]</sup>.</li>
+<li><strong>Implicit release.</strong> “Open ClientConnections are
+released back to the pool for re-use when their containing
+ConnectionData is destroyed.”
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">25</a>]</sup>
+An unintended destructor is a data-exposure bug.</li>
+<li><strong>Asynchronous acquire.</strong> <code>newConnection</code>
+may call back synchronously and return <code>nullptr</code>; otherwise
+cancel its handle if the session dies
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">25</a>]</sup>.</li>
+<li><strong>Stray-byte safety.</strong> With no callback attached, “data
+from the upstream will cause the connection to be closed”, so late
+tokens never reach the next owner
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">25</a>]</sup>.</li>
+<li><strong>State survives leases.</strong> <code>ConnectionState</code>
+dies with the connection; a null
+<code>connectionStateTyped&lt;T&gt;()</code> means a new connection
+needing a login
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">25</a>]</sup>.</li>
+</ol>
+<p>Put one logical server in a cluster, with priorities for failover,
+because sessions change connections on every release and round-robin
+replicas would break read-your-writes (inference).</p>
+<h3 id="the-session-state-machine">3.4 The session state machine</h3>
+<p><strong>EOM</strong> (end of message) is the packet status bit
+closing a message. A <strong>scrub</strong> is the proxy’s own cleanup
+batch for a new owner. A <strong>token walker</strong> is the parser
+stepping through response tokens.</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>State</th>
+<th>Leaves on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HANDSHAKE</code></td>
+<td>Login response → <code>IDLE</code>; <code>one_to_one</code> →
+<code>DEDICATED</code></td>
+</tr>
+<tr>
+<td><code>IDLE</code> (no lease)</td>
+<td>First request packet → <code>ACQUIRING</code></td>
+</tr>
+<tr>
+<td><code>ACQUIRING</code></td>
+<td><code>onPoolReady</code> → <code>SCRUBBING</code> or
+<code>FORWARDING</code>; failure → TDS error, <code>IDLE</code></td>
+</tr>
+<tr>
+<td><code>SCRUBBING</code></td>
+<td>Clean EOM → <code>FORWARDING</code>; error → close,
+<code>ACQUIRING</code></td>
+</tr>
+<tr>
+<td><code>FORWARDING</code></td>
+<td>Client EOM sent → <code>RESPONDING</code></td>
+</tr>
+<tr>
+<td><code>RESPONDING</code></td>
+<td>EOM and <code>mayRelease()</code> → release, <code>IDLE</code>;
+dirty → <code>PINNED</code>; Attention → <code>ATTN_DRAIN</code></td>
+</tr>
+<tr>
+<td><code>ATTN_DRAIN</code></td>
+<td>Acknowledged → re-evaluate; timer → <code>POISONED</code></td>
+</tr>
+<tr>
+<td><code>PINNED</code></td>
+<td>Next request → <code>FORWARDING</code>; reasons cleared at EOM →
+release</td>
+</tr>
+<tr>
+<td><code>DEDICATED</code></td>
+<td>Either side closes → close both</td>
+</tr>
+<tr>
+<td><code>POISONED</code></td>
+<td>Client leaves → close upstream</td>
+</tr>
+</tbody>
+</table>
+<p><code>POISONED</code> refines close-on-doubt. If the walker loses
+sync, the filter can stop walking, frame by EOM, forward verbatim, and
+guarantee the connection never reaches another owner.</p>
+<h3 id="the-callback-skeleton">3.5 The callback skeleton</h3>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// UNBUILT ILLUSTRATION. Never compiled. Tds* names and helpers are invented.</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> TdsSessionFilter <span class="op">:</span> <span class="kw">public</span> Network<span class="op">::</span>ReadFilter<span class="op">,</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>                         <span class="kw">public</span> Upstream<span class="op">::</span>LoadBalancerContextBase<span class="op">,</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>                         <span class="kw">public</span> Tcp<span class="op">::</span>ConnectionPool<span class="op">::</span>Callbacks<span class="op">,</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>                         <span class="kw">public</span> Tcp<span class="op">::</span>ConnectionPool<span class="op">::</span>UpstreamCallbacks <span class="op">{</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  Network<span class="op">::</span>FilterStatus onData<span class="op">(</span>Buffer<span class="op">::</span>Instance<span class="op">&amp;</span> data<span class="op">,</span> <span class="dt">bool</span><span class="op">)</span> <span class="kw">override</span> <span class="op">{</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="va">framer_</span><span class="op">.</span>append<span class="op">(</span>data<span class="op">);</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> <span class="op">(</span><span class="kw">auto</span> packet <span class="op">=</span> <span class="va">framer_</span><span class="op">.</span>next<span class="op">())</span> <span class="op">{</span> onClientPacket<span class="op">(*</span>packet<span class="op">);</span> <span class="op">}</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> Network<span class="op">::</span>FilterStatus<span class="op">::</span>StopIteration<span class="op">;</span>   <span class="co">// terminal</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> onClientPacket<span class="op">(</span><span class="at">const</span> TdsPacket<span class="op">&amp;</span> packet<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>forwarding<span class="op">())</span> <span class="op">{</span> <span class="va">lease_</span><span class="op">-&gt;</span>connection<span class="op">().</span>write<span class="op">(</span>packet<span class="op">.</span>bytes<span class="op">(),</span> <span class="kw">false</span><span class="op">);</span> <span class="cf">return</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    holdRequest<span class="op">(</span>packet<span class="op">);</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="va">lease_</span> <span class="op">==</span> <span class="kw">nullptr</span> <span class="op">&amp;&amp;</span> <span class="va">pending_</span> <span class="op">==</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">{</span> acquireLease<span class="op">();</span> <span class="op">}</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> acquireLease<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span><span class="op">*</span> cluster <span class="op">=</span> <span class="va">cluster_manager_</span><span class="op">.</span>getThreadLocalCluster<span class="op">(</span><span class="va">config_</span><span class="op">-&gt;</span>cluster<span class="op">());</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>cluster <span class="op">==</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">{</span> answerWithTdsError<span class="op">();</span> <span class="cf">return</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> pool <span class="op">=</span> cluster<span class="op">-&gt;</span>tcpConnPool<span class="op">(</span>Upstream<span class="op">::</span>ResourcePriority<span class="op">::</span>Default<span class="op">,</span> <span class="kw">this</span><span class="op">);</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(!</span>pool<span class="op">.</span>has_value<span class="op">())</span> <span class="op">{</span> answerWithTdsError<span class="op">();</span> <span class="cf">return</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    <span class="va">pool_data_</span> <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>pool<span class="op">);</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="va">pending_</span> <span class="op">=</span> <span class="va">pool_data_</span><span class="op">-&gt;</span>newConnection<span class="op">(*</span><span class="kw">this</span><span class="op">);</span>   <span class="co">// nullptr if it already called back</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> onPoolReady<span class="op">(</span>Tcp<span class="op">::</span>ConnectionPool<span class="op">::</span>ConnectionDataPtr<span class="op">&amp;&amp;</span> conn<span class="op">,</span></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>                   Upstream<span class="op">::</span>HostDescriptionConstSharedPtr<span class="op">)</span> <span class="kw">override</span> <span class="op">{</span></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>    <span class="va">pending_</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>    <span class="va">lease_</span> <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>conn<span class="op">);</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    <span class="va">lease_</span><span class="op">-&gt;</span>addUpstreamCallbacks<span class="op">(*</span><span class="kw">this</span><span class="op">);</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span><span class="op">*</span> backend <span class="op">=</span> <span class="va">lease_</span><span class="op">-&gt;</span>connectionStateTyped<span class="op">&lt;</span>TdsBackendState<span class="op">&gt;();</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>backend <span class="op">==</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">{</span> startBackendLogin<span class="op">();</span> <span class="cf">return</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>backend<span class="op">-&gt;</span>poolKey<span class="op">()</span> <span class="op">!=</span> <span class="va">session_</span><span class="op">.</span>key<span class="op">())</span> <span class="op">{</span> closeLease<span class="op">();</span> reacquire<span class="op">();</span> <span class="cf">return</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>backend<span class="op">-&gt;</span>lastOwner<span class="op">()</span> <span class="op">==</span> <span class="va">session_</span><span class="op">.</span>id<span class="op">()</span> <span class="op">&amp;&amp;</span> <span class="op">!</span>backend<span class="op">-&gt;</span>dirty<span class="op">())</span> <span class="op">{</span></span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>      forwardHeldRequest<span class="op">();</span></span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>      sendScrubBatch<span class="op">(*</span>backend<span class="op">);</span></span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> onPoolFailure<span class="op">(</span>Tcp<span class="op">::</span>ConnectionPool<span class="op">::</span>PoolFailureReason<span class="op">,</span> absl<span class="op">::</span>string_view<span class="op">,</span></span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>                     Upstream<span class="op">::</span>HostDescriptionConstSharedPtr<span class="op">)</span> <span class="kw">override</span> <span class="op">{</span></span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>    <span class="va">pending_</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>    answerWithTdsError<span class="op">();</span>                          <span class="co">// session survives</span></span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> onUpstreamData<span class="op">(</span>Buffer<span class="op">::</span>Instance<span class="op">&amp;</span> data<span class="op">,</span> <span class="dt">bool</span><span class="op">)</span> <span class="kw">override</span> <span class="op">{</span></span>
+<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>    <span class="va">walker_</span><span class="op">.</span>feed<span class="op">(</span>data<span class="op">);</span>                            <span class="co">// desync marks doubt</span></span>
+<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a>    <span class="va">read_callbacks_</span><span class="op">-&gt;</span>connection<span class="op">().</span>write<span class="op">(</span>data<span class="op">,</span> <span class="kw">false</span><span class="op">);</span></span>
+<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="va">framer_</span><span class="op">.</span>responseAtEom<span class="op">()</span> <span class="op">&amp;&amp;</span> mayRelease<span class="op">())</span> <span class="op">{</span> releaseLease<span class="op">();</span> <span class="op">}</span></span>
+<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> mayRelease<span class="op">()</span> <span class="at">const</span> <span class="op">{</span>                        <span class="co">// separates the modes</span></span>
+<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="va">config_</span><span class="op">-&gt;</span>mode<span class="op">()</span> <span class="op">!=</span> TdsMode<span class="op">::</span>Transaction<span class="op">)</span> <span class="op">{</span> <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">!</span><span class="va">session_</span><span class="op">.</span>txnOpen<span class="op">()</span> <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="va">session_</span><span class="op">.</span>pinned<span class="op">()</span> <span class="op">&amp;&amp;</span></span>
+<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a>           <span class="op">!</span><span class="va">session_</span><span class="op">.</span>attentionPending<span class="op">()</span> <span class="op">&amp;&amp;</span> <span class="va">walker_</span><span class="op">.</span>inSync<span class="op">();</span></span>
+<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> releaseLease<span class="op">()</span> <span class="op">{</span>                            <span class="co">// the only release site</span></span>
+<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>    <span class="va">lease_</span><span class="op">-&gt;</span>connectionStateTyped<span class="op">&lt;</span>TdsBackendState<span class="op">&gt;()-&gt;</span>setLastOwner<span class="op">(</span><span class="va">session_</span><span class="op">.</span>id<span class="op">());</span></span>
+<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>    <span class="va">lease_</span><span class="op">.</span>reset<span class="op">();</span></span>
+<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> onDownstreamClose<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="va">pending_</span> <span class="op">!=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>      <span class="va">pending_</span><span class="op">-&gt;</span>cancel<span class="op">(</span>Tcp<span class="op">::</span>ConnectionPool<span class="op">::</span>CancelPolicy<span class="op">::</span>Default<span class="op">);</span></span>
+<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="va">lease_</span> <span class="op">==</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">{</span> <span class="cf">return</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>    <span class="co">// recycleAllowedAndIdle() is false unless the scanner runs inline</span></span>
+<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="va">config_</span><span class="op">-&gt;</span>mode<span class="op">()</span> <span class="op">==</span> TdsMode<span class="op">::</span>Sticky <span class="op">&amp;&amp;</span> recycleAllowedAndIdle<span class="op">())</span> <span class="op">{</span></span>
+<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>      markDirtyForNextOwner<span class="op">();</span></span>
+<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>      releaseLease<span class="op">();</span></span>
+<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>      closeLease<span class="op">();</span>                                <span class="co">// doubtful: never recycle</span></span>
+<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p><code>initializeReadFilterCallbacks</code> registers a
+<code>Network::ConnectionCallbacks</code> object, as
+<code>tcp_proxy</code> does, whose close event runs
+<code>onDownstreamClose</code>; <code>onNewConnection</code> returns
+<code>StopIteration</code>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/tcp_proxy/tcp_proxy.h">42</a>]</sup>.
+<code>startBackendLogin</code> attaches <code>TdsBackendState</code>
+with <code>setConnectionState</code> once login succeeds, and
+<code>closeLease</code> clears the pointer before closing, because
+closing can re-enter callbacks
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">25</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/upstream.h">36</a>]</sup>.
+Cancel a pending handle in the destructor, and treat it as invalid after
+any callback
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">25</a>]</sup>.</p>
+<p>One function releases, so an audit examines one place.
+<code>onPoolReady</code> re-checks the pool key, so a partitioning bug
+closes a connection instead of crossing an identity. And
+<code>mayRelease()</code> alone separates the modes. Sticky and
+transaction share listener, factory, framing, login, lease, and failure
+paths. Transaction adds a walker, a scanner, and a different boolean.
+Sticky has two forms. Framing-only sticky relays on packet framing and
+must close the backend at client disconnect, because the discard rules
+(<code>sp_setapprole</code>, <code>EXECUTE AS ... NO REVERT</code>) can
+fire only with the scanner. Recycling a backend across clients needs the
+scanner inline, so tdspool’s recycling
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/member.c">47</a>]</sup>
+is a structural template, not a safety precedent.</p>
+<h3 id="selecting-a-mode-at-two-points">3.6 Selecting a mode at two
+points</h3>
+<p>MARS is declared in PRELOGIN (the first negotiation message),
+authentication type in LOGIN7, and TDS 8.0 needs TLS before either
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+A passthrough decided after terminating TLS is not true passthrough, so
+mode has two selection points:</p>
+<ul>
+<li><strong>By listener or filter chain, before any TDS.</strong> True
+TCP passthrough for Extended Protection <code>Required</code> and known
+MARS applications, on a chain without the filter. TDS 7.x clients wrap
+their ClientHello inside PRELOGIN, so SNI (TLS server-name indication)
+cannot see them and they need a separate port (inference).</li>
+<li><strong>By the filter, after LOGIN7.</strong> When the server build,
+read from LOGINACK’s <code>ProgVersion</code>
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>,
+is absent from the verified list, <code>transaction</code> degrades to
+<code>sticky</code>. This mechanism is this design’s own.</li>
+</ul>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># UNBUILT ILLUSTRATION. tds_proxy and its fields do not exist in Envoy.</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">listener_filters</span><span class="kw">:</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> envoy.filters.listener.tls_inspector</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">filter_chains</span><span class="kw">:</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">filter_chain_match</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">server_names</span><span class="kw">:</span><span class="fu"> </span><span class="kw">[</span><span class="at">legacy-sql.example</span><span class="kw">]</span><span class="at"> </span><span class="kw">}</span><span class="at">  </span><span class="co"># true passthrough</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">filters</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="fu"> </span><span class="at">envoy.filters.network.tcp_proxy </span><span class="kw">}</span><span class="at"> </span><span class="kw">]</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">filter_chain_match</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">transport_protocol</span><span class="kw">:</span><span class="fu"> </span><span class="at">tls </span><span class="kw">}</span><span class="at">             </span><span class="co"># TDS 8.0</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transport_socket</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="fu"> </span><span class="at">envoy.transport_sockets.tls </span><span class="kw">}</span><span class="at">     </span><span class="co"># alpn tds/8.0</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">filters</span><span class="kw">:</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> tds_proxy</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">typed_config</span><span class="kw">:</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">cluster</span><span class="kw">:</span><span class="at"> sql_primary</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">release_mode</span><span class="kw">:</span><span class="at"> sticky      # one_to_one | sticky | transaction</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">verified_builds_file</span><span class="kw">:</span><span class="at"> /etc/tds_proxy/verified_builds.yaml</span></span></code></pre></div>
+<p>The first-byte rule supports this routing: 0x16 means a TLS
+ClientHello from a TDS 8.0 client, and anything else must be a PRELOGIN
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Mapping listener TLS inspection onto TDS versions is inference needing
+an integration test.</p>
+<h2 id="parsing-and-rewriting-the-tds-protocol">4. Parsing and Rewriting
+the TDS Protocol</h2>
+<p>TDS messages travel in packets with 8-byte headers. The server
+answers a request with a stream of typed tokens: column metadata, rows,
+environment changes, completion markers. A proxy asks where a response
+ends and what it did to the session. The first question is cheap, and
+the second is the expensive part of this project.</p>
+<h3 id="framing-and-state-are-separate-problems">4.1 Framing and state
+are separate problems</h3>
+<p>Framing needs no token parser, only the 8-byte packet header: Type,
+Status, big-endian Length, SPID (server process ID), PacketID, and
+Window
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+“The EOM bit MUST be set to 1 in the last packet to signal that the
+stream ends.”
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>
+Wireshark reassembles on that bit, and FreeTDS treats needing bytes
+after EOM as being out of sync
+<sup>[<a href="https://raw.githubusercontent.com/wireshark/wireshark/master/epan/dissectors/packet-tds.c">50</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/tds/read.c">51</a>]</sup>.
+No capture was examined, so verify this on your server. Do not copy
+go-mssqldb’s treatment of any non-zero status as final
+<sup>[<a href="https://raw.githubusercontent.com/microsoft/go-mssqldb/main/buf.go">52</a>]</sup>.
+Dispatch on Type: SQLBatch 0x01, RPC 0x03, Tabular Result 0x04,
+Attention 0x06, BulkLoad 0x07, Transaction Manager 0x0E
+<sup>[<a href="https://docs.rs/crate/mssql-tds/latest/source/src/message/messages.rs">53</a>]</sup>.</p>
+<p>An EOM-only proxy still cannot release safely. ENVCHANGE tokens
+(server reports of environment changes) that open a transaction can
+follow rows, as in <code>SELECT ...; BEGIN TRAN</code>
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+ROW tokens have no length prefix, so finding them means walking with the
+COLMETADATA (column metadata) token
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Release therefore requires five things:</p>
+<ul>
+<li>EOM on the last packet.</li>
+<li>Closed ENVCHANGE-tracked transaction state.</li>
+<li>No pin reason.</li>
+<li>No outstanding Attention.</li>
+<li>A walker at a token boundary without doubt.</li>
+</ul>
+<h3 id="the-handshake">4.2 The handshake</h3>
+<ol type="1">
+<li><strong>Discriminate on the first byte:</strong> TDS 8.0, where TLS
+precedes all TDS
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/networking/tds-8">54</a>]</sup>,
+or 7.x, where TLS rides inside PRELOGIN.</li>
+<li><strong>Answer PRELOGIN yourself.</strong> Require whole-connection
+encryption and answer MARS off, because a MARS stream is SMP-framed and
+unparseable as TDS packets
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Client tolerance is an inference to test. Return INSTOPT 0 for fronted
+instance names
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Give clients an explicit port, since a fixed-port proxy bypasses SQL
+Browser’s UDP 1434
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/database-engine/configure-windows/sql-server-browser-service-database-engine-and-ssas.md">55</a>]</sup>
+(inference). tdspool’s hard-coded reply, marked “TODO proper one”
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/user.c">8</a>]</sup>,
+is a template for structure only.</li>
+<li><strong>Parse LOGIN7:</strong> offset table, user, database,
+language, option flags, version, and FeatureExt (the optional-feature
+list). The password is obfuscated: “swap the four high bits with the
+four low bits and then do a bit-XOR with 0xA5”
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+TLS is its only protection, so never log it.</li>
+<li><strong>Answer login.</strong> The first client on a key relays a
+real backend login; later clients get a forged response.</li>
+</ol>
+<h3 id="what-gets-rewritten">4.3 What gets rewritten</h3>
+<p>After login, almost nothing is rewritten.</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Field</th>
+<th>Treatment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Packet header</td>
+<td>Forwarded; PacketID is ignored, SPID debug-only
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup></td>
+</tr>
+<tr>
+<td>PRELOGIN (0x12)</td>
+<td>Reply proxy-authored; negotiated per leg</td>
+</tr>
+<tr>
+<td>LOGIN7 (0x10)</td>
+<td>Backend copy rebuilt; SESSIONRECOVERY (driver reconnection state)
+stripped</td>
+</tr>
+<tr>
+<td>SQLBatch, RPC (procedure-call message), Transaction Manager</td>
+<td>Scanned, never edited; headers only in the first packet
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/e17e54ae-0fac-48b7-b8a8-c267be297923">56</a>]</sup></td>
+</tr>
+<tr>
+<td>Status bit 0x08</td>
+<td>Client’s forwarded; proxy sets it only on its scrub
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/ce398f9a-7d47-4ede-8f36-9dd6fc21ca43">57</a>]</sup></td>
+</tr>
+<tr>
+<td>Tabular response</td>
+<td>Walked; bytes pass through</td>
+</tr>
+<tr>
+<td>ENVCHANGE 20, 21 (routing)</td>
+<td>Never forwarded
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2b3eb7e5-d43d-4d1b-bf4d-76b9e3afc791">58</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Transaction descriptors need no rewriting.</strong> One
+reading of the specification treats the 8-byte descriptor in ALL_HEADERS
+(the request header block) as the core rewrite, since the server mints
+it and the client echoes it. Outside a transaction it “MUST be 0”, and
+under pinning a backend never changes hands between begin and end
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Those facts jointly imply the client always echoes zero or its current
+connection’s value. Only a mid-transaction handoff would need rewriting,
+which no source reports any proxy attempting.</p>
+<p><strong>Packet size is dictated, not keyed.</strong> Since TDS 7.3,
+non-final client packets must equal the negotiated size or the server
+should disconnect, so re-chunking is unsafe
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+But the server “MAY send a value different from the packet size
+requested by the client”
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2b3eb7e5-d43d-4d1b-bf4d-76b9e3afc791">58</a>]</sup>,
+and the proxy is the client’s server. Announce the pool’s size in
+ENVCHANGE type 4, as tdspool does
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/user.c">8</a>]</sup>.
+Driver tolerance is a matrix item (inference).</p>
+<p><strong>FeatureExt is contained through the backend login.</strong>
+The list keeps growing, now with JSON and vector support, and each type
+is something the walker must size
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Through RDS Proxy these columns arrive as <code>nvarchar(max)</code>
+<sup>[<a href="https://docs.aws.eu/AmazonRDS/latest/UserGuide/rds-proxy.html">59</a>]</sup>.
+A proxy originating the login can request only features its walker
+understands (inference), at the cost that clients lose those types and
+possibly column encryption.</p>
+<h3 id="the-token-walker">4.4 The token walker</h3>
+<p>Build it to resume at any byte, because tokens span packets. Most
+tokens skip through zero-length, fixed-length, and length-prefixed
+classes
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+The hard ones are
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>:</p>
+<ul>
+<li><strong>COLMETADATA (0x81).</strong></li>
+<li><strong>ROW (0xD1) and NBCROW (0xD2, null-compressed rows),</strong>
+which need it.</li>
+<li><strong>PLP values</strong> (the chunked encoding for
+<code>max</code> types) straddling packets.</li>
+<li><strong>DATACLASSIFICATION,</strong> which breaks the
+variable-length rule
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.</li>
+<li><strong>ENVCHANGE type 15,</strong> which reports length 0x01 with
+payload following
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2b3eb7e5-d43d-4d1b-bf4d-76b9e3afc791">58</a>]</sup>.</li>
+</ul>
+<p><strong>Do not scan for 0xFD to find DONE</strong> (the completion
+token), because that byte occurs in row data. DONEPROC (0xFE) and
+DONEINPROC (0xFF) replace DONE inside procedures, and its row count
+grows from 4 to 8 bytes at TDS 7.2. And <strong>do not use
+<code>DONE_INXACT</code></strong>: the DONE page lists it, but the
+spec’s footnotes say this 0x4 bit “is not set by SQL Server”
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/3c06f110-98bd-4d5b-b836-b1ba66452cb7">60</a>]</sup>
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+A proxy trusting it releases inside open transactions. State comes only
+from ENVCHANGE, in stream order:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Type</th>
+<th>Meaning</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8</td>
+<td>Begin</td>
+<td><code>txn_open = true</code></td>
+</tr>
+<tr>
+<td>9, 10, 12, 17</td>
+<td>Commit, rollback, defect, ended</td>
+<td><code>txn_open = false</code></td>
+</tr>
+<tr>
+<td>11, 15</td>
+<td>DTC (distributed transaction) enlist, promote</td>
+<td>Pin, then discard</td>
+</tr>
+<tr>
+<td>1, 2, 7</td>
+<td>Database, language, collation</td>
+<td>Update replay state</td>
+</tr>
+<tr>
+<td>18</td>
+<td>Reset acknowledged</td>
+<td>Confirms scrub or client reset</td>
+</tr>
+<tr>
+<td>20, 21</td>
+<td>Routing</td>
+<td>Fail the backend login</td>
+</tr>
+</tbody>
+</table>
+<p>“For transactions started/committed under auto commit, no stream is
+generated.”
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2b3eb7e5-d43d-4d1b-bf4d-76b9e3afc791">58</a>]</sup>
+Set fUseDB on the backend login, or database changes pass silently and
+replay goes stale (inference)
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Nested <code>@@trancount</code> changes emit nothing, which is fine
+because only the outermost span matters. A commit can carry a new begin,
+which in-order processing handles. Tokens also cover Transaction Manager
+requests, which begin and commit without SQL text
+<sup>[<a href="https://docs.rs/tds-driver/latest/src/tds_driver/tds/codec/transaction_manager.rs.html">61</a>]</sup>.</p>
+<h3 id="the-request-scanner">4.5 The request scanner</h3>
+<p>The server reports no <code>SET</code> options, temp tables, or
+session context, so the proxy must read requests. The scanner is a T-SQL
+tokenizer handling comments, strings, and bracketed names in UCS-2,
+returning clean, tracked change, or pin.</p>
+<p>It works by allowlist, because a denylist fails by leaking and an
+allowlist by losing an optimization. Unknown verbs pin, and so does a
+<code>#</code> outside a string. RPCs classify by ProcID:
+<code>sp_executesql</code> 10 needs no handle, then
+<code>sp_prepare</code> 11, <code>sp_execute</code> 12,
+<code>sp_prepexec</code> 13, <code>sp_prepexecrpc</code> 14,
+<code>sp_unprepare</code> 15, cursors 1 to 9
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Named RPCs check a configured list, and one message can hold several
+calls. The scanner also reads the text parameters of ProcIDs 10, 11, and
+13 with the same tokenizer and limits. Verdicts apply at response EOM,
+so requests stream unbuffered. Adopt AWS’s rule: “Any statement with a
+text size greater than 16 KB causes the proxy to pin the session.”
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.md">5</a>]</sup>
+It is the right fail-closed shape for a parse window, paralleled by
+ScaleArc’s default of parsing 3 RPC packets
+<sup>[<a href="https://doc.scalearc.com/sqlserver311/scalearc-guide-for-sql-server/configuring-scalearc/manage-clusters/status/cluster-settings/scalearc-settings">62</a>]</sup>.</p>
+<h2 id="session-state-reset-and-pinning">5. Session State, Reset, and
+Pinning</h2>
+<p>A session accumulates state the next user of its connection would
+inherit. Drivers handle this with RESETCONNECTION, a status bit (0x08)
+on a request’s first packet telling the server to clean up first. They
+set it lazily, on the next request after reusing a pooled connection. A
+proxy uses the same primitive across clients, which raises the stakes on
+what it clears.</p>
+<h3 id="what-reset-does-and-what-is-unknown">5.1 What reset does and
+what is unknown</h3>
+<p>The bit returns the environment to defaults, “effectively simulating
+a logout and a subsequent login”, and ENVCHANGE 18 acknowledges it
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/ce398f9a-7d47-4ede-8f36-9dd6fc21ca43">57</a>]</sup>
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2b3eb7e5-d43d-4d1b-bf4d-76b9e3afc791">58</a>]</sup>.
+RESETCONNECTIONSKIPTRAN (0x10) preserves the transaction and must not be
+combined with it. No official list of what reset clears was found:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>State</th>
+<th>Evidence</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Isolation, on-premises</td>
+<td>“Distributed transactions and isolation levels are not reset.”
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>;
+driver team: “does not reset the isolation level”
+<sup>[<a href="https://github.com/microsoft/mssql-python/pull/343">63</a>]</sup>;
+a repro
+<sup>[<a href="https://api.stackexchange.com/2.3/questions/9851415?site=stackoverflow&filter=withbody">64</a>]</sup>;
+a 2014 change reportedly reversed
+<sup>[<a href="https://api.stackexchange.com/2.3/questions/9851415/answers?order=desc&sort=votes&site=stackoverflow&filter=withbody">65</a>]</sup></td>
+<td>Not reset</td>
+</tr>
+<tr>
+<td>Isolation, Managed Instance</td>
+<td>“Resetting the connection on Azure SQL Managed Instance will always
+reset the transaction isolation level to the default one”
+<sup>[<a href="https://techcommunity.microsoft.com/t5/azure-database-support-blog/how-to-avoid-transaction-isolation-level-issues-on-azure-sql/ba-p/3967757">66</a>]</sup></td>
+<td>Varies; support blog</td>
+</tr>
+<tr>
+<td>Rollback, local temp tables, cursors</td>
+<td>Engineer’s blog
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/ialonso/misconceptions-around-connection-pooling">21</a>]</sup>;
+unofficial list adds locks and SETs
+<sup>[<a href="https://www.cnblogs.com/stswordman/archive/2010/08/03/1791322.html">67</a>]</sup></td>
+<td>Likely, not official</td>
+</tr>
+<tr>
+<td>CONTEXT_INFO</td>
+<td>Same blog says reset; a community snippet disagrees</td>
+<td>Disputed</td>
+</tr>
+<tr>
+<td>SESSION_CONTEXT</td>
+<td>Docs silent
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-set-session-context-transact-sql">68</a>]</sup>;
+leak seen only without reset
+<sup>[<a href="https://www.github.com/tediousjs/node-mssql/issues/1483">69</a>]</sup></td>
+<td>Undocumented</td>
+</tr>
+<tr>
+<td>EXECUTE AS</td>
+<td>No source found</td>
+<td>Undocumented</td>
+</tr>
+<tr>
+<td>Application role</td>
+<td>“the security context of that connection cannot be reset”
+<sup>[<a href="https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql-server-connection-pooling">6</a>]</sup></td>
+<td>Not reset</td>
+</tr>
+</tbody>
+</table>
+<p>Two oblique hints exist for SESSION_CONTEXT, neither a guarantee. The
+row-level security page says <code>@read_only</code> prevents change
+“until the connection is closed (returned to the connection pool)”
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/row-level-security?view=sql-server-ver16">70</a>]</sup>.
+And known issues warn of “AV exceptions or wrong results” in parallel
+plans when the session is reset for reuse, on SQL Server 2019 cumulative
+update 14 and later, with trace flag 11042 as mitigation
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/t-sql/functions/session-context-transact-sql.md">71</a>]</sup>.
+A multiplexer raises the reset rate far above a client pool’s
+(inference), so a defect a pool rarely hits could be hit routinely.</p>
+<p>The optimistic argument says an always-on reset turns every detector
+miss into a lost optimization. Every pooling client depends on this
+primitive, which is real evidence it mostly works. But those clients
+stay within one process and connection string, while a multi-client
+proxy turns the same leak into a boundary between clients. Keep the
+reset on every handoff, because a rejected reset costs a reconnect while
+a leak crosses an application or row-level security boundary within one
+login. Count it as a backstop only for items tested on that exact build.
+An unverified backstop on a security boundary is not a backstop.</p>
+<p>Cost multiplies too. A proxy resets per owner change rather than per
+checkout, each emitting a pooled Audit Logout and one that “initiates
+the process of redoing the login”
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/ialonso/misconceptions-around-connection-pooling">21</a>]</sup>.
+A SqlClient maintainer warns of token revalidation: “The revalidation is
+not clearly defined yet but will likely become more strict in future.”
+<sup>[<a href="https://github-redirect.dependabot.com/dotnet/SqlClient/issues/767">72</a>]</sup>
+Nobody has measured this, so it is a gate.</p>
+<h3 id="the-proxy-owned-scrub-batch">5.2 The proxy-owned scrub
+batch</h3>
+<p>Setting the bit on the client’s first packet saves a round trip but
+delivers tokens the client never asked for, forcing the proxy to strip a
+stream it otherwise forwards verbatim. Instead, the proxy authors a
+batch and consumes its whole response before the client’s request
+touches the connection:</p>
+<pre><code>Status   0x09  = EOM | RESETCONNECTION
+ALL_HEADERS    = Transaction Descriptor, descriptor 0, outstanding count 1
+Text (UCS-2)   = SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+                 &lt;USE and SET statements replaying tracked state&gt;</code></pre>
+<p>FreeTDS arrived at nearly this. <code>pool_reset_member</code> sends
+<code>WHILE @@TRANCOUNT &gt; 0 ROLLBACK SET TRANSACTION ISOLATION LEVEL READ COMMITTED</code>
+with status 0x9, freeing the member on failure, though it blocks
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/member.c">47</a>]</sup>.
+Microsoft’s mssql-python team now also sets isolation on reuse
+<sup>[<a href="https://github.com/microsoft/mssql-python/pull/343">63</a>]</sup>.
+Recycling sticky keeps the rollback line, since a filter without a
+walker cannot know whether a transaction is open at disconnect
+(inference). Lazy scrubbing can leave locks and an open transaction on
+an idle backend, where Odyssey can “Execute ROLLBACK when returning
+connections with open transactions”
+<sup>[<a href="https://raw.githubusercontent.com/yandex/odyssey/master/docs/configuration/rules.md">73</a>]</sup>.
+A filter that cannot prove the transaction closed must close at
+disconnect or finish an asynchronous rollback first.</p>
+<p>The batch pays off four ways:</p>
+<ol type="1">
+<li><strong>No response rewriting.</strong> The client’s stream stays
+byte-identical.</li>
+<li><strong>A safe retry point (inference).</strong> No client SQL has
+run, so on revalidation, socket, or trigger failure the proxy retries
+invisibly. With the bit on the client’s request, a failure is
+ambiguous.</li>
+<li><strong>A liveness probe</strong> for silently dead Azure SQL
+connections
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/adonet/minimizing-connection-pool-errors-in-sql-azure">74</a>]</sup>.</li>
+<li><strong>An expected token.</strong> Absent ENVCHANGE 18 counts as
+doubt.</li>
+</ol>
+<p><strong>The cost</strong> is one round trip per owner change, skipped
+when a session regains its own last backend. If the client sets its own
+reset bit, forward it, discard tracked state, and let the client receive
+its ack. Driver tolerance is a test item.</p>
+<h3 id="the-pin-table">5.3 The pin table</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>State</th>
+<th>Seen through</th>
+<th>Treatment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Open transaction</td>
+<td>ENVCHANGE 8</td>
+<td>Hold to its end</td>
+</tr>
+<tr>
+<td><code>USE</code>; 14 tracked SETs</td>
+<td>Scanner; ENVCHANGE 1, 2, 7</td>
+<td>Replay in scrub</td>
+</tr>
+<tr>
+<td><code>NOCOUNT</code>, <code>XACT_ABORT</code>,
+<code>ROWCOUNT</code>, <code>IDENTITY_INSERT</code>, others</td>
+<td>Scanner</td>
+<td>Pin initially</td>
+</tr>
+<tr>
+<td>Temp tables</td>
+<td><code>#</code> token</td>
+<td>Pin until disconnect or passed client-reset unpin; <code>DROP</code>
+does not clear it (Vitess analogue
+<sup>[<a href="https://vitess.io/docs/reference/query-serving/reserved-conn/">22</a>]</sup>)</td>
+</tr>
+<tr>
+<td>Prepared handles</td>
+<td>ProcID 11, 13, 14</td>
+<td>Pin until 15 zeroes the count</td>
+</tr>
+<tr>
+<td>Server cursors</td>
+<td>ProcID 1 to 9</td>
+<td>Pin until close</td>
+</tr>
+<tr>
+<td><code>sp_set_session_context</code>, <code>CONTEXT_INFO</code>,
+<code>sp_getapplock</code></td>
+<td>Scanner, RPC name</td>
+<td>Pin; discard if <code>@read_only=1</code></td>
+</tr>
+<tr>
+<td><code>sp_setapprole</code></td>
+<td>Scanner, RPC name</td>
+<td>Discard</td>
+</tr>
+<tr>
+<td><code>EXECUTE AS</code></td>
+<td>Scanner</td>
+<td>Pin while active; discard unless a matching <code>REVERT</code> was
+seen and the matrix passed on this build; <code>NO REVERT</code> always
+discards</td>
+</tr>
+<tr>
+<td><code>INSERT BULK</code></td>
+<td>Scanner</td>
+<td>Pin through the bulk message (inference)</td>
+</tr>
+<tr>
+<td>DTC</td>
+<td>ENVCHANGE 11, 15</td>
+<td>Pin, then discard</td>
+</tr>
+<tr>
+<td>MARS</td>
+<td>PRELOGIN byte</td>
+<td>Passthrough or refuse</td>
+</tr>
+<tr>
+<td>Unclassified; text over 16 KB</td>
+<td>Scanner</td>
+<td>Pin</td>
+</tr>
+</tbody>
+</table>
+<p>Sharing cost concentrates in untracked SETs, temp tables, and
+prepared handles. The tracked list is AWS’s documented split:
+<code>USE</code> and 14 SETs reuse only among sessions with identical
+values, while 18 further entries pin
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.md">5</a>]</sup>.
+This design replays instead of matching. Application roles are absolute
+because the client holds the <code>sp_unsetapprole</code> cookie
+<sup>[<a href="https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql/creating-application-roles-in-sql-server">75</a>]</sup>.
+Leaks are real. A <code>tedious</code> user found session values visible
+to the next borrower, framed as disclosing salaries or medical records
+because the value was a row-level security key
+<sup>[<a href="https://www.github.com/tediousjs/node-mssql/issues/1483">69</a>]</sup>.</p>
+<h3 id="stored-procedures-the-likeliest-deciding-lever">5.4 Stored
+procedures: the likeliest deciding lever</h3>
+<p>A scanner cannot see inside procedures. Pinning every
+<code>EXEC</code> leaves little to share, and ignoring them is what RDS
+Proxy admits for MySQL and Postgres; its SQL Server section is silent
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.md">5</a>]</sup>.
+A chain of sourced facts shrinks the problem:</p>
+<ul>
+<li>A <code>SET</code> in a procedure or dynamic SQL string is restored
+on return
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statements-transact-sql">76</a>]</sup>.</li>
+<li><code>EXECUTE AS</code> in a module ends at exit
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/execute-as-transact-sql">77</a>]</sup>.</li>
+<li><code>sp_setapprole</code> “can only be executed as direct
+Transact-SQL statements”
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-setapprole-transact-sql">78</a>]</sup>.</li>
+</ul>
+<p>Those premises narrow what a procedure can leave behind, but no
+source enumerates it. The candidates identified here are session
+context, CONTEXT_INFO, global cursors, session-owned locks, and global
+temp tables. So <code>EXEC</code> of an unlisted procedure pins by
+default, and <code>procedures: reuse</code> opens once those rows pass
+on your exact build. This is the one place reset carries real weight,
+all of it inference until a test earns it.</p>
+<h3 id="silent-wrong-answers">5.5 Silent wrong answers</h3>
+<p>Transaction release can also yield wrong results with no error. RDS
+Proxy warns that <code>@@IDENTITY</code>, <code>@@ROWCOUNT</code>, and
+<code>SCOPE_IDENTITY</code> “aren’t always accurate”
+<sup>[<a href="https://docs.aws.eu/AmazonRDS/latest/UserGuide/rds-proxy.html">59</a>]</sup>,
+and tdspool’s README concedes that “querys that contain stateful
+information, such as the need to query @<span class="citation"
+data-cites="identity">@identity</span> after inserting, will not work”
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/README">23</a>]</sup>.
+A client inserting in one autocommit batch and reading the identity in
+the next can land on another connection and receive a plausible wrong
+value. ProxySQL holds the connection after an auto-increment result, but
+TDS has no comparable signal
+<sup>[<a href="https://www.proxysql.com/documentation/multiplexing">11</a>]</sup>.
+The options are a grace hold after writes or declaring the application
+incompatible (inference). No runtime check catches this, so count
+leading reads during shadow and require application review. Sticky has
+no such exposure.</p>
+<h3 id="driver-settings-and-handles">5.6 Driver settings and
+handles</h3>
+<ul>
+<li><strong>JDBC:</strong> the source comment says “First execution, use
+sp_executesql”, later executions use <code>sp_prepexec</code>, and
+<code>prepareMethod=none</code> creates no server handle, sending direct
+SQL or an unprepared <code>sp_executesql</code> RPC
+<sup>[<a href="https://raw.githubusercontent.com/microsoft/mssql-jdbc/main/src/main/java/com/microsoft/sqlserver/jdbc/SQLServerPreparedStatement.java">79</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/microsoft/mssql-jdbc/main/src/main/java/com/microsoft/sqlserver/jdbc/SQLServerDriver.java">80</a>]</sup>.</li>
+<li><strong>SqlClient</strong> without <code>Prepare()</code> uses
+<code>sp_executesql</code>
+<sup>[<a href="https://raw.githubusercontent.com/dotnet/SqlClient/main/src/Microsoft.Data.SqlClient/src/Microsoft/Data/SqlClient/SqlCommand.cs">81</a>]</sup>.</li>
+<li><strong>ODBC</strong> was not established.</li>
+</ul>
+<p>A moved handle raises error 8179, which JDBC retries only with
+statement pooling on, so pinning is correct and configuration avoids it
+<sup>[<a href="https://raw.githubusercontent.com/microsoft/mssql-jdbc/main/src/main/java/com/microsoft/sqlserver/jdbc/SQLServerPreparedStatement.java">79</a>]</sup>.
+But Microsoft scopes <code>prepareMethod</code> options to compatibility
+and migration, not general performance: plan reuse needs forced
+parameterization, and literals appear in traces and can cross the 16 KB
+pin (inference)
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/connect/jdbc/setting-the-connection-properties.md">82</a>]</sup>.</p>
+<p>Handle virtualization waits. PgBouncer’s renames client-chosen names
+<sup>[<a href="https://www.pgbouncer.org/config.html">10</a>]</sup>,
+while TDS handles are server-minted and returned in responses, which
+would need rewriting
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-prepare-transact-sql">83</a>]</sup>.
+Build it only if traces show <code>sp_prepexec</code> dominating among
+clients that cannot change. A per-cluster init batch, as AWS recommends,
+turns a matching <code>SET NOCOUNT ON</code> from a pin into a no-op
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.md">5</a>]</sup>.</p>
+<h3 id="unpinning-on-client-reset-an-undocumented-proposal">5.7
+Unpinning on client reset: an undocumented proposal</h3>
+<p>SqlClient marks the logical session boundary with the reset bit on
+the next command after reactivation
+<sup>[<a href="https://github-redirect.dependabot.com/dotnet/SqlClient/issues/767">72</a>]</sup>.
+Tedious resets only when <code>reset()</code> is called
+<sup>[<a href="https://raw.githubusercontent.com/tediousjs/tedious/master/src/connection.ts">84</a>]</sup>,
+so this applies only to drivers shown to send the bit at checkout. When
+a pinned client’s own reset is acknowledged and its pin causes have
+passed the matrix on this build, drop the pin and release at that
+response’s end. This slows long-pin decay, and no shipped proxy
+documents it. The client pool’s idle interval still holds the backend.
+It also rescues middle-tier row-level security, at an upper bound of one
+backend per logical session.</p>
+<h2 id="authentication-and-encryption">6. Authentication and
+Encryption</h2>
+<p>Client logins normally bind identity to the connection end to end. A
+sharing proxy must terminate login, hold or relay credentials, and open
+backends itself, and it must terminate TLS to read anything. Identity
+decides feasibility before any workload question, and encryption decides
+how much of the fleet a first release can serve.</p>
+<h3 id="no-re-authentication-so-per-principal-pools">6.1 No
+re-authentication, so per-principal pools</h3>
+<p>A search of MS-TDS for re-auth finds only pre-authentication, so it
+shows no re-authentication message
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+LOGIN7 and its SSPI (Windows integrated authentication) or FEDAUTH
+(federated token) exchanges happen once per connection
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Microsoft’s pooler agrees: “The literal token is part of the
+connection-pool key.”
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/connect/ado-net/sql/azure-active-directory-authentication.md">20</a>]</sup>
+RDS Proxy keeps one secret per database user, limited to 200 per proxy
+<sup>[<a href="https://raw.githubusercontent.com/awsdocs/amazon-rds-user-guide/main/doc_source/rds-proxy-setup.md">85</a>]</sup>
+<sup>[<a href="https://docs.aws.eu/AmazonRDS/latest/UserGuide/rds-proxy.html">59</a>]</sup>.</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Client auth</th>
+<th>Proxy can</th>
+<th>Sharing</th>
+<th>Recommendation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SQL login, service account</td>
+<td>De-obfuscate, verify against a store, replay
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/user.c">8</a>]</sup></td>
+<td>Whole key</td>
+<td><strong>Best first target</strong></td>
+</tr>
+<tr>
+<td>SQL login, per-user</td>
+<td>Same, one pool each
+<sup>[<a href="https://raw.githubusercontent.com/awsdocs/amazon-rds-user-guide/main/doc_source/rds-proxy-setup.md">85</a>]</sup></td>
+<td>Shrinks with users</td>
+<td>Check census</td>
+</tr>
+<tr>
+<td>Entra (Microsoft identity) token</td>
+<td>Forward on backend login, keyed on literal token
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup></td>
+<td>Per token</td>
+<td>Test; retire before expiry</td>
+</tr>
+<tr>
+<td>Entra server-driven flow</td>
+<td>Relay FEDAUTHINFO on first login</td>
+<td>One to one</td>
+<td>Nonce echo leaves reuse unverified</td>
+</tr>
+<tr>
+<td>Windows, Kerberos, NTLM</td>
+<td>No secret to replay (inference)</td>
+<td>None</td>
+<td>Passthrough listener</td>
+</tr>
+<tr>
+<td>Extended Protection</td>
+<td>Binding ties to TLS channel</td>
+<td>None</td>
+<td>True passthrough</td>
+</tr>
+</tbody>
+</table>
+<p>Forwarding each first login as a verifier makes a server login the
+cost of every client connection, the expense this project exists to
+remove, so use a secret store. If verification caches, a disabled login
+keeps working until the backend is replaced (inference to test).
+Case-sensitive collations can multiply secrets
+<sup>[<a href="https://raw.githubusercontent.com/awsdocs/amazon-rds-user-guide/main/doc_source/rds-proxy-setup.md">85</a>]</sup>.</p>
+<p>MS-TDS footnotes calling FEDAUTH unsupported do not describe current
+servers: Entra applies to SQL Server 2022 and later, except failover
+cluster instances
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/relational-databases/security/authentication-access/azure-ad-authentication-sql-server-overview.md">86</a>]</sup>.
+RDS Proxy “doesn’t support connections that use Active Directory.”
+<sup>[<a href="https://docs.aws.eu/AmazonRDS/latest/UserGuide/rds-proxy.html">59</a>]</sup>
+ScaleArc advertises Kerberos offload through delegation
+<sup>[<a href="https://doc.scalearc.com/sqlserver311/scalearc-guide-for-sql-server/configuring-scalearc/manage-clusters/status/cluster-settings/scalearc-settings">62</a>]</sup>,
+so Active Directory is outside this design rather than impossible.</p>
+<h3 id="the-shared-login-is-an-experiment">6.2 The shared login is an
+experiment</h3>
+<p>One pool login carrying identity through <code>EXECUTE AS</code> or
+SESSION_CONTEXT would break the K × W floor. Microsoft documents
+<code>WITH NO REVERT COOKIE</code> as “useful in an environment in which
+connection pooling is used” and row-level security with a shared SQL
+user
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/execute-as-transact-sql">77</a>]</sup>
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/row-level-security?view=sql-server-ver16">70</a>]</sup>.
+It stays out of early stages:</p>
+<ul>
+<li><strong>It collides with the discard rules,</strong> deliberately
+setting state they call unreusable, with undocumented reset
+interaction.</li>
+<li><strong>Enforcement moves.</strong> Microsoft’s pattern assumes an
+application controlling its SQL. Through a transparent proxy, clients
+could issue <code>REVERT</code> or overwrite keys, making the scanner
+the security boundary.</li>
+<li><strong>The read-only variant likely defeats itself.</strong> A key
+that “can’t be changed again on this logical connection” suggests one
+connection per user
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/relational-databases/system-stored-procedures/sp-set-session-context-transact-sql.md">87</a>]</sup>.</li>
+<li><strong>Audit shifts.</strong> <code>ORIGINAL_LOGIN()</code> shows
+the pool login, and <code>EXECUTE AS LOGIN</code> is unavailable on
+Azure SQL Database
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/execute-as-transact-sql">77</a>]</sup>.</li>
+</ul>
+<p>No shipped TDS proxy using either technique appears in the sources
+read.</p>
+<h3 id="encryption-tds-8.0-first">6.3 Encryption: TDS 8.0 first</h3>
+<p><strong>TDS 8.0 is the easy path.</strong> ALPN (TLS protocol
+negotiation) value <code>tds/8.0</code> identifies it, and stock TLS
+sockets fit both legs
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+It covers SQL Server 2022 and later and Azure SQL. With
+<code>Encrypt=strict</code>, clients validate the certificate against
+the server name or <code>HostNameInCertificate</code>, so the proxy
+needs one they accept. Microsoft’s “standard network appliances are now
+able to filter and securely passthrough SQL queries” describes routing,
+not visibility
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/networking/tds-8">54</a>]</sup>.</p>
+<p><strong>TDS 7.x is the largest encryption unknown.</strong> The
+client sends “a TLS/SSL message obtained from the TLS/SSL layer
+encapsulated in TDS packet(s) of type PRELOGIN (0x12)”
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Envoy’s StartTls socket switches on a filter’s signal
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/transport_sockets/starttls/v3/starttls.proto">88</a>]</sup>,
+and the Postgres precedent then does TLS directly on the socket
+<sup>[<a href="https://github.com/envoyproxy/envoy/pull/23990">89</a>]</sup>.
+Those facts jointly imply a stock switch would emit bare records where
+the peer expects PRELOGIN framing, so 7.x needs a custom transport
+socket that wraps handshake flights and steps aside. That is inference,
+no source describes the mapping, and a filter-level workaround may
+exist. Prototype it separately. It matters because JDBC defaults to
+<code>encrypt=true</code>, not strict
+<sup>[<a href="https://raw.githubusercontent.com/microsoft/mssql-jdbc/main/src/main/java/com/microsoft/sqlserver/jdbc/SQLServerDriver.java">80</a>]</sup>,
+so a TDS-8.0-only release requires reconfiguring clients. Older servers
+need it on the backend leg. tdspool never solved this
+<sup>[<a href="https://www.freetds.org/userguide/tdspool.html">90</a>]</sup>.</p>
+<h3 id="forging-the-login-response">6.4 Forging the login response</h3>
+<p>Later clients get a template captured from a real backend login.
+tdspool’s 7.1 to 7.3 code order is database ENVCHANGE, message 5701,
+language, message 5703, collation, LOGINACK, packet size, DONE
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/user.c">8</a>]</sup>;
+capture your own server’s response instead.</p>
+<ul>
+<li>Build FEATUREEXTACK (feature acknowledgment) from what the client
+requested and the backend acknowledged, because a client must treat an
+unrequested feature as a protocol error
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.</li>
+<li>Do not acknowledge SESSIONRECOVERY, since recovery fails anyway if a
+backend swap changes version or encryption
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/connect/oledb/features/idle-connection-resiliency?view=sql-server-ver16">91</a>]</sup>.</li>
+<li>Send a real ERROR token on bad credentials, where tdspool has
+<code>TODO send nack before exiting</code>.</li>
+<li>Key pools on login options rather than patching them with
+<code>SET ANSI_DEFAULTS OFF</code>, which a later reset may undo
+(inference).</li>
+</ul>
+<p>tdspool’s GPL header means checking licensing
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/member.c">47</a>]</sup>.</p>
+<h3 id="channel-binding-routing-and-platforms">6.5 Channel binding,
+routing, and platforms</h3>
+<p>Channel binding compares tokens for that TLS channel
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/connect-to-the-database-engine-using-extended-protection">92</a>]</sup>.
+Inference: a terminating proxy creates a different channel, so Windows
+authentication fails under <code>Required</code>. It “isn’t enabled by
+default for SQL Server connections”, so check each instance. Extended
+Protection “doesn’t apply to SQL authentication”
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/connect-to-the-database-engine-using-extended-protection">92</a>]</sup>,
+so SQL logins there stay candidates. Passthrough fixes framing and
+channel binding, not naming: a client addressing the proxy’s name may
+request the wrong SPN (service principal name). That is untested
+inference; the Kerberos SPN page was unreadable.</p>
+<p>ENVCHANGE 20 or 21 redirects the client after login
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2b3eb7e5-d43d-4d1b-bf4d-76b9e3afc791">58</a>]</sup>.
+Forwarding bypasses the proxy, and a pooled connection cannot follow to
+a host outside the cluster (inference). Azure’s Redirect policy,
+recommended by Microsoft and the default inside Azure, uses ports 11000
+to 11999, while the Proxy policy keeps 1433 at higher latency and lower
+throughput
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/connectivity-architecture">93</a>]</sup>.
+Use the Proxy policy first and treat any routing token as a failed
+login.</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Concern</th>
+<th>On-premises</th>
+<th>Managed Instance</th>
+<th>Azure SQL Database</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Isolation after reset</td>
+<td>Preserved</td>
+<td>Reportedly reset</td>
+<td>Reportedly reset, one comment
+<sup>[<a href="https://techcommunity.microsoft.com/t5/azure-database-support-blog/how-to-avoid-transaction-isolation-level-issues-on-azure-sql/ba-p/3967757">66</a>]</sup></td>
+</tr>
+<tr>
+<td>Census scope</td>
+<td>Server-wide, with <code>VIEW SERVER STATE</code>
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/main/docs/relational-databases/system-dynamic-management-views/sys-dm-exec-sessions-transact-sql.md">94</a>]</sup></td>
+<td>Verify</td>
+<td>Current database
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/main/docs/relational-databases/system-dynamic-management-views/sys-dm-exec-connections-transact-sql.md">14</a>]</sup></td>
+</tr>
+<tr>
+<td>Build control</td>
+<td>Yours; gating exact</td>
+<td>Provider (inference)</td>
+<td>Provider (inference); canary mandatory</td>
+</tr>
+</tbody>
+</table>
+<h2 id="connection-pool-design-and-failure-handling">7. Connection Pool
+Design and Failure Handling</h2>
+<p>Envoy already provides per-worker pools, breaker limits, and
+health-driven eviction, and the filter reuses them. What Envoy does not
+know is that a database connection is scarce, slow to create, and bound
+to an identity. The work lies in partitioning correctly, staying under
+the server’s limit, and making every failure look like a database
+error.</p>
+<h3 id="pool-key-and-the-filter-state-route">7.1 Pool key and the
+filter-state route</h3>
+<p>The key is principal, initial database, language, LOGIN7 option
+flags, TDS version, FeatureExt set, read-intent, and application name if
+workloads depend on it. Packet size stays out. Database could leave by
+replaying <code>USE</code>; option flags must stay (inference from
+<code>fODBC</code> handling)
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.</p>
+<p>Envoy allocates separate pools for downstream filter state objects
+“that are hashable and marked as shared with the upstream connection”
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/connection_pooling">18</a>]</sup>.
+After LOGIN7, set a hashable digest of the key and expose it through
+<code>upstreamTransportSocketOptions()</code> as <code>tcp_proxy</code>
+does
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/tcp_proxy/tcp_proxy.h">42</a>]</sup>.
+The cluster manager’s hashing was not read, so verify this first. The
+fallback is Redis-style owned connections
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/common/redis/client_impl.h">95</a>]</sup>,
+rebuilding timeouts, TLS, and breakers. Never hash a raw credential.</p>
+<h3 id="the-budget-and-its-sharpest-trap">7.2 The budget and its
+sharpest trap</h3>
+<p>Limits are shared, but “races between threads may allow limits to be
+potentially exceeded”, and the default is 1024 per cluster
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/upstream/circuit_breaking.rst">7</a>]</sup>.
+The trap is the floor. Even overflowed, a selected host gets one
+connection, bounding the total at
+<code>cluster maximum connections + (number of endpoints in a cluster) * (connection pools for the cluster)</code>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/upstream/circuit_breaking.rst">7</a>]</sup>.
+As illustrative arithmetic and not a measurement, 8 workers, 200
+principals, and 1 endpoint can mean 1,600 pools and a possible overshoot
+of 1,600 connections. “Connections automatically clean up; connection
+pools do not.”
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/upstream/circuit_breaking.rst">7</a>]</sup></p>
+<ul>
+<li>Require <code>max_connections</code> + endpoints × pools ≤ the
+server’s limit, with pools about W × K (inference). Near that limit the
+concurrent-pool cap and principal refusal are the binding controls.
+Draining connections count too
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/upstream/circuit_breaking.rst">7</a>]</sup>.</li>
+<li>Refuse logins past a configured principal count with a TDS
+error.</li>
+<li>Run a small dedicated Envoy, since <code>--concurrency</code> is
+process-wide, with listener connection balancing for long-lived
+connections
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/_sources/intro/arch_overview/intro/threading_model.rst.txt">19</a>]</sup>.</li>
+<li>Disable preconnect
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/conn_pool/conn_pool_base.cc">96</a>]</sup>,
+and shed idle connections by timer
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/tcp/conn_pool.cc">49</a>]</sup>.</li>
+<li>Retire connections below credential lifetime. One maintainer saw
+revalidation about every 10 hours, one observation and no constant
+<sup>[<a href="https://github-redirect.dependabot.com/dotnet/SqlClient/issues/767">72</a>]</sup>.</li>
+</ul>
+<h3 id="queueing-and-backpressure">7.3 Queueing and backpressure</h3>
+<p>Busy pools queue to the pending limit, then fail with
+<code>Overflow</code>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/conn_pool/conn_pool_base.cc">96</a>]</sup>.
+Translate that to an ERROR token and a DONE with the error bit, so the
+session survives. Add an acquire timer, because SqlClient’s 30-second
+request timer otherwise fires first and sends an Attention
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Under sticky, a queued client waits on someone’s disconnect, so read
+common waiting as demand for transaction release.</p>
+<p>Three interactions need budgeting, all inference:</p>
+<ul>
+<li><strong>ADO.NET’s login-failure blocking period</strong>, 5 seconds
+doubling to one minute, can amplify shed logins
+<sup>[<a href="https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql-server-connection-pooling">6</a>]</sup>.</li>
+<li><strong>An application holding a transaction while opening a second
+connection</strong> waits forever if peers hold every backend, a
+deadlock SQL Server cannot see, so waits must be finite.</li>
+<li><strong>A slow client</strong> holds a scarce connection, so
+read-disable upstream on watermark and close on a timer
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/tcp_proxy/tcp_proxy.h">42</a>]</sup>.</li>
+</ul>
+<h3 id="attention">7.4 Attention</h3>
+<p>Attention is an 8-byte packet and the only way to interrupt a
+complete request
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/dc28579f-49b1-4a78-9c5f-63fbda002d2e">97</a>]</sup>.
+“After a client has sent an interrupt signal to the server, the client
+MUST read returning data until the interrupt has been acknowledged.”
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>
+The ack is DONE with DONE_ATTN (0x20), and other responses can precede
+it, so EOM is no boundary while one is outstanding
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/3c06f110-98bd-4d5b-b836-b1ba66452cb7">60</a>]</sup>.
+For a late Attention, the server “MUST send an attention acknowledgment”
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>.
+Conformance is untested, and FreeTDS’s client-side suppression says
+nothing about servers
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/tds/query.c">98</a>]</sup>,
+so keep the timer.</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Arrives while</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lease held</td>
+<td>Forward; release only after <code>DONE_ATTN</code>; on timeout,
+poison</td>
+</tr>
+<tr>
+<td><code>ACQUIRING</code></td>
+<td>Cancel handle; answer locally with <code>DONE_ATTN</code></td>
+</tr>
+<tr>
+<td><code>SCRUBBING</code></td>
+<td>Drop held request; finish scrub; answer locally</td>
+</tr>
+<tr>
+<td><code>IDLE</code></td>
+<td>Answer locally; never touch an upstream</td>
+</tr>
+<tr>
+<td>Partial request</td>
+<td>Forward client’s IGNORE plus EOM; server sends DONE_ERROR
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/dc28579f-49b1-4a78-9c5f-63fbda002d2e">97</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>A late Attention in <code>IDLE</code> cannot reach a shared
+connection, because the session has none. Local acks are inference
+needing per-driver tests. Keep reading downstream during responses, up
+to a buffer bound.</p>
+<h3 id="failure-matrix">7.5 Failure matrix</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Event</th>
+<th>Action</th>
+<th>Basis</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Client closes while acquiring</td>
+<td><code>cancel()</code></td>
+<td>Handle contract
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">25</a>]</sup></td>
+</tr>
+<tr>
+<td>Client dies mid-response or in a transaction</td>
+<td>Close upstream by default</td>
+<td>Server rolls back; cleanup machine is later, per FreeTDS’s blocking
+warning
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/member.c">47</a>]</sup></td>
+</tr>
+<tr>
+<td>Upstream dies, no lease</td>
+<td>Pool removes it</td>
+<td>Session unaffected</td>
+</tr>
+<tr>
+<td>Upstream dies leased or pinned</td>
+<td>Close client; no replay</td>
+<td>Transport loss ends the session
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup></td>
+</tr>
+<tr>
+<td>Scrub or reset fails</td>
+<td>Close; bounded retries; error</td>
+<td>No client SQL ran</td>
+</tr>
+<tr>
+<td>Walker desync</td>
+<td><code>POISONED</code></td>
+<td>Never reused</td>
+</tr>
+<tr>
+<td>Invalid stream, unknown type</td>
+<td>Close both</td>
+<td>“the message receiver SHOULD disconnect the connection”
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup></td>
+</tr>
+<tr>
+<td>Health transition</td>
+<td>Envoy closes connections</td>
+<td><sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/connection_pooling">18</a>]</sup></td>
+</tr>
+<tr>
+<td>Drain or hot restart</td>
+<td>Filter implements drain: release at safe boundary, close idle;
+pinned sessions end with the drain; budget both processes’ pools
+(inference)</td>
+<td>Filter must support it
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/operations/draining.rst">99</a>]</sup>;
+no connection transfer
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/operations/hot_restart.rst">100</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>A connection “no longer viable for reuse” should be closed
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">25</a>]</sup>.
+Count closes by reason, because a rising count is a parser bug report
+written by production.</p>
+<h2 id="lessons-from-existing-proxies">8. Lessons from Existing
+Proxies</h2>
+<p>Most sharing proxies target Postgres and MySQL, whose protocols
+report more session state than TDS. The SQL Server record is far
+thinner, and several apparent precedents turn out not to be.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>System</th>
+<th>What it does</th>
+<th>Lesson</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RDS Proxy</td>
+<td><code>USE</code> and 14 tracked SETs; broad pins; per-user secrets
+<sup>[<a href="https://raw.githubusercontent.com/awsdocs/amazon-rds-user-guide/main/doc_source/rds-proxy-setup.md">85</a>]</sup></td>
+<td>Pin list and credentials, not transaction reuse</td>
+</tr>
+<tr>
+<td>tdspool</td>
+<td>Forged login; sticky; no encryption
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/member.c">47</a>]</sup></td>
+<td>Token order, recovery batch</td>
+</tr>
+<tr>
+<td>Heimdall, ScaleArc</td>
+<td>Heimdall: generic multiplexing, Postgres/MySQL examples, no SQL
+Server detail
+<sup>[<a href="https://discuss.google.dev/t/advanced-connection-pooling-with-the-heimdall-proxy/49591">101</a>]</sup>;
+ScaleArc: SQL Server guide, protocol-aware settings, no multiplexing or
+pin rules in pages read
+<sup>[<a href="https://doc.scalearc.com/sqlserver311/scalearc-guide-for-sql-server/configuring-scalearc/manage-clusters/status/cluster-settings/scalearc-settings">62</a>]</sup></td>
+<td>Plausibility only</td>
+</tr>
+<tr>
+<td>PgBouncer</td>
+<td>Transaction mode by contract; untracked SETs “leak to other clients”
+<sup>[<a href="https://www.pgbouncer.org/config.html">10</a>]</sup></td>
+<td>Explicit client contract</td>
+</tr>
+<tr>
+<td>ProxySQL</td>
+<td>Permanent disable on <code>CREATE TEMPORARY TABLE</code>;
+per-session reasons
+<sup>[<a href="https://www.proxysql.com/documentation/multiplexing">11</a>]</sup></td>
+<td>Pin classes, reason reporting</td>
+</tr>
+<tr>
+<td>Vitess</td>
+<td>Settings-tracking pool; reserves for temp tables and locks
+<sup>[<a href="https://vitess.io/docs/reference/query-serving/reserved-conn/">22</a>]</sup></td>
+<td>Later settings-aware pool</td>
+</tr>
+<tr>
+<td>Odyssey</td>
+<td>Per-route <code>pool_discard</code>, <code>pool_rollback</code>,
+<code>pool_pin_on_listen</code>
+<sup>[<a href="https://raw.githubusercontent.com/yandex/odyssey/master/docs/configuration/rules.md">73</a>]</sup></td>
+<td>Policy as configuration</td>
+</tr>
+<tr>
+<td>Envoy Postgres, MySQL</td>
+<td>Passive decode for stats
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/postgres_proxy/filters/network/source/postgres_decoder.cc">44</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/mysql_proxy/filters/network/source/mysql_filter.cc">27</a>]</sup></td>
+<td>Decoder shape only</td>
+</tr>
+<tr>
+<td>Envoy Redis</td>
+<td>Per-worker owned connections; dedicated transaction client
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/common/redis/client_impl.cc">43</a>]</sup></td>
+<td>Init machine and transaction pin; not its connection ownership</td>
+</tr>
+</tbody>
+</table>
+<p><strong>RDS Proxy contradicts itself.</strong> Its page says “SQL
+transactions on a client connection can multiplex between underlying
+database connections by default.” and, for SQL Server, lists “Creating
+temporary tables, transactions, cursors, or prepared statements.” as pin
+causes
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.md">5</a>]</sup>.
+Searches found no resolution
+<sup>[<a href="https://www.repost.aws/knowledge-center/rds-proxy-connection-pinning-issues">102</a>]</sup>.
+Release after ENVCHANGE 9 or 10 is therefore this design’s own proposal,
+justified by protocol signals and not precedent. An RDS test watching
+<code>DatabaseConnectionsCurrentlySessionPinned</code> would settle
+it.</p>
+<p><strong>tdspool’s code contradicts its README.</strong> The README
+describes per-query allocation
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/README">23</a>]</sup>.
+<code>user.c</code> assigns at login with the comment “so deassign only
+when disconnected”
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/user.c">8</a>]</sup>,
+and the <code>stream.c</code> walker, noting
+<code>XXX 12 for TDS &gt;= 7.2</code>, goes uncalled
+<sup>[<a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/stream.c">103</a>]</sup>.
+Inference: query-level pooling was planned and the tool settled on
+stickiness.</p>
+<p><strong>Commercial material supplies no TDS method.</strong>
+Heimdall’s up-to-20x Odoo gain, from a generic article not about SQL
+Server, needed delayed transactions, because that ORM’s per-activity
+transactions “would normally prevent multiplexing from providing
+benefits”
+<sup>[<a href="https://discuss.google.dev/t/advanced-connection-pooling-with-the-heimdall-proxy/49591">101</a>]</sup>.
+PgBouncer is candid: transaction pooling “breaks client expectations of
+the server by design”
+<sup>[<a href="https://www.pgbouncer.org/features.html">104</a>]</sup>.</p>
+<p><strong>Sharing collapse is silent.</strong> A ProxySQL guide warns a
+proxy can have “silently degraded into a 1:1 connection relay with
+overhead”, and that “A transaction-heavy service may legitimately run at
+3:1, while a read-heavy API should achieve 20:1 or better.”
+<sup>[<a href="https://www.netdata.cloud/guides/proxysql/proxysql-multiplexing-collapse/">105</a>]</sup>
+Those are MySQL rules of thumb, showing spread and not TDS results. Its
+top cause is connectors issuing session setup per connection.</p>
+<p><strong>The absences rest on a bounded search.</strong> It covered
+scholarly sweeps, open-source TDS proxies, vendor pages, driver source,
+and RDS and Microsoft documents. TDSProxy’s source, Dispatch, the Azure
+gateway, and driver issue trackers went unsearched. Among these, only
+RDS Proxy publishes TDS pin semantics. Rmg.Tds
+<sup>[<a href="https://github.com/mgaffigan/Rmg.Tds">106</a>]</sup> and
+TDSBridge
+<sup>[<a href="https://github.com/MindFlavor/TDSBridge">107</a>]</sup>
+forward packets without sharing, and SQL Relay
+<sup>[<a href="https://sqlrelay.sourceforge.net/">108</a>]</sup> shows
+no TDS front end. No open-source TDS multiplexer, fetched vendor page
+claiming SQL Server multiplexing, shipped handle virtualization, shipped
+unpin-on-client-reset, or measured ratio was found. The record searched
+is empty; the technique is not shown impossible. Copy the vocabulary; do
+not import the confidence.</p>
+<h2 id="build-test-and-rollout-plan">9. Build, Test, and Rollout
+Plan</h2>
+<p>One filter is built in stages, each ending at a gate where stopping
+is legitimate. The earliest stages need no filter, because the most
+valuable output is the missing measurement. Testing guidance and gates
+are this design’s recommendations, and thresholds are the operator’s,
+since no source supplies defensible numbers.</p>
+<h3 id="the-census-and-the-two-ratios">9.1 The census and the two
+ratios</h3>
+<p>Stage 0 needs <code>VIEW SERVER STATE</code>, or
+<code>VIEW DATABASE STATE</code> on Azure SQL Database. This unrun query
+uses documented DMVs (dynamic management views)
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/main/docs/relational-databases/system-dynamic-management-views/sys-dm-exec-connections-transact-sql.md">14</a>]</sup>
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/main/docs/relational-databases/system-dynamic-management-views/sys-dm-exec-sessions-transact-sql.md">94</a>]</sup>:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode sql"><code class="sourceCode sql"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- UNBUILT ILLUSTRATION.</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> s.original_login_name, s.database_id, s.language,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>       s.client_interface_name, c.auth_scheme, c.net_transport,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>       <span class="fu">COUNT</span>(<span class="op">*</span>) <span class="kw">AS</span> sessions,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>       <span class="fu">SUM</span>(<span class="cf">CASE</span> <span class="cf">WHEN</span> s.open_transaction_count <span class="op">&gt;</span> <span class="dv">0</span> <span class="cf">THEN</span> <span class="dv">1</span> <span class="cf">ELSE</span> <span class="dv">0</span> <span class="cf">END</span>) <span class="kw">AS</span> in_txn</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> sys.dm_exec_sessions <span class="kw">AS</span> s</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="kw">JOIN</span> sys.dm_exec_connections <span class="kw">AS</span> c <span class="kw">ON</span> c.session_id <span class="op">=</span> s.session_id</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> s.is_user_process <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="kw">GROUP</span> <span class="kw">BY</span> s.original_login_name, s.database_id, s.language,</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>         s.client_interface_name, c.auth_scheme, c.net_transport;</span></code></pre></div>
+<p>Sampled over a day, it approximates K (LOGIN7 flags stay invisible).
+It also gives the Windows share from <code>auth_scheme</code>, the MARS
+share from <code>net_transport</code> = <code>Session</code>, and the
+driver mix. Tune next: lower pool maximums, evaluate
+<code>prepareMethod=none</code> per application, remove needless
+<code>SET</code> batches. Name the binding limit (license, session cap,
+workers, memory, login storms). An idle connection costs about 3 ×
+packet size + 94 KB
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/relational-databases/memory-management-architecture-guide.md">109</a>]</sup>,
+about 106 KB at a 4 KB packet by this report’s arithmetic, so idle count
+alone proves no need. Then compute <strong>required ratio R = peak
+connections otherwise needed ÷ connections you can afford</strong>, and
+stop if R ≤ 1. The passive decoder computes, per cell, concurrent
+sessions and concurrent leases under the transaction rule, giving
+<strong>achievable ratio A = sticky peak ÷ transaction
+peak</strong>.</p>
+<h3 id="stages">9.2 Stages</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Runs</th>
+<th>Exit gate</th>
+<th>Abort or stay</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0. Census</td>
+<td>DMVs, tuning, RDS test</td>
+<td>R &gt; 1; identity permits</td>
+<td>K × W near sessions, or no binding limit: stop</td>
+</tr>
+<tr>
+<td>1. Pin census</td>
+<td>Passive decoder or tracing</td>
+<td>Pins, <code>sp_prepexec</code>, identity reads measured</td>
+<td>Mostly permanent pins: sticky or stop</td>
+</tr>
+<tr>
+<td>2. Sticky</td>
+<td>TDS 8.0, one key; framing only, close at disconnect</td>
+<td>Driver matrix; EOM and Attention captured</td>
+<td>Idle pools: no connection savings, so validate and move on</td>
+</tr>
+<tr>
+<td>3. Matrix and shadow</td>
+<td>Matrix in CI; scanner and walker inline; recycling per verified
+build</td>
+<td>Verified-build file; A ≥ R</td>
+<td>Low would-release rate: stop; all short-lived: recycling may be the
+destination</td>
+</tr>
+<tr>
+<td>4. Transaction, one key</td>
+<td>Low-risk login key</td>
+<td>Canary diffs zero; errors unchanged</td>
+<td>Any diff: back to sticky</td>
+</tr>
+<tr>
+<td>5. Expansion</td>
+<td>More keys; <code>procedures: reuse</code>, unpin on client
+reset</td>
+<td>Pinned fraction flat against age; budget holds</td>
+<td>Decay: tighten or stop</td>
+</tr>
+</tbody>
+</table>
+<p>Handle virtualization and the shared login sit beyond these stages,
+by default unbuilt. Keep <code>one_to_one</code> as a config-push kill
+switch, which may reach only new connections (inference).</p>
+<p>Transaction release needs seven gates together:</p>
+<ul>
+<li><strong>Benefit:</strong> A ≥ R per cell, including pins and the
+worker floor.</li>
+<li><strong>Eligibility:</strong> never-pinned share supports it.</li>
+<li><strong>Matrix:</strong> each row passes or has a discard rule.</li>
+<li><strong>Framing:</strong> captures confirm EOM and late
+Attention.</li>
+<li><strong>Silent results:</strong> no multi-batch identity reads, or
+owners accept.</li>
+<li><strong>Reset cost:</strong> server and audit load acceptable.</li>
+<li><strong>Operations:</strong> sticky ran with no unexplained
+closes.</li>
+</ul>
+<h3 id="the-reset-matrix">9.3 The reset matrix</h3>
+<p>Per platform, build, and TDS version: client A sets state, the proxy
+scrubs, client B reads, and a second session observes
+<code>sys.dm_exec_sessions</code>. A failure means pinning or discarding
+that state on that build. Run it in CI on each update, because behaviour
+has moved across server versions
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/jimmymay/sp_reset_connection-does-not-reset-transaction-isolation-level-unexpected-behavior-by-design">110</a>]</sup>.
+Any commercial proxy you evaluate should face it too.</p>
+<ul>
+<li><strong>Always scrub:</strong> isolation level, including
+<code>BeginTransaction</code> rollback
+<sup>[<a href="https://api.stackexchange.com/2.3/questions/78455189?site=stackoverflow&filter=withbody">111</a>]</sup>,
+<code>TransactionScope</code>, and <code>sp_executesql</code>;
+<code>USE</code> before reset.</li>
+<li><strong>Pin until passed:</strong> SESSION_CONTEXT, normal and
+<code>@read_only=1</code>; CONTEXT_INFO; temp tables; global cursors;
+prepared handles; <code>sp_getapplock</code>; each SET on RDS’s
+lists.</li>
+<li><strong>Discard until passed:</strong> <code>EXECUTE AS</code>
+variants; application roles, with and without cookie.</li>
+<li><strong>Observe:</strong> 0x08 and 0x10 inside local and DTC
+transactions; tokens accompanying ENVCHANGE 18; disabled logins and
+logon triggers; SESSION_CONTEXT in parallel plans under load; late
+Attention; EOM across Attention and large results.</li>
+</ul>
+<h3 id="test-layers">9.4 Test layers</h3>
+<ul>
+<li><strong>Parsers.</strong> Fuzz all three, splitting every message at
+every byte: DONE chains, NBCROW, PLP straddles, ENVCHANGE 15, a commit
+carrying a begin. Use the specification’s hex examples
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>,
+<code>mssql-tds</code> constants
+<sup>[<a href="https://docs.rs/crate/mssql-tds/latest/source/src/message/messages.rs">53</a>]</sup>,
+and Wireshark’s dissector
+<sup>[<a href="https://raw.githubusercontent.com/wireshark/wireshark/master/epan/dissectors/packet-tds.c">50</a>]</sup>.</li>
+<li><strong>Envoy integration.</strong> Adapt
+<code>tcp_proxy_integration_test.cc</code>:
+<code>FakeRawConnection</code>, <code>AbortReset</code>,
+<code>readDisable</code>, <code>waitForCounter</code>, plus a scripted
+TDS backend
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/test/integration/tcp_proxy_integration_test.cc">45</a>]</sup>.
+Add Attention in each state, identity mismatch, idle stray bytes, and
+overflow at <code>--concurrency 2</code>.</li>
+<li><strong>Drivers.</strong> SqlClient, mssql-jdbc, ODBC 18,
+go-mssqldb, tedious, FreeTDS: pooling, cancel, strict encryption, forged
+logins, dictated packet size, MARS refused, client reset under pin.</li>
+<li><strong>Faults and isolation.</strong> Kill the server
+mid-transaction, delay acks, truncate mid-token, expire credentials; run
+two row-level security contexts on one key, asserting zero
+cross-visibility.</li>
+</ul>
+<h3 id="operating-it">9.5 Operating it</h3>
+<p>Export per-key sessions, leases, backends, queue wait, lease hold,
+scrub failures, <code>pin_reason.&lt;reason&gt;</code>, closes by
+reason, <code>walker_desync</code>, <code>attn_timeout</code>,
+<code>sessions_per_backend</code>, and <code>stale_read_risk</code>,
+alongside <code>upstream_cx_overflow</code> and
+<code>upstream_rq_pending_overflow</code>
+<sup>[<a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/upstream/circuit_breaking.rst">7</a>]</sup>.
+Copy ProxySQL’s per-session pin reason
+<sup>[<a href="https://www.proxysql.com/documentation/multiplexing">11</a>]</sup>,
+and alert on change from baseline
+<sup>[<a href="https://www.netdata.cloud/guides/proxysql/proxysql-multiplexing-collapse/">105</a>]</sup>.</p>
+<p>Run canaries from sticky onward: probe the session’s own
+<code>sys.dm_exec_sessions</code> row, including
+<code>transaction_isolation_level</code>, <code>context_info</code>, and
+<code>open_transaction_count</code>, and diff against the login
+baseline; a diff closes the backend and alarms
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/main/docs/relational-databases/system-dynamic-management-views/sys-dm-exec-sessions-transact-sql.md">94</a>]</sup>.
+This cannot see unnamed SESSION_CONTEXT keys, which is why they stay
+pinned. Expect attribution loss: <code>client_net_address</code> shows
+the proxy, and host and program names come from whichever login opened
+the backend
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/main/docs/relational-databases/system-dynamic-management-views/sys-dm-exec-connections-transact-sql.md">14</a>]</sup>.
+Review logon triggers and resource governance before sticky ships.</p>
+<h3 id="where-this-could-go">9.6 Where this could go</h3>
+<p>Identity is moving against sharing. If Entra tokens become per-user
+and short-lived, K grows and backend lifetimes shrink
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/relational-databases/security/authentication-access/azure-ad-authentication-sql-server-overview.md">86</a>]</sup>.
+A server-side re-authentication message would invert this, though
+nothing in the specification suggests one. TDS 8.0 adoption helps,
+retiring the wrapped-TLS socket and extending SNI routing.</p>
+<p>The C++ requirement is the most perishable assumption. Dynamic
+modules aim to match built-in extensions
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/advanced/dynamic_modules">30</a>]</sup>.
+A lease callback family would let the Envoy-free parsers move to Rust
+and remove the custom binary, helped by <code>mssql-tds</code> and
+<code>tds-driver</code>
+<sup>[<a href="https://docs.rs/crate/tds-driver/latest/source/docs/TDS_COMPATIBILITY.md">112</a>]</sup>.
+SESSIONSTATE might also beat text scanning. The server reports
+<code>fRecoverable</code> when SESSIONRECOVERY is negotiated
+<sup>[<a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">9</a>]</sup>,
+and ODBC’s “marked by the server as unrecoverable” error hints at server
+judgment
+<sup>[<a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/connect/odbc/connection-resiliency.md">113</a>]</sup>.
+This is unverified; multiplexed logins strip that feature, so test it on
+a lab or shadow connection.</p>
+<p>Run the census, build the sticky concentrator if it justifies one,
+and enable transaction release only where shadow data and the matrix
+agree on that exact build. A team stopping at recycling sticky with
+short-lived connections has shipped the right product. A per-user
+Windows estate should stop at the census. A shadow ratio near 1 is a
+good result, because it ended the project cheaply. Publishing the
+resulting matrix and ratio would fill the largest gap in this field.</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/upstream.cc">upstream.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/api/envoy/extensions/filters/network/generic_proxy/router/v3/router.proto">router.proto</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/dynamic_modules/abi/abi.h">abi.h</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/golang/common/go/api/filter.go">filter.go</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.md">rds-proxy-pinning.md</a><span
+class="dom">docs.aws.amazon.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql-server-connection-pooling">SQL
+Server Connection Pooling - ADO.NET | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/upstream/circuit_breaking.rst">circuit_breaking.rst</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/user.c">user.c</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://winprotocoldoc.z19.web.core.windows.net/MS-TDS/%5bMS-TDS%5d.pdf">[MS-TDS]
+- v20260617</a><span
+class="dom">winprotocoldoc.z19.web.core.windows.net</span></li>
+<li><a href="https://www.pgbouncer.org/config.html">PgBouncer
+config</a><span class="dom">pgbouncer.org</span></li>
+<li><a href="https://www.proxysql.com/documentation/multiplexing">Multiplexing
+— ProxySQL Documentation</a><span class="dom">proxysql.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/mc-smp/4ada62f7-33c2-45bb-980c-f566f5a6c11a">[MC-SMP]:
+Header | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/mc-smp/2c8a1328-d2e0-434b-a0e8-8a72bbb5505a">[MC-SMP]:
+Flow Control Algorithm | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/main/docs/relational-databases/system-dynamic-management-views/sys-dm-exec-connections-transact-sql.md">sys-dm-exec-connections-transact-sql.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql/enable-multiple-active-result-sets?view=sql-server-2017">Enabling
+Multiple Active Result Sets - ADO.NET Provider for SQL Server |
+Microsoft</a><span class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/relational-databases/native-client/features/using-multiple-active-result-sets-mars?view=sql-server-ver16">Using
+Multiple Active Result Sets (MARS) - SQL Server Native Client |
+Microsoft</a><span class="dom">learn.microsoft.com</span></li>
+<li><a href="https://msdn.microsoft.com/en-IN/library/ms131686(v=sql.100)">Using
+Multiple Active Result Sets (MARS) | Microsoft Learn</a><span
+class="dom">msdn.microsoft.com</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/connection_pooling">Connection
+pooling — envoy 1.41.0-dev-356ec3 documentation</a><span
+class="dom">envoyproxy.io</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/_sources/intro/arch_overview/intro/threading_model.rst.txt">threading_model.rst.txt</a><span
+class="dom">envoyproxy.io</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/connect/ado-net/sql/azure-active-directory-authentication.md">azure-active-directory-authentication.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/archive/blogs/ialonso/misconceptions-around-connection-pooling">Misconceptions
+around connection pooling | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://vitess.io/docs/reference/query-serving/reserved-conn/">The
+Vitess Docs | Reserved Connections</a><span
+class="dom">vitess.io</span></li>
+<li><a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/README">README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github.com/envoyproxy/envoy/issues/2545">MSSQL
+protocol/filter support · Issue #2545 · envoyproxy/envoy ·
+GitHub</a><span class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/tcp/conn_pool.h">conn_pool.h</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github.com/envoyproxy/envoy-filter-example">GitHub
+- envoyproxy/envoy-filter-example: Example of consuming Envoy and
+adding</a><span class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/mysql_proxy/filters/network/source/mysql_filter.cc">mysql_filter.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/postgres_proxy_filter">Postgres
+proxy — envoy 1.41.0-dev-356ec3 documentation</a><span
+class="dom">envoyproxy.io</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/router.h">router.h</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/advanced/dynamic_modules">Dynamic
+modules — envoy 1.41.0-dev-356ec3 documentation</a><span
+class="dom">envoyproxy.io</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/golang/filters/network/source/upstream.cc">upstream.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/golang_filter">Golang
+— envoy 1.41.0-dev-356ec3 documentation</a><span
+class="dom">envoyproxy.io</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/wasm_filter">Wasm
+Network Filter — envoy 1.41.0-dev-356ec3 documentation</a><span
+class="dom">envoyproxy.io</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/generic_proxy_filter">Generic
+proxy — envoy 1.41.0-dev-356ec3 documentation</a><span
+class="dom">envoyproxy.io</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/codec_callbacks.h">codec_callbacks.h</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/upstream.h">upstream.h</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/router.cc">router.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/router/config.cc">config.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/interface/codec.h">codec.h</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/generic_proxy/proxy.cc">proxy.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/extending/extending">Extending
+Envoy for custom use cases — envoy 1.41.0-dev-356ec3
+documentation</a><span class="dom">envoyproxy.io</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/tcp_proxy/tcp_proxy.h">tcp_proxy.h</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/common/redis/client_impl.cc">client_impl.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/contrib/postgres_proxy/filters/network/source/postgres_decoder.cc">postgres_decoder.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/test/integration/tcp_proxy_integration_test.cc">tcp_proxy_integration_test.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/intro/life_of_a_request">Life
+of a Request — envoy 1.41.0-dev-356ec3 documentation</a><span
+class="dom">envoyproxy.io</span></li>
+<li><a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/member.c">member.c</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/envoy/upstream/thread_local_cluster.h">thread_local_cluster.h</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/tcp/conn_pool.cc">conn_pool.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/wireshark/wireshark/master/epan/dissectors/packet-tds.c">packet-tds.c</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/tds/read.c">read.c</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/microsoft/go-mssqldb/main/buf.go">buf.go</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://docs.rs/crate/mssql-tds/latest/source/src/message/messages.rs">mssql-tds
+0.3.0 - Docs.rs</a><span class="dom">docs.rs</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/networking/tds-8">TDS
+8.0 - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/database-engine/configure-windows/sql-server-browser-service-database-engine-and-ssas.md">sql-server-browser-service-database-engine-and-ssas.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/e17e54ae-0fac-48b7-b8a8-c267be297923">[MS-TDS]:
+Packet Data Stream Headers - ALL_HEADERS Rule Definition |
+Microsoft</a><span class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/ce398f9a-7d47-4ede-8f36-9dd6fc21ca43">[MS-TDS]:
+Status | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2b3eb7e5-d43d-4d1b-bf4d-76b9e3afc791">[MS-TDS]:
+ENVCHANGE | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://docs.aws.eu/AmazonRDS/latest/UserGuide/rds-proxy.html">Amazon
+RDS Proxy - Amazon Relational Database Service</a><span
+class="dom">docs.aws.eu</span></li>
+<li><a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/3c06f110-98bd-4d5b-b836-b1ba66452cb7">[MS-TDS]:
+DONE | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://docs.rs/tds-driver/latest/src/tds_driver/tds/codec/transaction_manager.rs.html">transaction_manager.rs
+- source</a><span class="dom">docs.rs</span></li>
+<li><a href="https://doc.scalearc.com/sqlserver311/scalearc-guide-for-sql-server/configuring-scalearc/manage-clusters/status/cluster-settings/scalearc-settings">ScaleArc
+settings</a><span class="dom">doc.scalearc.com</span></li>
+<li><a href="https://github.com/microsoft/mssql-python/pull/343">FIX:
+Fix for isolation level for in-built connection pool by subrata-ms
+·</a><span class="dom">github.com</span></li>
+<li><a href="https://api.stackexchange.com/2.3/questions/9851415?site=stackoverflow&filter=withbody">9851415</a><span
+class="dom">api.stackexchange.com</span></li>
+<li><a href="https://api.stackexchange.com/2.3/questions/9851415/answers?order=desc&sort=votes&site=stackoverflow&filter=withbody">answers</a><span
+class="dom">api.stackexchange.com</span></li>
+<li><a href="https://techcommunity.microsoft.com/t5/azure-database-support-blog/how-to-avoid-transaction-isolation-level-issues-on-azure-sql/ba-p/3967757">How
+to Avoid Transaction Isolation Level Issues on Azure SQL Managed
+Instance</a><span class="dom">techcommunity.microsoft.com</span></li>
+<li><a href="https://www.cnblogs.com/stswordman/archive/2010/08/03/1791322.html">What
+does sp_reset_connection do? - stswordman - 博客园</a><span
+class="dom">cnblogs.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-set-session-context-transact-sql">sp_set_session_context
+(Transact-SQL) - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://www.github.com/tediousjs/node-mssql/issues/1483">dirty
+session · Issue #1483 · tediousjs/node-mssql · GitHub</a><span
+class="dom">github.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/row-level-security?view=sql-server-ver16">Row-Level
+Security - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/t-sql/functions/session-context-transact-sql.md">session-context-transact-sql.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github-redirect.dependabot.com/dotnet/SqlClient/issues/767">Some
+questions on AccessToken, pooling and performance · Issue #767 ·
+dotnet/SqlClient</a><span
+class="dom">github-redirect.dependabot.com</span></li>
+<li><a href="https://raw.githubusercontent.com/yandex/odyssey/master/docs/configuration/rules.md">rules.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/archive/blogs/adonet/minimizing-connection-pool-errors-in-sql-azure">Minimizing
+Connection Pool errors in SQL Azure | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql/creating-application-roles-in-sql-server">Creating
+Application Roles in SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statements-transact-sql">SET
+Statements (Transact-SQL) - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/execute-as-transact-sql">EXECUTE
+AS (Transact-SQL) - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-setapprole-transact-sql">sys.sp_setapprole
+(Transact-SQL) - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://raw.githubusercontent.com/microsoft/mssql-jdbc/main/src/main/java/com/microsoft/sqlserver/jdbc/SQLServerPreparedStatement.java">SQLServerPreparedStatement.java</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/microsoft/mssql-jdbc/main/src/main/java/com/microsoft/sqlserver/jdbc/SQLServerDriver.java">SQLServerDriver.java</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/dotnet/SqlClient/main/src/Microsoft.Data.SqlClient/src/Microsoft/Data/SqlClient/SqlCommand.cs">SqlCommand.cs</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/connect/jdbc/setting-the-connection-properties.md">setting-the-connection-properties.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-prepare-transact-sql">sp_prepare
+(Transact-SQL) - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://raw.githubusercontent.com/tediousjs/tedious/master/src/connection.ts">connection.ts</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/awsdocs/amazon-rds-user-guide/main/doc_source/rds-proxy-setup.md">rds-proxy-setup.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/relational-databases/security/authentication-access/azure-ad-authentication-sql-server-overview.md">Microsoft
+Entra authentication for SQL Server overview</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/relational-databases/system-stored-procedures/sp-set-session-context-transact-sql.md">sp-set-session-context-transact-sql.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/transport_sockets/starttls/v3/starttls.proto">StartTls
+(proto) — envoy 1.41.0-dev-356ec3 documentation</a><span
+class="dom">envoyproxy.io</span></li>
+<li><a href="https://github.com/envoyproxy/envoy/pull/23990">postgres:
+support for upstream SSL by cpakulski · Pull Request #23990 ·
+envoyproxy/envoy</a><span class="dom">github.com</span></li>
+<li><a href="https://www.freetds.org/userguide/tdspool.html">TDS
+Connection Pooling</a><span class="dom">freetds.org</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/connect/oledb/features/idle-connection-resiliency?view=sql-server-ver16">Idle
+Connection Resiliency - OLE DB Driver for SQL Server | Microsoft
+Learn</a><span class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/connect-to-the-database-engine-using-extended-protection">Connect
+to the Database Engine Using Extended Protection - SQL Server |
+Microsoft</a><span class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/connectivity-architecture">Connectivity
+Architecture - Azure SQL Database and SQL database in Fabric |</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/main/docs/relational-databases/system-dynamic-management-views/sys-dm-exec-sessions-transact-sql.md">sys-dm-exec-sessions-transact-sql.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/filters/network/common/redis/client_impl.h">client_impl.h</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/source/common/conn_pool/conn_pool_base.cc">conn_pool_base.cc</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/dc28579f-49b1-4a78-9c5f-63fbda002d2e">[MS-TDS]:
+Attention | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/tds/query.c">query.c</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/operations/draining.rst">draining.rst</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/envoyproxy/envoy/main/docs/root/intro/arch_overview/operations/hot_restart.rst">hot_restart.rst</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://discuss.google.dev/t/advanced-connection-pooling-with-the-heimdall-proxy/49591">Advanced
+Connection Pooling with the Heimdall Proxy - Community Articles
+-</a><span class="dom">discuss.google.dev</span></li>
+<li><a href="https://www.repost.aws/knowledge-center/rds-proxy-connection-pinning-issues">Resolve
+connection pinning issues in RDS Proxy | AWS re:Post</a><span
+class="dom">repost.aws</span></li>
+<li><a href="https://raw.githubusercontent.com/FreeTDS/freetds/master/src/pool/stream.c">stream.c</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://www.pgbouncer.org/features.html">PgBouncer
+features</a><span class="dom">pgbouncer.org</span></li>
+<li><a href="https://www.netdata.cloud/guides/proxysql/proxysql-multiplexing-collapse/">ProxySQL
+multiplexing collapse: when connection pooling silently drops
+to</a><span class="dom">netdata.cloud</span></li>
+<li><a href="https://github.com/mgaffigan/Rmg.Tds">GitHub -
+mgaffigan/Rmg.Tds: Microsoft SQL Server Reverse TDS Reverse
+Proxy</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/MindFlavor/TDSBridge">GitHub -
+MindFlavor/TDSBridge: TDS Proxy library · GitHub</a><span
+class="dom">github.com</span></li>
+<li><a href="https://sqlrelay.sourceforge.net/">firstworks: SQL Relay -
+sqlrelay persistent database connection pool pooling</a><span
+class="dom">sqlrelay.sourceforge.net</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/relational-databases/memory-management-architecture-guide.md">memory-management-architecture-guide.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/archive/blogs/jimmymay/sp_reset_connection-does-not-reset-transaction-isolation-level-unexpected-behavior-by-design">sp_reset_connection
+Does NOT Reset TRANSACTION ISOLATION LEVEL: Unexpected</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://api.stackexchange.com/2.3/questions/78455189?site=stackoverflow&filter=withbody">78455189</a><span
+class="dom">api.stackexchange.com</span></li>
+<li><a href="https://docs.rs/crate/tds-driver/latest/source/docs/TDS_COMPATIBILITY.md">tds-driver
+0.2.0 - Docs.rs</a><span class="dom">docs.rs</span></li>
+<li><a href="https://raw.githubusercontent.com/MicrosoftDocs/sql-docs/live/docs/connect/odbc/connection-resiliency.md">connection-resiliency.md</a><span
+class="dom">raw.githubusercontent.com</span></li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Writing an Envoy
+Extension That Lets MSSQL Sessions Share Server Connections</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-11-04</span></div>
+  <div><span class="k">Sources cited</span><span class="v">113</span></div>
+</div>
+</div></div>
+</body>
+</html>
