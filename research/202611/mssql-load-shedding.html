@@ -1,0 +1,1550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Load Shedding for Microsoft SQL Server: A Survey by Layer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Load Shedding for Microsoft SQL Server: A Survey by Layer</h1>
+<div class="byline">Research report · 59 cited sources · reviewed 2026-11-08</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#what-load-shedding-means-for-sql-server"
+id="toc-what-load-shedding-means-for-sql-server">1. What Load Shedding
+Means for SQL Server</a></li>
+<li><a href="#overload-signals-used-to-trigger-shedding"
+id="toc-overload-signals-used-to-trigger-shedding">2. Overload Signals
+Used to Trigger Shedding</a></li>
+<li><a href="#shedding-inside-the-engine"
+id="toc-shedding-inside-the-engine">3. Shedding Inside the
+Engine</a></li>
+<li><a href="#shedding-in-managed-sql-server-services"
+id="toc-shedding-in-managed-sql-server-services">4. Shedding in Managed
+SQL Server Services</a></li>
+<li><a href="#shedding-at-proxies-and-gateways"
+id="toc-shedding-at-proxies-and-gateways">5. Shedding at Proxies and
+Gateways</a></li>
+<li><a href="#shedding-in-the-application-tier"
+id="toc-shedding-in-the-application-tier">6. Shedding in the Application
+Tier</a></li>
+<li><a href="#how-rejection-reaches-clients-over-tds"
+id="toc-how-rejection-reaches-clients-over-tds">7. How Rejection Reaches
+Clients over TDS</a></li>
+<li><a href="#production-experience-and-how-the-layers-combine"
+id="toc-production-experience-and-how-the-layers-combine">8. Production
+Experience and How the Layers Combine</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>SQL Server has no feature named load shedding. By this
+report’s reading of section 3, boxed SQL Server (the self-hosted
+product, on-premises or on cloud VMs) ships no counter that refuses work
+on workers or running requests; its one instance-wide refusal is the
+static <code>user connections</code> ceiling, 17809
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-17809-database-engine-error">1</a>]</sup>.
+Azure SQL Database refuses new work at per-database worker and session
+counters, ends sessions that over-consume, and silently delays CPU, log
+rate and I/O
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup>.
+On boxed SQL Server, Resource Governor mostly delays work and aborts
+only on per-request or per-group budgets
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>]</sup>,
+and KILL remains a human emergency tool. RDS Proxy and ScaleArc refuse
+by connection count after a wait
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">5</a>,
+<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-connections.html">6</a>,
+<a href="https://web.archive.org/web/2023/https://scalearc.support.ignitetech.com/hc/en-us/articles/360019842579-Does-ScaleArc-queue-connections-when-database-servers-are-unavailable">7</a>]</sup>.
+Callers can refuse without spending an engine worker, but no SQL Server
+outcome from those tools was found. Searches across eight vocabularies
+found no named customer organization describing how it refuses work to
+protect SQL Server; reported incidents show diagnosis, capacity changes
+and manual KILL.</strong></p>
+</div>
+<h2 id="what-load-shedding-means-for-sql-server">1. What Load Shedding
+Means for SQL Server</h2>
+<h3 id="the-strict-definition">1.1 The strict definition</h3>
+<p><strong>Load shedding</strong> means deliberately refusing part of
+the incoming work as a server nears overload, so that accepted work can
+still finish. Amazon frames the purpose as preserving goodput, the
+throughput completed without error and fast enough to be useful
+<sup>[<a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">8</a>]</sup>.
+Google defines the act, “Load shedding drops some proportion of load by
+dropping traffic as the server approaches overload conditions”
+<sup>[<a href="https://sre.google/sre-book/addressing-cascading-failures/">9</a>]</sup>,
+and treats graceful degradation as doing less work per request. Both
+warn that rejection has its own cost
+<sup>[<a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">8</a>,
+<a href="https://sre.google/sre-book/handling-overload/">10</a>]</sup>.</p>
+<p>Among vendor documents read, only AWS applies the word to a SQL
+Server path, saying RDS Proxy “rejects application connections (that is,
+it sheds load)”
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">5</a>]</sup>.
+Microsoft’s pages speak of limits, governance and throttling
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>]</sup>.
+Three verbs cover the territory: refuse (work never starts), delay (work
+waits or runs slower) and kill (running work is ended). Andrew Baker’s
+stop-versus-slow split of Resource Governor is the closest SQL Server
+taxonomy, a recommendation reporting no deployment
+<sup>[<a href="https://andrewbaker.ninja/?p=11422">11</a>]</sup>.</p>
+<h3 id="practices-that-carry-the-label">1.2 Practices that carry the
+label</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Practice</th>
+<th>Example</th>
+<th>Strict shedding?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Admission rejection</td>
+<td>Azure 10928 at the worker cap
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Static policy refusal</td>
+<td>Query governor 8649 on estimated cost;
+<code>ABORT_QUERY_EXECUTION</code> hint, 8778;
+<code>user connections</code> ceiling, 17809
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-17809-database-engine-error">1</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-8649-database-engine-error">12</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints-best-practices">13</a>]</sup></td>
+<td>Not load-keyed</td>
+</tr>
+<tr>
+<td>Bounded queue, then refusal</td>
+<td>RDS Proxy 120 s default; ScaleArc surge queue 60 s
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-connections.html">6</a>,
+<a href="https://web.archive.org/web/2023/https://scalearc.support.ignitetech.com/hc/en-us/articles/360019842579-Does-ScaleArc-queue-connections-when-database-servers-are-unavailable">7</a>]</sup></td>
+<td>Partly</td>
+</tr>
+<tr>
+<td>Long queue</td>
+<td><code>GROUP_MAX_REQUESTS</code> wait state; <code>THREADPOOL</code>
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>,
+<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-the-max-worker-threads-server-configuration-option">14</a>]</sup></td>
+<td>No</td>
+</tr>
+<tr>
+<td>Throttling</td>
+<td>Azure log rate governance; Resource Governor CPU caps
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://techcommunity.microsoft.com/t5/sql-server-support-blog/capping-cpu-using-resource-governor-8211-the-concurrency/ba-p/318300">15</a>]</sup></td>
+<td>No</td>
+</tr>
+<tr>
+<td>Budget abort</td>
+<td>8657, 10961, 1138
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/resource-governor/tempdb-space-resource-governance">16</a>]</sup></td>
+<td>Kill, not admission control</td>
+</tr>
+<tr>
+<td>Session kill</td>
+<td>Azure 40549, 40551 to 40553; <code>KILL</code>
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>,
+<a href="https://www.brentozar.com/archive/2025/12/lets-build-a-better-kill/">17</a>]</sup></td>
+<td>Kill</td>
+</tr>
+<tr>
+<td>Degradation</td>
+<td>Parallelism reduced under worker or memory pressure; cheaper results
+<sup>[<a href="https://sre.google/sre-book/addressing-cascading-failures/">9</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/thread-and-task-architecture-guide">18</a>]</sup></td>
+<td>No</td>
+</tr>
+<tr>
+<td>Offloading</td>
+<td>Read-only routing to replicas
+<sup>[<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>]</sup></td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h3 id="queueing-as-the-boxed-default">1.3 Queueing as the boxed
+default</h3>
+<p>A <strong>worker</strong> is the engine thread that executes a task,
+assigned only to an active request and released when the request is
+served
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-the-max-worker-threads-server-configuration-option">14</a>]</sup>.
+A dbi services post compresses this to “Sleeping costs nothing,
+suspended costs a worker”
+<sup>[<a href="https://www.dbi-services.com/blog/when-an-idle-transaction-starves-the-worker-pool-threadpool/">20</a>]</sup>.
+When every worker is busy, new tasks wait on <code>THREADPOOL</code>; a
+login needs a worker too, so new connections then fail by timeout rather
+than refusal
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-the-max-worker-threads-server-configuration-option">14</a>,
+<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.
+Azure, whose governance is built on Resource Governor, refuses at a
+per-database counter set below physical exhaustion
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup>.
+By this report’s reading of section 3.1, boxed SQL Server ships none
+keyed to workers or running requests.</p>
+<h2 id="overload-signals-used-to-trigger-shedding">2. Overload Signals
+Used to Trigger Shedding</h2>
+<h3 id="signals-by-layer">2.1 Signals by layer</h3>
+<p>An overload signal shows that work is arriving faster than it can
+finish. Two wait types dominate SQL Server guidance:
+<code>THREADPOOL</code> (a task waiting for a worker) and
+<code>RESOURCE_SEMAPHORE</code> (a query waiting for a memory grant). No
+published threshold or control loop that converts any signal into
+automatic refusal on customer-run SQL Server was found in the sources
+reviewed, which use them for diagnosis.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Reader</th>
+<th>Documented caveat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>In-flight count
+<sup>[<a href="https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit">22</a>]</sup></td>
+<td>Caller</td>
+<td>No view of other callers (design logic)</td>
+</tr>
+<tr>
+<td>Pool exhaustion, SqlClient counters
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql-server-connection-pooling">23</a>]</sup></td>
+<td>Caller</td>
+<td>Can mean a leak, blocking or slow queries</td>
+</tr>
+<tr>
+<td>Connection count, <code>DatabaseConnectionsBorrowLatency</code>
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-connections.html">6</a>,
+<a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">8</a>]</sup></td>
+<td>Proxy</td>
+<td>Count is an imprecise load proxy</td>
+</tr>
+<tr>
+<td><code>THREADPOOL</code>; 60-second log message that queries were not
+picked up by a worker thread
+<sup>[<a href="https://www.brentozar.com/?p=21542">24</a>,
+<a href="https://straightpathsql.com/the-curious-case-of-threadpool-waits/">25</a>]</sup></td>
+<td>Operator</td>
+<td>Seen with at most 300 of 701 workers used, from memory
+over-commitment</td>
+</tr>
+<tr>
+<td>Memory Grants Pending
+<sup>[<a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-memory-grant-issues">26</a>]</sup></td>
+<td>Operator</td>
+<td>Says nothing about workers</td>
+</tr>
+<tr>
+<td>User Connections toward 32,767
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-the-max-worker-threads-server-configuration-option">14</a>,
+<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>]</sup></td>
+<td>Operator</td>
+<td>Idle sessions hold no worker</td>
+</tr>
+<tr>
+<td><code>sys.dm_user_db_resource_governance</code>
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup></td>
+<td>Azure operator</td>
+<td>Workers can far exceed requests under parallelism</td>
+</tr>
+<tr>
+<td>CPU metrics in the 70-100% range; <code>LOG_RATE_GOVERNOR</code>
+waits; <code>io_stall_queued</code> columns
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>]</sup></td>
+<td>Azure operator</td>
+<td>No client error</td>
+</tr>
+<tr>
+<td>Errors 10928, 10929, 40501
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup></td>
+<td>Caller</td>
+<td>Absent when CPU, log or I/O merely delay</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cautions-and-signal-access">2.2 Cautions and signal access</h3>
+<p>Practitioner thresholds are diagnostic: Erik Darling treats total
+<code>THREADPOOL</code> wait around 5% to 10% of uptime or more as a
+consistent problem
+<sup>[<a href="https://erikdarling.com/?p=9526">27</a>]</sup>. Michael
+J. Swart, at an online-education company, watches User Connections
+against the ceiling
+<sup>[<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>]</sup>,
+while Amazon concluded that maximum connections “was too imprecise to
+provide the complete answer”
+<sup>[<a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">8</a>]</sup>.</p>
+<p>Shedding distorts its own telemetry: a service shedding 60 percent of
+traffic can show a flattering median latency, and shedding at the
+autoscaling CPU target can suppress scaling
+<sup>[<a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">8</a>]</sup>.</p>
+<p>Workers process logins as well as queries
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-the-max-worker-threads-server-configuration-option">14</a>]</sup>,
+and sessions waiting on <code>THREADPOOL</code> have no session ID yet
+<sup>[<a href="https://erikdarling.com/?p=9526">27</a>]</sup>. Tara
+Kizer reports monitoring tools failing to connect during the event
+<sup>[<a href="https://www.brentozar.com/?p=103628">28</a>]</sup>. No
+source draws the conclusion, but together these imply that a shedder
+hosted inside the engine is least reliable when most needed.</p>
+<h2 id="shedding-inside-the-engine">3. Shedding Inside the Engine</h2>
+<h3 id="what-each-control-does-at-its-limit">3.1 What each control does
+at its limit</h3>
+<p>Engine controls act after a connection reaches the server. Resource
+Governor classifies sessions into workload groups inside resource pools
+and applies per-group or per-request limits. Query Store hints attach
+options to one query without changing its text.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Control</th>
+<th>Action at limit</th>
+<th>Client sees</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>User connection ceiling, up to 32,767
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-17809-database-engine-error">1</a>,
+<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>]</sup></td>
+<td>Refuse login</td>
+<td>17809</td>
+</tr>
+<tr>
+<td>Logon trigger, custom rule
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/triggers/logon-triggers">29</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-17892-database-engine-error">30</a>]</sup></td>
+<td>Refuse session</td>
+<td>17892, severity 14</td>
+</tr>
+<tr>
+<td>Query governor, estimated cost
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-8649-database-engine-error">12</a>]</sup></td>
+<td>Refuse before execution</td>
+<td>8649</td>
+</tr>
+<tr>
+<td>Query Store hints, 2022 on
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints">31</a>]</sup></td>
+<td>Cap grant or parallelism</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>ABORT_QUERY_EXECUTION</code>, 2025, named query
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints-best-practices">13</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints">31</a>]</sup></td>
+<td>Refuse execution</td>
+<td>8778, severity 16</td>
+</tr>
+<tr>
+<td><code>GROUP_MAX_REQUESTS</code>
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>,
+<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup></td>
+<td>Delay in wait state</td>
+<td><code>RESMGR_THROTTLED</code>, no error</td>
+</tr>
+<tr>
+<td><code>CAP_CPU_PERCENT</code>, <code>MAX_CPU_PERCENT</code>
+<sup>[<a href="https://techcommunity.microsoft.com/t5/sql-server-support-blog/capping-cpu-using-resource-governor-8211-the-concurrency/ba-p/318300">15</a>]</sup></td>
+<td>Delay</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>REQUEST_MEMORY_GRANT_TIMEOUT_SEC</code>
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>]</sup></td>
+<td>Usually minimum grant</td>
+<td>Fails only with too many concurrent queries</td>
+</tr>
+<tr>
+<td><code>REQUEST_MAX_MEMORY_GRANT_PERCENT</code>, user groups
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>]</sup></td>
+<td>Lowers parallelism, then fails</td>
+<td>8657</td>
+</tr>
+<tr>
+<td><code>REQUEST_MAX_CPU_TIME_SEC</code>, 5 s sweep
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>]</sup></td>
+<td>Event; abort with trace flag 2422 (2016 SP2, 2017 CU3 on)</td>
+<td>10961</td>
+</tr>
+<tr>
+<td><code>GROUP_MAX_TEMPDB_DATA_*</code>, 2025
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/resource-governor/tempdb-space-resource-governance">16</a>]</sup></td>
+<td>Abort</td>
+<td>1138, severity 17</td>
+</tr>
+<tr>
+<td>Memory grant queue
+<sup>[<a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-memory-grant-issues">26</a>]</sup></td>
+<td>Delay, then fail</td>
+<td><code>RESOURCE_SEMAPHORE</code>, 8645</td>
+</tr>
+<tr>
+<td>Worker pool
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-the-max-worker-threads-server-configuration-option">14</a>,
+<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup></td>
+<td>Delay, login timeout</td>
+<td><code>THREADPOOL</code>, client timeout</td>
+</tr>
+<tr>
+<td><code>KILL</code>, hand-built watchdogs
+<sup>[<a href="https://andrewbaker.ninja/?p=11422">11</a>,
+<a href="https://www.brentozar.com/archive/2025/12/lets-build-a-better-kill/">17</a>,
+<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup></td>
+<td>Kill</td>
+<td>596 in one lab</td>
+</tr>
+</tbody>
+</table>
+<p>By inference from these rows, only the <code>user connections</code>
+ceiling refuses on an instance-wide count; only the memory grant queue
+and worker pool respond to instance load, by running out; logon triggers
+and watchdogs do so only if coded.</p>
+<h3 id="resource-governor-containment-and-the-worker-pool">3.2 Resource
+Governor: containment and the worker pool</h3>
+<p>Microsoft documents that at the <code>GROUP_MAX_REQUESTS</code> limit
+“a session in that group can be created, but is placed in a wait state”
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>]</sup>.
+No page read says whether that wait holds a worker. The one measurement
+found is a dbi services blog test on one SQL Server 2025 Standard lab
+with 2 vCPUs. There, 100 sessions into a group capped at 22 left 56
+queued on <code>RESMGR_THROTTLED</code> and 123 active workers against
+45 at rest, a difference of 78 that equals 22 in flight plus 56 queued
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.
+Worker holding is probable, an inference from one lab; the 600-session
+test under this cap was not run
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.
+Baker’s contrary claim, that a queued session holds “a connection and,
+when it eventually runs, a worker”, has no measurement behind it
+<sup>[<a href="https://andrewbaker.ninja/?p=11422">11</a>]</sup>. The
+author’s summary: “Resource Governor protects the service being called.
+It does not protect the instance”
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.</p>
+<p>Microsoft’s announcement quotes Ola Hallengren of Saxo Bank crediting
+the feature with isolating trading workloads
+<sup>[<a href="https://techcommunity.microsoft.com/blog/sqlserver/resource-governor---a-new-beginning/4470025">32</a>]</sup>.
+Baker argues that “Throttling is only safe when something else is
+guaranteed to end the work”
+<sup>[<a href="https://andrewbaker.ninja/?p=11422">11</a>]</sup>. Bob
+Dorr shows that a CPU cap’s forced wait stalls sessions sharing its
+state. A 1% capped user alone ran 192 transactions per second, an
+uncapped user alone 435 and the two together 240, while two uncapped
+users ran 920 and adding the capped user raised that to 1125; he calls
+it an edge case
+<sup>[<a href="https://techcommunity.microsoft.com/t5/sql-server-support-blog/capping-cpu-using-resource-governor-8211-the-concurrency/ba-p/318300">15</a>]</sup>.
+Containment of a known noisy workload has first-party and testimonial
+support; protection of the worker pool has none in the sources.</p>
+<p>Raising <code>max worker threads</code> is the reverse of shedding,
+since it enlarges the queue; Microsoft says a shortage is probably not
+the real cause
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/thread-and-task-architecture-guide">18</a>]</sup>.</p>
+<h3 id="refusing-logins">3.3 Refusing logins</h3>
+<p>A logon trigger is T-SQL that runs after authentication, the only
+native hook that can refuse a session on custom logic. Microsoft’s
+example denies a login above three sessions and warns that a trigger can
+lock out sysadmins
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/triggers/logon-triggers">29</a>]</sup>.
+The reserved admin connection is unaffected
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-17892-database-engine-error">30</a>]</sup>.
+The DISA STIG (a US defense security baseline) for SQL Server 2022
+requires per-user session limits, names a logon trigger as an example,
+and says limits at a web or application server alone are insufficient
+<sup>[<a href="https://www.stigviewer.com/stigs/microsoft_sql_server_2022_instance/2025-05-30/finding/V-271263">33</a>]</sup>.
+No source reviewed reports a logon trigger used to shed load.</p>
+<p>The one field report concerns a security allowlist trigger: a 2016
+SQLServerCentral poster saw innocent logins rejected in bursts at over
+90% server CPU with no audit row, and the cause was never established
+<sup>[<a href="https://www.sqlservercentral.com/forums/topic/logon-trigger-rejects-connections-when-cpu-use-is-high">34</a>]</sup>.
+The Resource Governor classifier cannot refuse, an inference from its
+return semantics. It yields a group name, failure lands in the default
+group, and slow logic can cause connection timeouts
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/resource-governor/resource-governor-classifier-function">35</a>,
+<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/ResourceGovernor.BestPractices.html">36</a>]</sup>.</p>
+<h3 id="kill-and-accelerated-database-recovery">3.4 KILL and Accelerated
+Database Recovery</h3>
+<p><code>KILL</code> ends a session and rolls back its open work. Brent
+Ozar’s December 2025 sp_kill design, a kill procedure for people who
+would otherwise restart the server, proposed logging suggested kills by
+default and declining to act while a rollback has run about 30 seconds
+<sup>[<a href="https://www.brentozar.com/archive/2025/12/lets-build-a-better-kill/">17</a>]</sup>.
+sp_kill shipped as a first draft in the April 2026 First Responder Kit
+for a client, in a release its author advised skipping for reliability,
+and gained <code>@EmergencyMode</code> in July 2026
+<sup>[<a href="https://newreleases.io/project/github/BrentOzarULTD/SQL-Server-First-Responder-Kit/release/20260407">37</a>,
+<a href="https://newreleases.io/project/github/BrentOzarULTD/SQL-Server-First-Responder-Kit/release/20260708">38</a>]</sup>.
+Those notes do not confirm the design rules shipped. Baker recommends,
+reporting no deployment, an Agent job every 30 seconds that kills listed
+logins’ requests past an elapsed-time limit, because SQL Server has no
+such control
+<sup>[<a href="https://andrewbaker.ninja/?p=11422">11</a>]</sup>.</p>
+<p><strong>Accelerated Database Recovery (ADR)</strong> versions row
+changes so undo does not replay the log, and Microsoft states that
+“Transaction rollback is instantaneous, irrespective of the time that
+the transaction has been active or the number of updates that have been
+made”
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/accelerated-database-recovery-concepts">39</a>]</sup>.
+It is off by default on boxed SQL Server, always enabled in Azure SQL
+Database and Managed Instance, and needs an exclusive database lock to
+enable
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/accelerated-database-recovery-concepts">39</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/accelerated-database-recovery-management">40</a>]</sup>.
+No timed KILL with ADR on was found in the sources reviewed.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Case</th>
+<th>ADR</th>
+<th>Reported figure</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SQLShack insert killed at about 3 minutes
+<sup>[<a href="https://www.sqlshack.com/accelerated-database-recovery-instant-rollback-and-database-recovery/">41</a>]</sup></td>
+<td>Off / On</td>
+<td>Estimated 3567 s rollback / quick, no time given</td>
+</tr>
+<tr>
+<td>SQLShack crash recovery
+<sup>[<a href="https://www.sqlshack.com/accelerated-database-recovery-instant-rollback-and-database-recovery/">41</a>]</sup></td>
+<td>Off / On</td>
+<td>1802 s / 12 s</td>
+</tr>
+<tr>
+<td>Darling, version cleanup
+<sup>[<a href="https://erikdarling.com/accelerated-database-recovery/">42</a>]</sup></td>
+<td>On</td>
+<td>About 37 MB in about 21 min; about 75 MB in about 15 min</td>
+</tr>
+<tr>
+<td>Straight Path client, SQL Server 2019
+<sup>[<a href="https://straightpathsql.com/to-kill-a-spid-or-not-to-kill-a-spid/">43</a>]</sup></td>
+<td>Not stated</td>
+<td>9-10 hours in rollback</td>
+</tr>
+<tr>
+<td>dbi, KILL of a waiting session
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup></td>
+<td>Not applicable</td>
+<td>Worker freed at once</td>
+</tr>
+</tbody>
+</table>
+<p>Darling’s formulation is “the ROLLBACK is instant, but cleanup isn’t”
+<sup>[<a href="https://erikdarling.com/accelerated-database-recovery/">42</a>]</sup>.
+Microsoft warns that high abort rates pressure the version cleaner
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/accelerated-database-recovery-concepts">39</a>]</sup>;
+with Darling’s cleanup times, this implies that mass kills under ADR
+move cost to background cleanup, though no source measures one. Reading
+the 9-10 hour case as ADR-off is an inference from the default. By
+inference from the dbi result
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>,
+waiting sessions are cheap to kill and read-only ones likely so, untimed
+in the sources. Writers are the disputed class.</p>
+<h3 id="the-dedicated-admin-connection">3.5 The dedicated admin
+connection</h3>
+<p>The <strong>dedicated admin connection (DAC)</strong> reserves one
+sysadmin session per instance, local unless
+<code>remote admin connections</code> was enabled beforehand
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/diagnostic-connection-for-database-administrators">44</a>]</sup>.
+Microsoft qualifies it: “SQL Server makes every attempt to make DAC
+connect successfully, but under extreme situations it might not be
+successful”
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/diagnostic-connection-for-database-administrators">44</a>]</sup>.
+In the dbi lab the DAC answered while <code>sqlcmd</code> logins failed,
+at 556 active workers with 154 tasks queued on <code>THREADPOOL</code>,
+and <code>KILL</code> freed workers at once
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.
+No published failure under starvation was found in the sources reviewed,
+weak evidence given how few tests exist. The single-session limit and
+sysadmin requirement jointly imply that a watchdog holding the DAC would
+occupy the only path an operator has
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/diagnostic-connection-for-database-administrators">44</a>]</sup>.
+The DAC is a recovery path, not automated shedding.</p>
+<h2 id="shedding-in-managed-sql-server-services">4. Shedding in Managed
+SQL Server Services</h2>
+<h3 id="service-comparison">4.1 Service comparison</h3>
+<p>Managed services run the same engine family under provider-set
+limits. Azure SQL Database builds its governance on Resource Governor,
+extended with Windows Job Objects and File Server Resource Manager
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>]</sup>.
+Its limits behave in three ways: admission rejection (“New requests are
+rejected when session or worker limits are reached, and clients receive
+an error message”
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>]</sup>),
+per-session kill of running work, and silent delay. Around 2012
+Microsoft announced a machine-level loop on SQL Azure: above 305 workers
+per machine, “the database with the highest requests per second is
+throttled”
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/psssql/worker-thread-governance-coming-to-azure-sql-database">45</a>]</sup>.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Service and behavior</th>
+<th>Effect</th>
+<th>Client sees, and limits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Azure worker and session counters
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup></td>
+<td>Refused</td>
+<td>10928, 10936; Resource ID 1 workers, 2 sessions; parallel plans
+reach the worker limit sooner</td>
+</tr>
+<tr>
+<td>Azure server or engine throttling
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup></td>
+<td>Refused</td>
+<td>10929, 40501, 49918</td>
+</tr>
+<tr>
+<td>Azure outbound REST, 15% of workers, cap 175
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup></td>
+<td>Refused</td>
+<td>10928, Resource ID 4; procedure page says 10%</td>
+</tr>
+<tr>
+<td>Azure per-session: long transaction, tempdb, log space, memory
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup></td>
+<td>Killed</td>
+<td>40549, 40551, 40552, 40553; 40552 is log space, not rate</td>
+</tr>
+<tr>
+<td>Azure data size quota
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup></td>
+<td>Growing writes refused</td>
+<td>40544, elastic pools 1132; SELECT and DELETE continue</td>
+</tr>
+<tr>
+<td>Azure CPU, log rate, I/O
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>]</sup></td>
+<td>Delayed</td>
+<td>Latency, governor waits, queued I/O stalls; no error number</td>
+</tr>
+<tr>
+<td>Azure memory
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>]</sup></td>
+<td>Neither at the limit</td>
+<td>No error from reaching it; rare out-of-memory errors; fits none of
+the three</td>
+</tr>
+<tr>
+<td>Managed Instance: 30000 sessions, 105 × vCores + 800 workers, user
+Resource Governor
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/managed-instance/resource-limits?view=azuresql">46</a>]</sup></td>
+<td>Capacity limits</td>
+<td>10961 at CPU limit by default; no worker-exhaustion error named</td>
+</tr>
+<tr>
+<td>RDS for SQL Server: Resource Governor, default-group grant 1 to 70
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/ResourceGovernor.BestPractices.html">36</a>]</sup></td>
+<td>As boxed, by inference</td>
+<td>Not documented; complex classifier can cause login delays</td>
+</tr>
+</tbody>
+</table>
+<h3 id="refusal-against-queueing-in-one-lab">4.2 Refusal against
+queueing in one lab</h3>
+<p>On a 2-vCore Azure database, 100 sessions calling a 30-second
+endpoint produced 22 completions and 78 immediate 10928 rejections,
+leaving 128 of 150 workers free, while the boxed lab with a group capped
+at 22 served all 100 in waves ending at 150 s with no error
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.
+The refusal came from Azure’s outbound-call cap (Resource ID 4) on
+serial requests; the general worker limit was not load-tested
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.</p>
+<h3 id="managed-instance-and-rds">4.3 Managed Instance and RDS</h3>
+<p>AWS does not say what happens to over-limit requests on RDS, so
+queueing there is an inference from the shared engine and Microsoft’s
+wait-state wording
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>,
+<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/ResourceGovernor.BestPractices.html">36</a>]</sup>.
+AWS warns a complex classifier can time out logins, including RDS
+automation sessions
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/ResourceGovernor.BestPractices.html">36</a>]</sup>.
+Managed Instance pairs fixed session and worker limits with user
+Resource Governor
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/managed-instance/resource-limits?view=azuresql">46</a>]</sup>.
+The pages read establish no load-keyed rejection path on either
+service.</p>
+<h2 id="shedding-at-proxies-and-gateways">5. Shedding at Proxies and
+Gateways</h2>
+<h3 id="product-comparison">5.1 Product comparison</h3>
+<p>A proxy sits between callers and the engine, so it can bound traffic
+without application changes, limited by how much of Tabular Data Stream
+(TDS, SQL Server’s wire protocol) it understands.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Product</th>
+<th>SQL Server position</th>
+<th>Excess handling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RDS Proxy
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">5</a>,
+<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-connections.html">6</a>]</sup></td>
+<td>RDS for SQL Server; not major version 2025</td>
+<td>Queues or throttles, then rejects on connection limits;
+<code>ConnectionBorrowTimeout</code> 120 s default</td>
+</tr>
+<tr>
+<td>ScaleArc, archived 2021 vendor article
+<sup>[<a href="https://web.archive.org/web/2023/https://scalearc.support.ignitetech.com/hc/en-us/articles/360019842579-Does-ScaleArc-queue-connections-when-database-servers-are-unavailable">7</a>]</sup></td>
+<td>Listed for SQL Server</td>
+<td>Surge queue, then “Connection timeout in Server Queue” after 60 s
+default</td>
+</tr>
+<tr>
+<td>Envoy
+<sup>[<a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/operations/overload_manager/overload_manager">47</a>]</sup></td>
+<td>No TDS on the page read</td>
+<td>Closes new TCP connections at accept on its own resource
+pressure</td>
+</tr>
+<tr>
+<td>ProxySQL
+<sup>[<a href="https://proxysql.com/documentation/">48</a>]</sup></td>
+<td>Index lists MySQL, PostgreSQL, ClickHouse; no SQL Server
+section</td>
+<td>Not applicable</td>
+</tr>
+<tr>
+<td>Heimdall
+<sup>[<a href="https://aws.amazon.com/marketplace/pp/B085S2Q91S">49</a>]</sup></td>
+<td>Marketplace listing names SQL Server</td>
+<td>Limit behavior could not be read</td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-the-documented-proxies-do">5.2 What the documented proxies
+do</h3>
+<p>Among proxies whose documentation was read, refusal is count-based
+and follows a wait, and none documents rejecting SQL Server statements
+on a load signal
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">5</a>,
+<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-connections.html">6</a>,
+<a href="https://web.archive.org/web/2023/https://scalearc.support.ignitetech.com/hc/en-us/articles/360019842579-Does-ScaleArc-queue-connections-when-database-servers-are-unavailable">7</a>]</sup>.
+AWS advises keeping <code>MaxConnectionsPercent</code> at least 30%
+above recent peak usage, which treats it as headroom
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-connections.html">6</a>]</sup>.
+A queue longer than the client’s patience converts refusal into a client
+timeout: ScaleArc warns of this, and SqlClient’s Connect Timeout
+defaults to 15 seconds against ScaleArc’s 60
+<sup>[<a href="https://web.archive.org/web/2023/https://scalearc.support.ignitetech.com/hc/en-us/articles/360019842579-Does-ScaleArc-queue-connections-when-database-servers-are-unavailable">7</a>,
+<a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql-server-connection-pooling">23</a>]</sup>.</p>
+<p>Amazon treats proxy connection limits as a last resort and warns that
+surge queues can cause brownouts (partial service loss) because the
+server cannot tell how long a request waited
+<sup>[<a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">8</a>]</sup>.
+That advice assumes a server able to shed on load, which by inference
+from section 3.1 the boxed product is not. RDS Proxy reuses database
+connections across client connections
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">5</a>]</sup>
+and idle sessions hold no worker
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-the-max-worker-threads-server-configuration-option">14</a>]</sup>.
+Together these imply that its cap nears a concurrency cap, except for
+pinned connections (held for one client)
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-connections.html">6</a>]</sup>.
+No source measures this for SQL Server, and none documents a proxy
+synthesizing a server-style error on load.</p>
+<h2 id="shedding-in-the-application-tier">6. Shedding in the Application
+Tier</h2>
+<h3 id="tools">6.1 Tools</h3>
+<p>A refusal made in the calling application spends no engine worker.
+The vocabulary is the pool cap, the concurrency limiter (a bound on
+in-flight calls), the bulkhead (capacity isolated per dependency), the
+circuit breaker (which stops calling a failing dependency) and the retry
+budget (a cap on total retry volume).</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Action on excess</th>
+<th>SQL Server evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SqlClient pool, Max Pool Size 100
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql-server-connection-pooling">23</a>]</sup></td>
+<td>Waits, then client exception at Connect Timeout, 15 s</td>
+<td>Default on; reported mainly as a leak signal</td>
+</tr>
+<tr>
+<td>ASP.NET Core concurrency limiter
+<sup>[<a href="https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit">22</a>]</sup></td>
+<td>Rejects or queues; <code>QueueLimit</code> 0 disables queueing</td>
+<td>None found</td>
+</tr>
+<tr>
+<td>Polly concurrency limiter
+<sup>[<a href="https://www.pollydocs.org/strategies/rate-limiter.html">50</a>]</sup></td>
+<td>Example: 100 concurrent, queue of 50;
+<code>RateLimiterRejectedException</code></td>
+<td>None found</td>
+</tr>
+<tr>
+<td>Netflix priority shedding
+<sup>[<a href="https://www.infoq.com/news/2024/11/netflix-load-shedding/">51</a>]</sup></td>
+<td>Drops low-priority work past the autoscale target</td>
+<td>Not SQL Server</td>
+</tr>
+<tr>
+<td>Semian bulkhead and breaker
+<sup>[<a href="https://github.com/Shopify/semian">52</a>]</sup></td>
+<td>Fails fast</td>
+<td>No SQL Server adapter listed</td>
+</tr>
+<tr>
+<td>Google adaptive throttling and retry budget
+<sup>[<a href="https://sre.google/sre-book/handling-overload/">10</a>]</sup></td>
+<td>Local drop once requests exceed twice accepts; stop retrying at 10%
+per client</td>
+<td>Not SQL Server</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pool-caps-and-fleet-arithmetic">6.2 Pool caps and fleet
+arithmetic</h3>
+<p>The pool cap was not designed as a shedder, and its server-side
+budget is Max Pool Size multiplied by every pool in every application
+instance
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql-server-connection-pooling">23</a>]</sup>.
+Swart describes hundreds of elastically scaled web servers approaching
+the ceiling
+<sup>[<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>]</sup>.
+As an illustration from documented defaults, six instances at the
+default pool size can present 600 active connections to a server with 4
+or fewer logical CPUs, which has 512 default workers
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-the-max-worker-threads-server-configuration-option">14</a>,
+<a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql-server-connection-pooling">23</a>]</sup>.</p>
+<p>No source reviewed publishes a limiter sizing for SQL Server.
+Reserved workers follow concurrent branches times runtime parallelism
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/thread-and-task-architecture-guide">18</a>]</sup>,
+which implies a request-count limit must allow for plan shape. ASP.NET
+Core counters live in each instance, multiplying the effective limit
+<sup>[<a href="https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit">22</a>]</sup>.</p>
+<h3 id="limiters-and-breakers">6.3 Limiters and breakers</h3>
+<p>Explicit limiters are documented and recommended, and no SQL Server
+outcome from them was found. During an infrastructure outage, Netflix’s
+Play API limiter let prefetch availability fall as low as 20% while
+user-initiated availability stayed above 99.4%
+<sup>[<a href="https://www.infoq.com/news/2024/11/netflix-load-shedding/">51</a>]</sup>.
+Semian has run in production since October 2014 with adapters for
+mysql2, Redis, net_http, Trilogy and PostgreSQL; no SQL Server adapter
+is listed in the README
+<sup>[<a href="https://github.com/Shopify/semian">52</a>]</sup>. Of
+calls to <code>sp_invoke_external_rest_endpoint</code> on boxed SQL
+Server, the dbi author writes “If you want the Azure behavior, the
+refusal has to come from the code that makes the call, or from the
+application in front of it”
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.
+Applying this to general SQL Server work is this report’s inference,
+from one lab and no reported deployment.</p>
+<h2 id="how-rejection-reaches-clients-over-tds">7. How Rejection Reaches
+Clients over TDS</h2>
+<h3 id="the-error-token">7.1 The ERROR token</h3>
+<p>A server-side refusal reaches the client as an ERROR token (value
+0xAA) carrying Number, State, Class (severity), MsgText, ServerName,
+ProcName and LineNumber
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/9805e9fa-1f8b-4cf8-8f78-8d2602228635">53</a>]</sup>.
+Class 17 covers running out of resources or exceeding an
+administrator-set limit, and classes 20 to 25 are fatal to the task,
+usually ending the connection
+<sup>[<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/9805e9fa-1f8b-4cf8-8f78-8d2602228635">53</a>]</sup>.
+Drivers decide retriability by error number
+<sup>[<a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">54</a>,
+<a href="https://learn.microsoft.com/en-us/sql/connect/jdbc/connection-resiliency?view=sql-server-ver16">55</a>]</sup>.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Outcome</th>
+<th>Number (severity)</th>
+<th>Surface; driver retry list</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Azure cap, database
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>,
+<a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">54</a>]</sup></td>
+<td>10928 (20)</td>
+<td>ERROR token; SqlClient</td>
+</tr>
+<tr>
+<td>Azure cap, elastic pool
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>,
+<a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">54</a>]</sup></td>
+<td>10936 (20)</td>
+<td>ERROR token; not in SqlClient lines read</td>
+</tr>
+<tr>
+<td>Azure server too busy
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>,
+<a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">54</a>]</sup></td>
+<td>10929 (20 database, 16 elastic-pool table)</td>
+<td>ERROR token; SqlClient</td>
+</tr>
+<tr>
+<td>Azure service busy; not enough resources
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>,
+<a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">54</a>,
+<a href="https://learn.microsoft.com/en-us/sql/connect/jdbc/connection-resiliency?view=sql-server-ver16">55</a>]</sup></td>
+<td>40501 (20); 49918 (16)</td>
+<td>ERROR token; SqlClient, JDBC</td>
+</tr>
+<tr>
+<td>Azure session killed
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>,
+<a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">54</a>]</sup></td>
+<td>40549, 40551 to 40553 (16)</td>
+<td>Session ends; not listed</td>
+</tr>
+<tr>
+<td>Connection ceiling
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-17809-database-engine-error">1</a>,
+<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>,
+<a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">54</a>]</sup></td>
+<td>17809 (not stated)</td>
+<td>Handshake or network errors; not listed</td>
+</tr>
+<tr>
+<td>Logon trigger
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-17892-database-engine-error">30</a>,
+<a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">54</a>]</sup></td>
+<td>17892 (14)</td>
+<td>Login failure; not listed</td>
+</tr>
+<tr>
+<td>Cost limit; budget aborts
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-8649-database-engine-error">12</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/resource-governor/tempdb-space-resource-governance">16</a>]</sup></td>
+<td>8649, 8657, 10961; 1138 (17)</td>
+<td>ERROR token; not listed
+<sup>[<a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">54</a>]</sup></td>
+</tr>
+<tr>
+<td>Boxed worker exhaustion
+<sup>[<a href="https://www.dbi-services.com/blog/when-an-idle-transaction-starves-the-worker-pool-threadpool/">20</a>,
+<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup></td>
+<td>None</td>
+<td>Driver “Login timeout expired”</td>
+</tr>
+<tr>
+<td>Query timeout
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/khen1234/theres-no-such-thing-as-a-query-timeout">56</a>]</sup></td>
+<td>None</td>
+<td>Client exception after attention</td>
+</tr>
+</tbody>
+</table>
+<p>Derived from Azure’s error table [3]:</p>
+<ul>
+<li><strong>Back off:</strong> 10928, 10936, 10929, 40501, 49918.</li>
+<li><strong>Reconnect:</strong> 40613, 40197 (severity 17, not load
+signals).</li>
+<li><strong>Stop retrying until the cause changes:</strong> 40544,
+40549.</li>
+</ul>
+<h3 id="asymmetry-and-its-consequences">7.2 Asymmetry and its
+consequences</h3>
+<p>Azure’s refusal is machine-readable, while boxed saturation mostly
+surfaces as a driver timeout with no server number
+<sup>[<a href="https://www.dbi-services.com/blog/when-an-idle-transaction-starves-the-worker-pool-threadpool/">20</a>,
+<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.
+Azure’s delay classes carry no code
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>]</sup>,
+so a limiter keyed only to error numbers reacts to counter-bounded
+overload alone. A severity-20 rejection generally ends the connection
+while a login needs a worker
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/9805e9fa-1f8b-4cf8-8f78-8d2602228635">53</a>]</sup>.
+By inference, a retry after 10928 or 40501 is probably a new login
+charged against the limit that refused it, which no source measures.</p>
+<h3 id="the-retry-contract">7.3 The retry contract</h3>
+<p>Published guidance is not uniform: the 40501 message says 10 seconds
+and Azure’s troubleshooting page says at least 5 seconds growing to 60
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup>.
+JDBC defaults to a single immediate retry with a 10-second
+<code>connectRetryInterval</code> for later attempts
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/connect/jdbc/connection-resiliency?view=sql-server-ver16">55</a>]</sup>.
+JDBC resiliency covers only the initial connection and idle restoration,
+and <code>retryConn</code> without a leading plus replaces the built-in
+list
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/connect/jdbc/connection-resiliency?view=sql-server-ver16">55</a>]</sup>.
+SqlClient’s blocking period after authentication failure, five seconds
+doubling to one minute, is the one anti-storm device found, and its
+<code>Auto</code> setting disables it for recognized Azure SQL endpoints
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql-server-connection-pooling">23</a>]</sup>.
+None of these pages sets a budget across a fleet.</p>
+<h3 id="attention-and-timeouts">7.4 Attention and timeouts</h3>
+<p>A query timeout is client-side: the client sends an attention (a TDS
+cancel signal) and the server aborts at its next opportunity
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/khen1234/theres-no-such-thing-as-a-query-timeout">56</a>]</sup>.
+“An attention doesn’t rollback open transactions, and it doesn’t stop
+the currently executing query on a dime”
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/khen1234/theres-no-such-thing-as-a-query-timeout">56</a>]</sup>,
+and a frozen client never sends one, so a query can finish after the
+deadline
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/support_sql_france/x-ray-of-sql-server-timeout-and-user-cancel">57</a>]</sup>.
+One traced cancel after about 10 s took about 45 s to answer because of
+rollback
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/support_sql_france/x-ray-of-sql-server-timeout-and-user-cancel">57</a>]</sup>.</p>
+<h2 id="production-experience-and-how-the-layers-combine">8. Production
+Experience and How the Layers Combine</h2>
+<h3 id="what-named-accounts-report">8.1 What named accounts report</h3>
+<p>Public evidence comes as production accounts, vendor testimonials and
+labs, and few involve refusing work.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Source and evidence type</th>
+<th>What was done</th>
+<th>Refused on load?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Swart, 2020, production
+<sup>[<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>]</sup></td>
+<td>Monitored connections, consolidated pools, shortened queries,
+offloaded reads</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Kizer, Straight Path client, 2023, production
+<sup>[<a href="https://straightpathsql.com/the-curious-case-of-threadpool-waits/">25</a>]</sup></td>
+<td>Traced <code>THREADPOOL</code> to memory after asynchronous commit
+did not help; lowered memory settings</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Warren Departee, Straight Path client, 2025, anecdote
+<sup>[<a href="https://straightpathsql.com/to-kill-a-spid-or-not-to-kill-a-spid/">43</a>]</sup></td>
+<td>Client KILL, then waited out the rollback</td>
+<td>Manual kill</td>
+</tr>
+<tr>
+<td>Nick Craver, Stack Overflow, production
+<sup>[<a href="https://threadreaderapp.com/thread/1136983958695108613.html">58</a>]</sup></td>
+<td>Hunted a 150-connection pool that filled and never released</td>
+<td>Pool cap only, treated as a leak</td>
+</tr>
+<tr>
+<td>Hallengren, Saxo Bank, vendor testimonial
+<sup>[<a href="https://techcommunity.microsoft.com/blog/sqlserver/resource-governor---a-new-beginning/4470025">32</a>]</sup></td>
+<td>Isolated workloads by CPU and memory</td>
+<td>No evidence of refusal</td>
+</tr>
+<tr>
+<td>SQLServerCentral poster, 2016, forum
+<sup>[<a href="https://www.sqlservercentral.com/forums/topic/logon-trigger-rejects-connections-when-cpu-use-is-high">34</a>]</sup></td>
+<td>Allowlist trigger rejected innocent logins</td>
+<td>Unintended</td>
+</tr>
+</tbody>
+</table>
+<p>No named customer organization’s account of refusing work to protect
+SQL Server was found. Searches used the vocabularies load shedding,
+<code>THREADPOOL</code>, max connections, Resource Governor, logon
+trigger, HAProxy throttling, Polly bulkhead and circuit breaker, and
+named-party queries (Saxo Bank, bwin, a SQLCAT customer, Stack
+Overflow). Microsoft’s 2012 account of its own throttling
+<sup>[<a href="https://learn.microsoft.com/en-us/archive/blogs/psssql/worker-thread-governance-coming-to-azure-sql-database">45</a>]</sup>
+is a platform operator’s. Stack Exchange could not be searched, and
+private runbooks and conference talks remain unchecked. Worker holding,
+KILL and DAC timing, and retry storms (including a 40501 query) had
+targeted searches. Control loops and limiter sizing rest only on the
+sources collected. Every absence stated in this report carries these
+limits. Public evidence shows what is available and recommended rather
+than what organizations run.</p>
+<h3 id="what-fails">8.2 What fails</h3>
+<p>Observed failures are a 9-10 hour rollback
+<sup>[<a href="https://straightpathsql.com/to-kill-a-spid-or-not-to-kill-a-spid/">43</a>]</sup>,
+an allowlist trigger’s unexplained rejections
+<sup>[<a href="https://www.sqlservercentral.com/forums/topic/logon-trigger-rejects-connections-when-cpu-use-is-high">34</a>]</sup>
+and monitoring tools unable to connect
+<sup>[<a href="https://www.brentozar.com/?p=103628">28</a>]</sup>. The
+one credited fix is Kizer’s memory-setting change
+<sup>[<a href="https://straightpathsql.com/the-curious-case-of-threadpool-waits/">25</a>]</sup>;
+Swart’s list reports no result
+<sup>[<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>]</sup>.
+Retry storms are well theorized; no SQL Server measurement was found.
+Google shows that if three layers each issue “3 retries (4 attempts)”, a
+single user action may create 64 attempts
+<sup>[<a href="https://sre.google/sre-book/addressing-cascading-failures/">9</a>]</sup>.
+It adds that a 10% per-client retry ratio cuts growth from about 3x to
+1.1x
+<sup>[<a href="https://sre.google/sre-book/handling-overload/">10</a>]</sup>.
+Microsoft’s generic pattern warns that aggressive retries “could further
+degrade a busy service”
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/retry">59</a>]</sup>.
+SQL Server accounts are qualitative, such as Kizer’s queries “all
+blocked, timing out and retrying”
+<sup>[<a href="https://www.brentozar.com/?p=103628">28</a>]</sup>.
+Google’s rationale for retrying assumes other tasks may be healthy and
+advises retrying only at the layer above the one rejecting
+<sup>[<a href="https://sre.google/sre-book/handling-overload/">10</a>]</sup>.
+A single primary offers no other task, so by inference the case for
+retry is weaker there.</p>
+<h3 id="how-the-layers-would-combine">8.3 How the layers would
+combine</h3>
+<p>No deployment in the sources reviewed assembles these layers for SQL
+Server. This arrangement is a design inference from Amazon’s
+layered-protection model
+<sup>[<a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">8</a>]</sup>
+and the mechanisms above.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Control, in request order</th>
+<th>Protects against</th>
+<th>Support</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Application limiter, short queue</td>
+<td>Worker exhaustion from known callers</td>
+<td>Documented; one outbound-call lab for the need
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>,
+<a href="https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit">22</a>,
+<a href="https://www.pollydocs.org/strategies/rate-limiter.html">50</a>]</sup></td>
+</tr>
+<tr>
+<td>Pool budgeted across the fleet</td>
+<td>Connection and login floods</td>
+<td>Production accounts
+<sup>[<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>,
+<a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql-server-connection-pooling">23</a>]</sup></td>
+</tr>
+<tr>
+<td>Retry budget at one layer</td>
+<td>Amplification</td>
+<td>Google, no SQL Server data
+<sup>[<a href="https://sre.google/sre-book/handling-overload/">10</a>]</sup></td>
+</tr>
+<tr>
+<td>Proxy cap, wait below client timeout</td>
+<td>Callers that cannot be changed</td>
+<td>Documented; default wait needs lowering
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-connections.html">6</a>,
+<a href="https://web.archive.org/web/2023/https://scalearc.support.ignitetech.com/hc/en-us/articles/360019842579-Does-ScaleArc-queue-connections-when-database-servers-are-unavailable">7</a>]</sup></td>
+</tr>
+<tr>
+<td>Resource Governor budgets, query governor</td>
+<td>Runaway statements</td>
+<td>Documented
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">4</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-8649-database-engine-error">12</a>]</sup></td>
+</tr>
+<tr>
+<td>Logon trigger per login</td>
+<td>Single-login floods</td>
+<td>Documented; adverse forum case
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/triggers/logon-triggers">29</a>,
+<a href="https://www.sqlservercentral.com/forums/topic/logon-trigger-rejects-connections-when-cpu-use-is-high">34</a>]</sup></td>
+</tr>
+<tr>
+<td>DAC and filtered KILL, ADR decided beforehand</td>
+<td>Exhaustion under way</td>
+<td>Documented; one lab
+<sup>[<a href="https://www.brentozar.com/archive/2025/12/lets-build-a-better-kill/">17</a>,
+<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>,
+<a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/diagnostic-connection-for-database-administrators">44</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>The stack assumes a controlled caller fleet. On Azure SQL Database,
+callers can treat 10928, 10929 and 40501 as signals to back off and
+still need a latency signal for the delay classes
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">2</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">3</a>]</sup>.</p>
+<h3 id="open-disagreements">8.4 Open disagreements</h3>
+<p>On placement, Amazon favors decisions at the overloaded server
+<sup>[<a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">8</a>]</sup>,
+Google adds that callers must also throttle because rejection still
+costs the backend
+<sup>[<a href="https://sre.google/sre-book/handling-overload/">10</a>]</sup>,
+and the dbi author places refusal for outbound REST calls in the calling
+code or application
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.
+The STIG requires per-account limits in the database, not total
+sessions, because callers can connect by other means
+<sup>[<a href="https://www.stigviewer.com/stigs/microsoft_sql_server_2022_instance/2025-05-30/finding/V-271263">33</a>]</sup>.
+On goals, Amazon and Google design for overload
+<sup>[<a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">8</a>,
+<a href="https://sre.google/sre-book/addressing-cascading-failures/">9</a>]</sup>
+while Kizer’s incident ended with a memory setting
+<sup>[<a href="https://straightpathsql.com/the-curious-case-of-threadpool-waits/">25</a>]</sup>,
+and Swart argues both sides, calling connection exhaustion almost always
+a symptom but sometimes the root cause once other limits are cleared and
+demand keeps rising
+<sup>[<a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">19</a>]</sup>.
+On Resource Governor, Saxo Bank’s containment testimonial
+<sup>[<a href="https://techcommunity.microsoft.com/blog/sqlserver/resource-governor---a-new-beginning/4470025">32</a>]</sup>
+and the dbi worker count
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>
+answer different goals; the open point is worker holding, where Baker’s
+unmeasured claim
+<sup>[<a href="https://andrewbaker.ninja/?p=11422">11</a>]</sup> meets
+the dbi count
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.</p>
+<h3 id="outlook">8.5 Outlook</h3>
+<p>SQL Server 2025 extends Resource Governor to Standard edition and
+adds tempdb ceilings and <code>ABORT_QUERY_EXECUTION</code>
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints-best-practices">13</a>,
+<a href="https://learn.microsoft.com/en-us/sql/relational-databases/resource-governor/tempdb-space-resource-governance">16</a>,
+<a href="https://techcommunity.microsoft.com/blog/sqlserver/resource-governor---a-new-beginning/4470025">32</a>]</sup>,
+widening in-engine containment.
+<code>sp_invoke_external_rest_endpoint</code>, by contrast, held a
+worker per waiting call with no cap on boxed SQL Server in the one lab
+that measured it
+<sup>[<a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">21</a>]</sup>.
+If slow outbound calls spread, worker exhaustion without a blocking
+chain becomes more likely and pressure for a load-reactive boxed counter
+would grow, a projection from one lab.</p>
+<p>Four experiments would settle most of what is contested:</p>
+<ul>
+<li>A per-task worker capture at a saturated
+<code>GROUP_MAX_REQUESTS</code> cap.</li>
+<li>A timed KILL of a large writer with ADR on and off.</li>
+<li>Repeated DAC attempts under full starvation.</li>
+<li>A measured retry storm against 40501 with and without a budget.</li>
+</ul>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-17809-database-engine-error">MSSQLSERVER_17809
+- SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/resource-limits-logical-server">Resource
+Management - Azure SQL Database | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/troubleshoot-common-errors-issues">Troubleshoot
+Common Connection Issues - Azure SQL &amp; SQL database in Fabric |
+Microsoft Learn</a><span class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-workload-group-transact-sql">CREATE
+WORKLOAD GROUP (Transact-SQL) - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">Amazon
+RDS Proxy - Amazon Relational Database Service</a><span
+class="dom">docs.aws.amazon.com</span></p></li>
+<li><p><a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-connections.html">RDS
+Proxy connection considerations - Amazon Relational Database
+Service</a><span class="dom">docs.aws.amazon.com</span></p></li>
+<li><p><a href="https://web.archive.org/web/2023/https://scalearc.support.ignitetech.com/hc/en-us/articles/360019842579-Does-ScaleArc-queue-connections-when-database-servers-are-unavailable">Does
+ScaleArc queue connections when database servers are unavailable? –
+ScaleArc Support</a><span class="dom">web.archive.org</span></p></li>
+<li><p><a href="https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/">Using
+load shedding to avoid overload | AWS Builder Center</a><span
+class="dom">aws.amazon.com</span></p></li>
+<li><p><a href="https://sre.google/sre-book/addressing-cascading-failures/">Google
+SRE - Cascading Failures: Reducing System Outage</a><span
+class="dom">sre.google</span></p></li>
+<li><p><a href="https://sre.google/sre-book/handling-overload/">Google
+SRE: Load Balancing with Client Side Throttling</a><span
+class="dom">sre.google</span></p></li>
+<li><p><a href="https://andrewbaker.ninja/?p=11422">How to Prevent SQL
+Server Query Stampedes in OLTP Databases</a><span
+class="dom">andrewbaker.ninja</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-8649-database-engine-error">MSSQLSERVER_8649
+- SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints-best-practices">Query
+Store Hints Best Practices - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-the-max-worker-threads-server-configuration-option">Server
+Configuration: max worker threads - SQL Server | Microsoft
+Learn</a><span class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://techcommunity.microsoft.com/t5/sql-server-support-blog/capping-cpu-using-resource-governor-8211-the-concurrency/ba-p/318300">Capping
+CPU using Resource Governor – The Concurrency Mathematics | Microsoft
+Community Hub</a><span
+class="dom">techcommunity.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/resource-governor/tempdb-space-resource-governance">Tempdb
+Space Resource Governance - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://www.brentozar.com/archive/2025/12/lets-build-a-better-kill/">Let's
+Build a Better KILL. What Do We Need to Consider? - Brent Ozar
+Unlimited®</a><span class="dom">brentozar.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/thread-and-task-architecture-guide">Thread
+and task architecture guide - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://michaeljswart.com/2020/10/maximum-simultaneous-user-connections/">Maximum
+Simultaneous User Connections | Michael J. Swart Michael J.
+Swart</a><span class="dom">michaeljswart.com</span></p></li>
+<li><p><a href="https://www.dbi-services.com/blog/when-an-idle-transaction-starves-the-worker-pool-threadpool/">When
+an idle transaction starves the worker pool (THREADPOOL) - dbi
+Blog</a><span class="dom">dbi-services.com</span></p></li>
+<li><p><a href="https://www.dbi-services.com/blog/calling-ai-from-sql-server-2025-can-lock-everyone-out-of-your-on-prem-instance/">Calling
+AI from SQL Server 2025 can lock everyone out of your on-prem instance -
+dbi Blog</a><span class="dom">dbi-services.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit">Rate
+limiting middleware in ASP.NET Core | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/connect/ado-net/sql-server-connection-pooling">SQL
+Server connection pooling with Microsoft.Data.SqlClient - ADO.NET
+Provider for SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://www.brentozar.com/?p=21542">Do Lots of
+Connections Slow Down SQL Server? Look for THREADPOOL!</a><span
+class="dom">brentozar.com</span></p></li>
+<li><p><a href="https://straightpathsql.com/the-curious-case-of-threadpool-waits/">The
+Curious Case of THREADPOOL Waits - Database Blog - Straight Path
+Solutions</a><span class="dom">straightpathsql.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-memory-grant-issues">Troubleshoot
+Memory Grant Issues in SQL Server - SQL Server | Microsoft
+Learn</a><span class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://erikdarling.com/?p=9526">sp_PressureDetector:
+What SQL Server Looks Like Under CPU Pressure | Darling Data</a><span
+class="dom">erikdarling.com</span></p></li>
+<li><p><a href="https://www.brentozar.com/?p=103628">Network Issue or
+THREADPOOL waits? - Brent Ozar Unlimited®</a><span
+class="dom">brentozar.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/triggers/logon-triggers">Logon
+triggers - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-17892-database-engine-error">MSSQLSERVER_17892
+- SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints">Query
+Store Hints - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://techcommunity.microsoft.com/blog/sqlserver/resource-governor---a-new-beginning/4470025">Resource
+governor - a new beginning | Microsoft Community Hub</a><span
+class="dom">techcommunity.microsoft.com</span></p></li>
+<li><p><a href="https://www.stigviewer.com/stigs/microsoft_sql_server_2022_instance/2025-05-30/finding/V-271263">SQL
+Server must limit the number of concurrent sessions per user (V-271263),
+STIG Viewer</a><span class="dom">stigviewer.com</span></p></li>
+<li><p><a href="https://www.sqlservercentral.com/forums/topic/logon-trigger-rejects-connections-when-cpu-use-is-high">Logon
+trigger rejects connections when CPU use is high – SQLServerCentral
+Forums</a><span class="dom">sqlservercentral.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/resource-governor/resource-governor-classifier-function">Resource
+Governor Classifier Function - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/ResourceGovernor.BestPractices.html">Best
+practices for configuring resource governor on RDS for SQL Server -
+Amazon Relational Database Service</a><span
+class="dom">docs.aws.amazon.com</span></p></li>
+<li><p><a href="https://newreleases.io/project/github/BrentOzarULTD/SQL-Server-First-Responder-Kit/release/20260407">BrentOzarULTD/SQL-Server-First-Responder-Kit
+20260407 on GitHub</a><span class="dom">newreleases.io</span></p></li>
+<li><p><a href="https://newreleases.io/project/github/BrentOzarULTD/SQL-Server-First-Responder-Kit/release/20260708">BrentOzarULTD/SQL-Server-First-Responder-Kit
+20260708 on GitHub</a><span class="dom">newreleases.io</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/accelerated-database-recovery-concepts">Accelerated
+Database Recovery (ADR) - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/relational-databases/accelerated-database-recovery-management">Manage
+Accelerated Database Recovery - SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://www.sqlshack.com/accelerated-database-recovery-instant-rollback-and-database-recovery/">Accelerated
+Database Recovery; Instant Rollback and Database Recovery</a><span
+class="dom">sqlshack.com</span></p></li>
+<li><p><a href="https://erikdarling.com/accelerated-database-recovery/">Accelerated
+Database Recovery Archives | Darling Data</a><span
+class="dom">erikdarling.com</span></p></li>
+<li><p><a href="https://straightpathsql.com/to-kill-a-spid-or-not-to-kill-a-spid/">To
+Kill a SPID or Not To Kill a SPID - Database Blog - Straight Path
+Solutions</a><span class="dom">straightpathsql.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/diagnostic-connection-for-database-administrators">Diagnostic
+Connection for Database Administrators - SQL Server | Microsoft
+Learn</a><span class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/archive/blogs/psssql/worker-thread-governance-coming-to-azure-sql-database">Worker
+thread governance coming to Azure SQL Database | Microsoft
+Learn</a><span class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/azure/azure-sql/managed-instance/resource-limits?view=azuresql">Resource
+Limits - Azure SQL Managed Instance | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/operations/overload_manager/overload_manager">Overload
+manager — envoy 1.41.0-dev-fbab4c documentation</a><span
+class="dom">envoyproxy.io</span></p></li>
+<li><p><a href="https://proxysql.com/documentation/">ProxySQL
+Documentation — ProxySQL Documentation</a><span
+class="dom">proxysql.com</span></p></li>
+<li><p><a href="https://aws.amazon.com/marketplace/pp/B085S2Q91S">Heimdall
+Proxy Enterprise Edition | AWS Marketplace</a><span
+class="dom">aws.amazon.com</span></p></li>
+<li><p><a href="https://www.pollydocs.org/strategies/rate-limiter.html">Rate
+limiter resilience strategy | Polly</a><span
+class="dom">pollydocs.org</span></p></li>
+<li><p><a href="https://www.infoq.com/news/2024/11/netflix-load-shedding/">Netflix
+Rolls Out Service-Level Prioritized Load Shedding to Improve Resiliency
+- InfoQ</a><span class="dom">infoq.com</span></p></li>
+<li><p><a href="https://github.com/Shopify/semian">GitHub -
+Shopify/semian: :monkey: Resiliency toolkit for Ruby for failing fast ·
+GitHub</a><span class="dom">github.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/9805e9fa-1f8b-4cf8-8f78-8d2602228635">[MS-TDS]:
+ERROR | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlconfigurableretryfactory">SqlConfigurableRetryFactory
+Class (Microsoft.Data.SqlClient) | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/sql/connect/jdbc/connection-resiliency?view=sql-server-ver16">Connection
+resiliency - JDBC Driver for SQL Server | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/archive/blogs/khen1234/theres-no-such-thing-as-a-query-timeout">There's
+no such thing as a query timeout… | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/archive/blogs/support_sql_france/x-ray-of-sql-server-timeout-and-user-cancel">X-ray
+of SQL Server timeout and user cancel | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+<li><p><a href="https://threadreaderapp.com/thread/1136983958695108613.html">Thread
+by <span class="citation" data-cites="Nick_Craver">@Nick_Craver</span>:
+"We're trying to repro an error we can only catch in production under
+extreme load (after many hours of hunting). I'm about to re-enable the
+[…]" #AspNet</a><span class="dom">threadreaderapp.com</span></p></li>
+<li><p><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/retry">Retry
+pattern - Azure Architecture Center | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></p></li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Load Shedding for
+Microsoft SQL Server: A Survey by Layer</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-11-08</span></div>
+  <div><span class="k">Sources cited</span><span class="v">59</span></div>
+</div>
+</div></div>
+</body>
+</html>
