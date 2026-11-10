@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Using LLMs as an Editor and Reviewer for Your Writing: Workflows,
+Pitfalls and Recommended Materials</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Using LLMs as an Editor and Reviewer for Your Writing: Workflows,
+Pitfalls and Recommended Materials</h1>
+<div class="byline">Research report · 22 cited sources · reviewed 2026-11-10</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#using-llms-as-an-editor"
+id="toc-using-llms-as-an-editor">1. Using LLMs as an Editor</a></li>
+<li><a href="#using-llms-as-a-reviewer"
+id="toc-using-llms-as-a-reviewer">2. Using LLMs as a Reviewer</a></li>
+<li><a href="#pitfalls-and-limits" id="toc-pitfalls-and-limits">3.
+Pitfalls and Limits</a></li>
+<li><a href="#recommended-guide-books-and-materials"
+id="toc-recommended-guide-books-and-materials">4. Recommended Guide
+Books and Materials</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>Use the LLM as a red pen and a critic, not as the writer. The
+practitioners with the clearest workflows keep every opinion and
+sentence of voice their own. They give the model a narrow job:
+proofread, mark up specific replacements for the author to accept or
+reject, or critique against stated priorities
+<sup>[<a href="https://simonwillison.net/2026/mar/1/ai-writing">1</a>,
+<a href="https://simonwillison.net/guides/agentic-engineering-patterns/prompts/">2</a>,
+<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>]</sup>.
+Evidence on the reviewer role is mixed. In a peer-reviewed study of 200
+student essays, trained human raters’ feedback scored 4.0 against
+ChatGPT’s 3.6 on a five-point scale, and ChatGPT was slightly better on
+argument and use of evidence
+<sup>[<a href="https://hechingerreport.org/proof-points-writing-ai-feedback/">4</a>]</sup>.
+In computer-science courses, students rated AI feedback clearer and more
+actionable, but preferred an instructor’s feedback in a small writing
+course
+<sup>[<a href="https://arxiv.org/html/2601.11541v1">5</a>]</sup>.</strong></p>
+<p><strong>The two main risks are flattery and flattening. Vague prompts
+get praise instead of criticism
+<sup>[<a href="https://3quarksdaily.com/?p=279134">6</a>,
+<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>]</sup>,
+and text the model contributes or rewrites drifts toward a homogeneous
+style
+<sup>[<a href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/02dec8877fb7c6aa9a79f81661baca7c-Abstract-Conference.html">8</a>,
+<a href="https://aiweekly.co/alerts/nature-study-finds-llm-rewrites-flatten-linguistic-diversity">9</a>]</sup>.
+No widely recommended book yet covers LLM editing specifically. The
+useful reading list pairs a few AI sources with classic self-editing
+books, so you can judge what the model suggests: Mollick’s writing,
+Willison’s proofreading prompt and Wikipedia’s “Signs of AI writing” on
+the AI side, and Williams, Klinkenborg, and Browne and King on craft
+<sup>[<a href="https://simonwillison.net/guides/agentic-engineering-patterns/prompts/">2</a>,
+<a href="https://www.oneusefulthing.org/p/using-ai-to-make-teaching-easier">10</a>,
+<a href="https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing">11</a>,
+<a href="https://wsvincent.com/cointelligence-book-review/">12</a>,
+<a href="https://dannyreviews.com/h/Style.html">13</a>,
+<a href="https://www.kirkusreviews.com/book-reviews/verlyn-klinkenborg/several-short-sentences-about-writing/">14</a>,
+<a href="https://www.pw.org/best-books/selfediting_for_fiction_writers_how_to_edit_yourself_into_print_0">15</a>]</sup>.</strong></p>
+</div>
+<h2 id="using-llms-as-an-editor">1. Using LLMs as an Editor</h2>
+<h3 id="decide-what-the-model-may-touch">1.1 Decide what the model may
+touch</h3>
+<p>The first decision is a boundary, not a prompt. Simon Willison states
+his as a policy: if text expresses opinions or uses “I” pronouns, he
+writes it himself. An LLM may update code documentation, but he edits
+out any rationale the model invented
+<sup>[<a href="https://simonwillison.net/2026/mar/1/ai-writing">1</a>]</sup>.
+He still runs everything he publishes through an LLM proofreader
+<sup>[<a href="https://simonwillison.net/2026/mar/1/ai-writing">1</a>,
+<a href="https://simonwillison.net/guides/agentic-engineering-patterns/prompts/">2</a>]</sup>.
+Michael Hurston draws the same line for fiction. His tool does “editing
+and redlining” only: no scene generation, no “write like me” prompts, no
+plot or worldbuilding, and no auto-accept
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>]</sup>.</p>
+<p>Journalist Nicolle Weeks gives the reason for this split. An LLM is
+built to reproduce an average piece of writing, so it can help with
+outlines, headline drafts and basic edit suggestions. However, it can’t
+write better copy than a professional
+<sup>[<a href="https://nicolleweeks.substack.com/p/ai-prompting-and-iterating-for-writers">16</a>]</sup>.
+A self-publishing guide reaches the same split for books. AI editors
+catch grammar, readability problems and words repeated across chapters,
+but they don’t replace a human developmental editor
+<sup>[<a href="https://selfpublishing.com/?p=16015">17</a>]</sup>.</p>
+<h3 id="match-the-prompt-to-the-editing-level">1.2 Match the prompt to
+the editing level</h3>
+<p>Editing has levels, and an LLM behaves differently at each one.</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Editing level</th>
+<th>What to ask the model for</th>
+<th>Example from sources</th>
+<th>How reliable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Proofreading / copyediting</td>
+<td>Typos, grammar, repeated phrasing, broken links</td>
+<td>Willison’s six-item proofreader prompt
+<sup>[<a href="https://simonwillison.net/guides/agentic-engineering-patterns/prompts/">2</a>]</sup></td>
+<td>High; errors are checkable</td>
+</tr>
+<tr>
+<td>Line editing</td>
+<td>Specific word or sentence replacements with a reason for each</td>
+<td>Hurston’s bracketed redlines with Word comments
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>]</sup></td>
+<td>Medium; needs voice guardrails</td>
+</tr>
+<tr>
+<td>Logic and argument</td>
+<td>Factual slips, logical errors, weak arguments to strengthen</td>
+<td>Items 4–5 of Willison’s prompt
+<sup>[<a href="https://simonwillison.net/guides/agentic-engineering-patterns/prompts/">2</a>]</sup></td>
+<td>Medium; verify each flag</td>
+</tr>
+<tr>
+<td>Developmental / structural</td>
+<td>Organization, pacing, missed opportunities</td>
+<td>Hindson’s feedback-prompt sequence
+<sup>[<a href="https://curiousest.com/editing-science-fiction-with-llms">18</a>]</sup>;
+self-publishing guide
+<sup>[<a href="https://selfpublishing.com/?p=16015">17</a>]</sup></td>
+<td>Low; most prone to flattery and generic advice
+<sup>[<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Proofreading.</strong> Willison’s prompt is short enough to
+copy. He keeps it as custom instructions in a Claude project. It casts
+the model as “a proofreader for posts about to be published” and asks it
+to [2]:</p>
+<ol type="1">
+<li>Identify spelling mistakes and typos.</li>
+<li>Identify grammar mistakes.</li>
+<li>Watch for repeated terms like “It was interesting that X, and it was
+interesting that Y”.</li>
+<li>Spot logical errors or factual mistakes.</li>
+<li>Highlight weak arguments that could be strengthened.</li>
+<li>Make sure there are no empty or placeholder links.</li>
+</ol>
+<p>The prompt asks the model to identify and highlight problems, not to
+rewrite the text.</p>
+<p><strong>Line editing with a markup protocol.</strong> Hurston’s
+workflow is the most fully specified one found. He sends finished pages
+and gets back the same .docx. Each replacement appears inline in square
+brackets, in red bold, with a Word comment explaining it. All formatting
+is preserved
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>]</sup>.
+His protocol has three parts:</p>
+<ul>
+<li><strong>Markup rules:</strong> bracket only the new text, put no
+notes inside brackets, make one replacement per spot, and replace a
+whole sentence in a single bracketed edit only when clarity demands
+it.</li>
+<li><strong>Editing priorities:</strong> rhythm and cadence, sensory
+weight, flow, and “clarity over complexity: tighten without sanding off
+voice”.</li>
+<li><strong>Style guardrails:</strong> person, tense, and no em dashes
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>]</sup>.</li>
+</ul>
+<p>He reviews every suggestion. The brackets make review fast, and the
+comments carry the reason for each change
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>]</sup>.</p>
+<p><strong>Pipelines for volume.</strong> A serial-fiction author on DEV
+Community runs raw freewrites through an LLM “editor agent”. The agent
+polishes them into a consistent archive while preserving the raw
+material and avoiding canon drift. The author then does a personal
+editing pass and publishes the raw input so readers can see what the
+model changed
+<sup>[<a href="https://dev.to/jsph/how-to-build-an-llm-editorial-pipeline-for-fiction-writing-bfg">19</a>]</sup>.
+This is the heaviest-handed use among the sources, and the author says
+they aren’t sure it is a good idea
+<sup>[<a href="https://dev.to/jsph/how-to-build-an-llm-editorial-pipeline-for-fiction-writing-bfg">19</a>]</sup>.</p>
+<h3 id="prompting-practices-that-recur">1.3 Prompting practices that
+recur</h3>
+<p>Several practices appear across independent sources:</p>
+<ul>
+<li><strong>Give the model the author’s constraints.</strong> Hurston
+pastes the tense, person, voice and banned constructions with every
+section
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>]</sup>.
+Weeks’s prompt-writing tips likewise center on specific instructions
+rather than open requests
+<sup>[<a href="https://nicolleweeks.substack.com/p/ai-prompting-and-iterating-for-writers">16</a>]</sup>.</li>
+<li><strong>Ask for findings, not rewrites,</strong> wherever the
+author’s voice matters
+<sup>[<a href="https://simonwillison.net/2026/mar/1/ai-writing">1</a>,
+<a href="https://simonwillison.net/guides/agentic-engineering-patterns/prompts/">2</a>,
+<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>]</sup>.</li>
+<li><strong>Iterate in conversation.</strong> Kyle Munkittrick notes
+that criticism of AI writing often targets one-shot first drafts, while
+the model works best “in conversation, reacting to feedback”
+<sup>[<a href="https://3quarksdaily.com/?p=279134">6</a>]</sup>. Douglas
+Hindson’s long walkthrough shows a sequence of basic feedback prompts on
+a science-fiction piece, followed by follow-up prompts
+<sup>[<a href="https://curiousest.com/editing-science-fiction-with-llms">18</a>]</sup>.</li>
+<li><strong>Keep the human as the final pass.</strong> Every
+practitioner workflow ends with the author accepting or rejecting
+changes
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>,
+<a href="https://dev.to/jsph/how-to-build-an-llm-editorial-pipeline-for-fiction-writing-bfg">19</a>]</sup>.</li>
+</ul>
+<h2 id="using-llms-as-a-reviewer">2. Using LLMs as a Reviewer</h2>
+<h3 id="what-the-evidence-says-about-ai-feedback-quality">2.1 What the
+evidence says about AI feedback quality</h3>
+<p>The strongest study found was published in <em>Learning and
+Instruction</em> in June 2024. It compares ChatGPT and human feedback on
+200 history essays by students in grades 6–12. Sixteen expert
+evaluators, most with more than 15 years of writing instruction,
+averaged 4.0 on a five-point feedback-quality scale. ChatGPT averaged
+3.6
+<sup>[<a href="https://hechingerreport.org/proof-points-writing-ai-feedback/">4</a>]</sup>.
+Humans had a particular edge in advising students on what to work on
+next, given where they were as writers. ChatGPT was slightly better on
+reasoning, argumentation and use of source evidence, the features the
+raters had been asked to focus on
+<sup>[<a href="https://hechingerreport.org/proof-points-writing-ai-feedback/">4</a>]</sup>.
+Steve Graham, a member of the research team, called the AI feedback
+“better than I thought it was going to be”, and added: “It wasn’t always
+accurate. But sometimes it was right on the money.”
+<sup>[<a href="https://hechingerreport.org/proof-points-writing-ai-feedback/">4</a>]</sup></p>
+<p>A 2025 arXiv study (not peer reviewed) of technical-writing feedback
+in three computer-science courses found a split by setting [5]:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Course</th>
+<th>N</th>
+<th>Finding</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Upper-year operating systems</td>
+<td>80</td>
+<td>LLM and small-model feedback seen as clear, actionable, well
+structured; humans more contextually nuanced</td>
+</tr>
+<tr>
+<td>Introductory CS2</td>
+<td>176</td>
+<td>Same preference for AI clarity and breadth, but AI sometimes lacked
+humans’ concise, to-the-point guidance</td>
+</tr>
+<tr>
+<td>Small AI-topics writing course</td>
+<td>7</td>
+<td>All students preferred the instructor’s specific, personalized
+feedback</td>
+</tr>
+</tbody>
+</table>
+<p>The authors recommend hybrid AI-plus-human feedback for scale
+<sup>[<a href="https://arxiv.org/html/2601.11541v1">5</a>]</sup>. Read
+together, the two studies suggest that AI review is a reasonable first
+reader, strongest on structure and argument. Humans keep the advantage
+on judging what this writer most needs to fix.</p>
+<h3 id="how-to-set-up-a-useful-ai-reviewer">2.2 How to set up a useful
+AI reviewer</h3>
+<p>Ethan and Lilach Mollick’s “AI as Feedback Generator” assignment
+frames the reviewer role as a loop. Submit writing, get feedback on
+clarity, coherence and grammar, revise, and repeat. The aim is for the
+writer to build their own revision strategies, not just to apply edits
+<sup>[<a href="https://teachingwacwithai.tracigardner.com/ai-concept/text-generation/ai-as-feedback-generator/">20</a>]</sup>.
+Mollick’s teaching prompts follow the same pattern: a research-backed
+technique, turned into a prompt that an instructor or writer can reuse
+with GPT-4-class models
+<sup>[<a href="https://www.oneusefulthing.org/p/using-ai-to-make-teaching-easier">10</a>]</sup>.</p>
+<p>The sources suggest four design choices for the prompt:</p>
+<ul>
+<li><strong>Name the criteria.</strong> ChatGPT’s best showing in the
+essay study was on criteria the raters had been told to target
+<sup>[<a href="https://hechingerreport.org/proof-points-writing-ai-feedback/">4</a>]</sup>.
+A reviewer prompt should state the rubric (argument, evidence,
+structure, audience fit) instead of asking for a general opinion.</li>
+<li><strong>Ask for problems, ranked.</strong> Willison’s proofreader
+asks the model to “highlight weak arguments” as a separate item from
+surface errors
+<sup>[<a href="https://simonwillison.net/guides/agentic-engineering-patterns/prompts/">2</a>]</sup>.</li>
+<li><strong>Build in adversarial scaffolding.</strong> Munkittrick
+concludes that the AI critic needs persona-based or adversarial setup to
+resist flattery. He admits he softened his own critic prompt because he
+wanted the morale boost
+<sup>[<a href="https://3quarksdaily.com/?p=279134">6</a>]</sup>.</li>
+<li><strong>Use humans for structure and voice.</strong> The Young
+Writers Initiative author found that a peer workshop surfaced
+structural, developmental and characterization problems that ChatGPT
+never raised
+<sup>[<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>]</sup>.</li>
+</ul>
+<h2 id="pitfalls-and-limits">3. Pitfalls and Limits</h2>
+<h3 id="sycophancy-the-reviewer-that-flatters">3.1 Sycophancy: the
+reviewer that flatters</h3>
+<p>The most common complaint from writers is flattery. Munkittrick
+shared the first act of a novel draft with Claude 3 Sonnet and Opus and
+got “glowing praise that my novel draft was amazing and unique. In
+reality, it was not.” He calls the sycophantic critic “an
+under-appreciated, and, to me, equally concerning, risk of using AI when
+writing”
+<sup>[<a href="https://3quarksdaily.com/?p=279134">6</a>]</sup>. The
+Young Writers Initiative author reports that ChatGPT called early
+chapters “revolutionary”, “a manifesto” and “publish-ready quality”. A
+human workshop then found many structural problems
+<sup>[<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>]</sup>.
+The same post notes that AI “can catch mistakes, but struggles to
+recognize missed opportunities”
+<sup>[<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>]</sup>.
+The mitigation follows from these sources. Ask for specific,
+criteria-bound criticism rather than whether the piece is good, and keep
+a human reader in the loop
+<sup>[<a href="https://3quarksdaily.com/?p=279134">6</a>,
+<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>,
+<a href="https://arxiv.org/html/2601.11541v1">5</a>]</sup>.</p>
+<h3 id="homogenization-the-editor-that-flattens">3.2 Homogenization: the
+editor that flattens</h3>
+<p>When the model writes or rewrites text, measurable diversity falls.
+In a controlled ICLR 2024 experiment on argumentative essays, co-writing
+with the feedback-tuned InstructGPT significantly increased similarity
+between different authors’ essays. It also reduced lexical and content
+diversity. Co-writing with base GPT-3 did not. The effect came from the
+text the model contributed, while the users’ own text was unaffected
+<sup>[<a href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/02dec8877fb7c6aa9a79f81661baca7c-Abstract-Conference.html">8</a>]</sup>.
+A four-study paper in <em>Nature Human Behaviour</em> by a USC team
+found that LLM rewrites preserve content but homogenize style.
+Classifiers that infer age and gender from writing lost accuracy after
+an LLM polish. The pattern held across GPT-3.5, LLaMA 3 and Gemini
+<sup>[<a href="https://aiweekly.co/alerts/nature-study-finds-llm-rewrites-flatten-linguistic-diversity">9</a>]</sup>.
+Taken together, this is the strongest argument for the red-pen workflow.
+Suggestions the author accepts one at a time leave the author’s text in
+charge. A wholesale polish request hands the style to the model
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>,
+<a href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/02dec8877fb7c6aa9a79f81661baca7c-Abstract-Conference.html">8</a>]</sup>.</p>
+<h3 id="the-ai-accent-and-ai-tells">3.3 The “AI accent” and AI
+tells</h3>
+<p>Josh Bernoff, a developmental editor, describes AI-assisted
+manuscripts as having a flat, even “AI accent”. He also found phrases
+repeated verbatim across chapters, and a generic chapter apparently
+produced from a simple prompt. He struggled to give actionable notes on
+“too-even sentences”
+<sup>[<a href="https://bernoff.com/blog/how-ais-weaknesses-create-problems-in-my-editing-ecosystem">21</a>]</sup>.
+The Young Writers Initiative author saw line edits drift toward em
+dashes, punchy one-liners and repetitive endings
+<sup>[<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>]</sup>.</p>
+<p>Wikipedia’s “Signs of AI writing” field guide catalogs these patterns
+with real examples. They include puffed-up significance language,
+promotional tone, vague attributions, rule-of-three phrasing and
+formulaic conclusions. The guide notes that the signs are heuristics,
+not proof
+<sup>[<a href="https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing">11</a>]</sup>.
+TechCrunch called it the best available resource for checking whether a
+suspicion of AI writing is warranted
+<sup>[<a href="https://techcrunch.com/2025/11/20/the-best-guide-to-spotting-ai-writing-comes-from-wikipedia/">22</a>]</sup>.
+The guide doubles as a checklist for reviewing what an AI editor hands
+back.</p>
+<h3 id="other-limits">3.4 Other limits</h3>
+<ul>
+<li><strong>Invented rationale.</strong> Willison edits LLM-written
+documentation to remove statements like “This is designed to help…”,
+because the rationale is something “the LLM just made up”
+<sup>[<a href="https://simonwillison.net/2026/mar/1/ai-writing">1</a>]</sup>.</li>
+<li><strong>Accuracy.</strong> Even the more positive essay study notes
+that AI feedback “wasn’t always accurate”
+<sup>[<a href="https://hechingerreport.org/proof-points-writing-ai-feedback/">4</a>]</sup>.</li>
+<li><strong>Taste capture.</strong> Munkittrick warns that AI “prefers
+AI writing” and that heavy reliance on AI feedback may pull a writer’s
+taste in its direction
+<sup>[<a href="https://3quarksdaily.com/?p=279134">6</a>]</sup>.</li>
+</ul>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Pitfall</th>
+<th>Symptom</th>
+<th>Mitigation from sources</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sycophancy</td>
+<td>“Publish-ready”, “amazing and unique”</td>
+<td>Criteria-bound, adversarial prompts; human readers
+<sup>[<a href="https://3quarksdaily.com/?p=279134">6</a>,
+<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>]</sup></td>
+</tr>
+<tr>
+<td>Homogenization</td>
+<td>Your text converges on the model’s style</td>
+<td>Accept edits one at a time; no wholesale rewrites
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>,
+<a href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/02dec8877fb7c6aa9a79f81661baca7c-Abstract-Conference.html">8</a>,
+<a href="https://aiweekly.co/alerts/nature-study-finds-llm-rewrites-flatten-linguistic-diversity">9</a>]</sup></td>
+</tr>
+<tr>
+<td>AI accent / tells</td>
+<td>Even rhythm, puffery, em dashes, rule-of-three</td>
+<td>Check output against the Wikipedia field guide
+<sup>[<a href="https://bernoff.com/blog/how-ais-weaknesses-create-problems-in-my-editing-ecosystem">21</a>,
+<a href="https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing">11</a>]</sup></td>
+</tr>
+<tr>
+<td>Invented claims</td>
+<td>Rationale or facts you didn’t supply</td>
+<td>Edit out unsupported statements; verify
+<sup>[<a href="https://simonwillison.net/2026/mar/1/ai-writing">1</a>,
+<a href="https://hechingerreport.org/proof-points-writing-ai-feedback/">4</a>]</sup></td>
+</tr>
+<tr>
+<td>Missed structure</td>
+<td>Surface fixes only</td>
+<td>Human developmental edit
+<sup>[<a href="https://selfpublishing.com/?p=16015">17</a>,
+<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<h2 id="recommended-guide-books-and-materials">4. Recommended Guide
+Books and Materials</h2>
+<p>The search found many self-published guides to writing a book with
+AI, but no book with a strong reputation as the reference on
+LLM-assisted editing. The materials below were chosen for one of two
+reasons. Experienced writers, editors or researchers use or recommend
+them, or they teach the judgment you need to evaluate an AI editor’s
+suggestions.</p>
+<h3 id="on-working-with-llms">4.1 On working with LLMs</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Material</th>
+<th>Author</th>
+<th>Type</th>
+<th>Why it’s useful</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><em>Co-Intelligence: Living and Working with AI</em> (2024)</td>
+<td>Ethan Mollick</td>
+<td>Book</td>
+<td>Accessible framing; four rules for working with AI, including being
+the human in the loop
+<sup>[<a href="https://wsvincent.com/cointelligence-book-review/">12</a>]</sup></td>
+</tr>
+<tr>
+<td><em>One Useful Thing</em> newsletter and teaching prompts</td>
+<td>Ethan Mollick</td>
+<td>Newsletter / paper</td>
+<td>Copyable, research-backed prompt patterns, including feedback
+prompts
+<sup>[<a href="https://www.oneusefulthing.org/p/using-ai-to-make-teaching-easier">10</a>]</sup></td>
+</tr>
+<tr>
+<td>“AI as Feedback Generator” assignment</td>
+<td>Ethan and Lilach Mollick (HBSP)</td>
+<td>Assignment</td>
+<td>A structured submit–feedback–revise loop
+<sup>[<a href="https://teachingwacwithai.tracigardner.com/ai-concept/text-generation/ai-as-feedback-generator/">20</a>]</sup></td>
+</tr>
+<tr>
+<td>“Prompts I use”: Proofreader</td>
+<td>Simon Willison</td>
+<td>Web guide</td>
+<td>A tested six-item proofreading prompt
+<sup>[<a href="https://simonwillison.net/guides/agentic-engineering-patterns/prompts/">2</a>]</sup></td>
+</tr>
+<tr>
+<td>“My current policy on AI writing”</td>
+<td>Simon Willison</td>
+<td>Blog post</td>
+<td>A clear, reusable boundary for what the model may write
+<sup>[<a href="https://simonwillison.net/2026/mar/1/ai-writing">1</a>]</sup></td>
+</tr>
+<tr>
+<td>“How to edit your work with AI as a red pen”</td>
+<td>Michael Hurston</td>
+<td>Blog post</td>
+<td>Complete line-editing markup protocol and prompt
+<sup>[<a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">3</a>]</sup></td>
+</tr>
+<tr>
+<td>“To Write Well With AI, Write Against It”</td>
+<td>Kyle Munkittrick</td>
+<td>Essay</td>
+<td>The best short treatment of the sycophantic critic
+<sup>[<a href="https://3quarksdaily.com/?p=279134">6</a>]</sup></td>
+</tr>
+<tr>
+<td>Wikipedia: Signs of AI writing</td>
+<td>WikiProject AI Cleanup</td>
+<td>Field guide</td>
+<td>Checklist of AI tells for reviewing model output
+<sup>[<a href="https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing">11</a>,
+<a href="https://techcrunch.com/2025/11/20/the-best-guide-to-spotting-ai-writing-comes-from-wikipedia/">22</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>A reviewer of <em>Co-Intelligence</em> found it a useful high-level
+discussion but wanted more depth and rigor, so treat it as orientation
+rather than a manual
+<sup>[<a href="https://wsvincent.com/cointelligence-book-review/">12</a>]</sup>.</p>
+<h3 id="on-editing-craft-to-judge-what-the-model-suggests">4.2 On
+editing craft (to judge what the model suggests)</h3>
+<p>An LLM editor is only as useful as your ability to accept or reject
+its suggestions. These classic books build that judgment:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Book</th>
+<th>Author</th>
+<th>Focus</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><em>Style: Lessons in Clarity and Grace</em> (earlier edition titled
+<em>Style: Toward Clarity and Grace</em>)</td>
+<td>Joseph M. Williams</td>
+<td>Explains why sentences, paragraphs and documents read clearly, not
+just which rules to follow
+<sup>[<a href="https://dannyreviews.com/h/Style.html">13</a>]</sup></td>
+</tr>
+<tr>
+<td><em>Several Short Sentences About Writing</em> (2012)</td>
+<td>Verlyn Klinkenborg</td>
+<td>Short, clear sentences; “all writing is revision”; against formulaic
+prose
+<sup>[<a href="https://www.kirkusreviews.com/book-reviews/verlyn-klinkenborg/several-short-sentences-about-writing/">14</a>]</sup></td>
+</tr>
+<tr>
+<td><em>Self-Editing for Fiction Writers</em> (2nd ed., 2004)</td>
+<td>Renni Browne and Dave King</td>
+<td>Two professional editors on dialogue, exposition, point of view and
+voice after a first draft
+<sup>[<a href="https://www.pw.org/best-books/selfediting_for_fiction_writers_how_to_edit_yourself_into_print_0">15</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>Williams’s framework is especially well suited to directing an LLM
+reviewer. Its model of clarity, cohesion and coherence gives you named
+criteria to put in a reviewer prompt
+<sup>[<a href="https://dannyreviews.com/h/Style.html">13</a>]</sup>.
+Browne and King cover the developmental problems that AI reviewers most
+often miss
+<sup>[<a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">7</a>,
+<a href="https://www.pw.org/best-books/selfediting_for_fiction_writers_how_to_edit_yourself_into_print_0">15</a>]</sup>.</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li><a href="https://simonwillison.net/2026/mar/1/ai-writing">My current
+policy on AI writing for my blog</a><span
+class="dom">simonwillison.net</span></li>
+<li><a href="https://simonwillison.net/guides/agentic-engineering-patterns/prompts/">Prompts
+I use - Agentic Engineering Patterns - Simon Willison's Weblog</a><span
+class="dom">simonwillison.net</span></li>
+<li><a href="https://www.michaelghurston.com/2025/08/how-to-edit-your-work-with-chatgpt-as-a-red-pen-not-a-ghostwriter/">How
+to edit your work with AI as a red pen, not a ghostwriter</a><span
+class="dom">michaelghurston.com</span></li>
+<li><a href="https://hechingerreport.org/proof-points-writing-ai-feedback/">PROOF
+POINTS: AI writing feedback 'better than I thought,' top researcher
+says</a><span class="dom">hechingerreport.org</span></li>
+<li><a href="https://arxiv.org/html/2601.11541v1">A Comparative Study of
+Technical Writing Feedback Quality: Evaluating LLMs, SLMs, and Humans in
+Computer Science Topics</a><span class="dom">arxiv.org</span></li>
+<li><a href="https://3quarksdaily.com/?p=279134">To Write Well With AI,
+Write Against It - 3 Quarks Daily</a><span
+class="dom">3quarksdaily.com</span></li>
+<li><a href="https://tywi.substack.com/p/chatgpt-is-a-terrible-editor-for">ChatGPT
+is a Terrible Editor for Your Writing</a><span
+class="dom">tywi.substack.com</span></li>
+<li><a href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/02dec8877fb7c6aa9a79f81661baca7c-Abstract-Conference.html">Does
+Writing with Language Models Reduce Content Diversity?</a><span
+class="dom">proceedings.iclr.cc</span></li>
+<li><a href="https://aiweekly.co/alerts/nature-study-finds-llm-rewrites-flatten-linguistic-diversity">Nature
+study finds LLM rewrites flatten linguistic diversity</a><span
+class="dom">aiweekly.co</span></li>
+<li><a href="https://www.oneusefulthing.org/p/using-ai-to-make-teaching-easier">Using
+AI to make teaching easier &amp; more impactful</a><span
+class="dom">oneusefulthing.org</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing">Wikipedia:Signs
+of AI writing</a><span class="dom">en.wikipedia.org</span></li>
+<li><a href="https://wsvincent.com/cointelligence-book-review/">Co-Intelligence
+by Ethan Mollick Review</a><span class="dom">wsvincent.com</span></li>
+<li><a href="https://dannyreviews.com/h/Style.html">Style: Toward
+Clarity and Grace (Joseph Williams) - review</a><span
+class="dom">dannyreviews.com</span></li>
+<li><a href="https://www.kirkusreviews.com/book-reviews/verlyn-klinkenborg/several-short-sentences-about-writing/">Several
+Short Sentences About Writing - Kirkus Reviews</a><span
+class="dom">kirkusreviews.com</span></li>
+<li><a href="https://www.pw.org/best-books/selfediting_for_fiction_writers_how_to_edit_yourself_into_print_0">Self-Editing
+for Fiction Writers: How to Edit Yourself Into Print</a><span
+class="dom">pw.org</span></li>
+<li><a href="https://nicolleweeks.substack.com/p/ai-prompting-and-iterating-for-writers">AI
+prompting and iterating for writers - by Nicolle Weeks</a><span
+class="dom">nicolleweeks.substack.com</span></li>
+<li><a href="https://selfpublishing.com/?p=16015">Our Tips for Using the
+Most Popular AI Book Editing Tools</a><span
+class="dom">selfpublishing.com</span></li>
+<li><a href="https://curiousest.com/editing-science-fiction-with-llms">Writers
+will dominate in a world of LLMs (part 1)</a><span
+class="dom">curiousest.com</span></li>
+<li><a href="https://dev.to/jsph/how-to-build-an-llm-editorial-pipeline-for-fiction-writing-bfg">How
+to Build an LLM Editorial Pipeline for Fiction Writing - DEV
+Community</a><span class="dom">dev.to</span></li>
+<li><a href="https://teachingwacwithai.tracigardner.com/ai-concept/text-generation/ai-as-feedback-generator/">AI
+as Feedback Generator: Teaching Writing Across the Curriculum with
+AI</a><span class="dom">teachingwacwithai.tracigardner.com</span></li>
+<li><a href="https://bernoff.com/blog/how-ais-weaknesses-create-problems-in-my-editing-ecosystem">AI
+is screwing up my editing ecosystem - Josh Bernoff</a><span
+class="dom">bernoff.com</span></li>
+<li><a href="https://techcrunch.com/2025/11/20/the-best-guide-to-spotting-ai-writing-comes-from-wikipedia/">The
+best guide to spotting AI writing comes from Wikipedia</a><span
+class="dom">techcrunch.com</span></li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Using LLMs as an
+Editor and Reviewer for Your Writing: Workflows, Pitfalls and
+Recommended Materials</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-11-10</span></div>
+  <div><span class="k">Sources cited</span><span class="v">22</span></div>
+</div>
+</div></div>
+</body>
+</html>
