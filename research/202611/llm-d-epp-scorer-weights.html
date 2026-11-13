@@ -1,0 +1,1405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Choosing and Weighting Scorers in the llm-d Endpoint
+Picker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Choosing and Weighting Scorers in the llm-d Endpoint Picker</h1>
+<div class="byline">Research report · 64 cited sources · reviewed 2026-11-13</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#how-epp-scoring-works-filters-scorers-weights-and-pickers"
+id="toc-how-epp-scoring-works-filters-scorers-weights-and-pickers">1.
+How EPP Scoring Works: Filters, Scorers, Weights and Pickers</a></li>
+<li><a href="#the-scorer-catalog-signals-strengths-and-failure-modes"
+id="toc-the-scorer-catalog-signals-strengths-and-failure-modes">2. The
+Scorer Catalog: Signals, Strengths and Failure Modes</a></li>
+<li><a
+href="#deciding-which-scorers-to-enable-by-workload-and-deployment-shape"
+id="toc-deciding-which-scorers-to-enable-by-workload-and-deployment-shape">3.
+Deciding Which Scorers to Enable by Workload and Deployment
+Shape</a></li>
+<li><a href="#default-configurations-and-weights-in-llm-d-guides"
+id="toc-default-configurations-and-weights-in-llm-d-guides">4. Default
+Configurations and Weights in llm-d Guides</a></li>
+<li><a href="#tuning-scorer-weights-method-ratios-and-measurement-loop"
+id="toc-tuning-scorer-weights-method-ratios-and-measurement-loop">5.
+Tuning Scorer Weights: Method, Ratios and Measurement Loop</a></li>
+<li><a href="#evidence-disagreements-and-pitfalls"
+id="toc-evidence-disagreements-and-pitfalls">6. Evidence, Disagreements
+and Pitfalls</a></li>
+<li><a href="#recommended-playbook" id="toc-recommended-playbook">7.
+Recommended Playbook</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>Since llm-d v0.9, choosing scorers has mostly been a question
+of structure, not weights. The well-lit-path guides run the
+prefix-cache-affinity-filter, one load scorer matched to the resource
+that saturates first (token-load-scorer for prefill-bound pools,
+active-request-scorer for decode-bound ones), and max-score-picker. With
+one scorer, the weight cannot change any routing decision, so tuning
+means calibrating the filter’s release gate: a measured
+peakPrefillThroughput multiplied by a maxTTFTPenaltyMs taken from the
+time-to-first-token (TTFT) budget. The gate is the right default but
+needs ongoing attention: in late 2026 it missed slot-bound queues and
+decode hotspots, triggered a production overload cascade, and had its
+estimator changed on 11 November. Pin the router version and watch the
+load_override counter. Weights still matter where a profile combines
+signals (tiered caches, fairness, LoRA, context length, topology); set
+them with effective-weight arithmetic and confirm with repeated
+benchmarks. Predicted-latency routing is the next step for homogeneous
+pools with high-variance traffic and service-level objectives
+(SLOs).</strong></p>
+</div>
+<h2 id="how-epp-scoring-works-filters-scorers-weights-and-pickers">1.
+How EPP Scoring Works: Filters, Scorers, Weights and Pickers</h2>
+<p>The EPP (Endpoint Picker) is the scheduling component that the llm-d
+router shares with the upstream Gateway API Inference Extension. For
+each request it chooses one model-server pod: filters remove ineligible
+pods, scorers rate the rest, and a picker chooses one. How these stages
+combine determines what a weight can do.</p>
+<h3 id="profiles-producers-and-configuration-rules">1.1 Profiles,
+producers and configuration rules</h3>
+<p>A profile handler selects one or more scheduling profiles per
+request. Each profile runs filters, then weighted scorers, then exactly
+one picker. Under P/D disaggregation, where prefill and decode run on
+separate pools, the handler runs a prefill profile and a decode profile
+<sup>[<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/scheduling">1</a>]</sup>.</p>
+<p>Scorers read signals from data producers. The approximate prefix
+producer infers cache contents from routing history. The precise
+producer ingests KV-cache events (the KV cache is the attention
+key/value memory reused across requests that share a prefix). The
+in-flight producer counts dispatched but unfinished work
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/utilization/README.md">2</a>]</sup>.
+The precise producer must be named in
+<code>prefixMatchInfoProducerName</code>, or the scorer silently falls
+back to the approximate one
+<sup>[<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/scheduling">1</a>,
+<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/configuration">3</a>]</sup>.
+Defaults also bite: an omitted weight is 1.0, a missing picker becomes
+<code>max-score-picker</code>, two pickers in one profile fail at
+startup, configuration is read only at startup, and omitting
+<code>schedulingProfiles</code> activates every declared plugin
+<sup>[<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/configuration">3</a>]</sup>.</p>
+<h3 id="the-scoring-arithmetic">1.2 The scoring arithmetic</h3>
+<p>An endpoint’s score is the sum of each scorer’s output, clamped to
+the range 0 to 1 and multiplied by its weight: weight 2.0 on a score of
+0.8 plus weight 1.0 on 0.5 gives 2.1
+<sup>[<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/scheduling">1</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/topologyaffinity/README.md">4</a>]</sup>.
+Metric-based scorers leave endpoints with missing metrics unscored,
+which counts as zero
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/kvcacheutilization/README.md">5</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/queuedepth/README.md">6</a>]</sup>.
+Three consequences follow:</p>
+<ol type="1">
+<li><strong>Only weight ratios matter under
+<code>max-score-picker</code>.</strong> GORGO’s learned router fixes one
+weight to 1 because “only the ratio of weights matters in this design”
+<sup>[<a href="https://arxiv.org/pdf/2602.11688">7</a>]</sup>. With a
+single scorer, the weight is inert.</li>
+<li><strong>A scorer’s real pull is its weight times the spread of its
+scores across candidates</strong>, so the same weights behave
+differently at different loads.</li>
+<li><strong>A filter is not a heavy weight.</strong> When the affinity
+gate releases, every endpoint passes, and “Nothing tells the scorers
+that a break happened; they apply the same weights to whatever
+candidates arrive”
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>]</sup>.</li>
+</ol>
+<h3 id="pickers-and-constraining-filters">1.3 Pickers and constraining
+filters</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Component</th>
+<th>Behavior and effect on scoring</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max-score-picker</code> (default)</td>
+<td>Highest weighted sum, random tie-break; only ratios matter
+<sup>[<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/scheduling">1</a>]</sup></td>
+</tr>
+<tr>
+<td><code>weighted-random-picker</code></td>
+<td>Samples by score, so absolute gaps set the split: region weights 3
+and GPU weights 1 send 62.5% of traffic to region-1
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/attributeweight/README.md">9</a>]</sup></td>
+</tr>
+<tr>
+<td><code>prefix-cache-affinity-filter</code></td>
+<td>Keeps endpoints at or above <code>affinityThreshold</code>, released
+by a TTFT gate
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>]</sup></td>
+</tr>
+<tr>
+<td><code>utilization-filter</code></td>
+<td>Hard caps on running, queued or active requests or KV use
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/utilization/README.md">2</a>]</sup></td>
+</tr>
+<tr>
+<td><code>session-affinity-filter</code></td>
+<td>Hard pin to the session’s previous pod
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity/README.md">10</a>]</sup></td>
+</tr>
+<tr>
+<td><code>prefill-filter</code> / <code>decode-filter</code></td>
+<td>Select pods by P/D role
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/pd-disaggregation/router/pd-disaggregation.values.yaml">11</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>The picker can matter more than the weights. With bursty traffic, no
+shared prefixes and eight Llama-3.3-70B replicas at concurrency 800, a
+weighted-random picker cut mean TTFT from 2083 ms to 367 ms and P99 TTFT
+by 73% versus max-score, which herded on stale scraped metrics
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/298">12</a>]</sup>.
+Because randomness dilutes affinity, the filter README recommends
+weighted-random only inside the sticky set, the combination the
+predicted-latency guide ships
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/router/predicted-latency.values.yaml">13</a>]</sup>.</p>
+<h2 id="the-scorer-catalog-signals-strengths-and-failure-modes">2. The
+Scorer Catalog: Signals, Strengths and Failure Modes</h2>
+<p>Each scorer turns one signal into a value between 0 and 1. Absolute
+scorers apply a fixed formula. Relative (min-max) scorers give the best
+candidate 1 and the worst 0, however small the gap. Capped scorers peak
+below 1, and neutral scorers sometimes return the same value for every
+pod.</p>
+<h3 id="catalog">2.1 Catalog</h3>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr>
+<th>Plugin</th>
+<th>Signal and normalization</th>
+<th>Key defaults; weight</th>
+<th>Use when</th>
+<th>Main pitfall</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prefix-cache-affinity-filter</code></td>
+<td>Prefix threshold + TTFT gate (in-flight tokens ÷
+<code>peakPrefillThroughput</code>)</td>
+<td>0.80; 18000 ms; 15928 tok/s; <code>backlog</code>; no weight
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>]</sup></td>
+<td>Shared prefixes</td>
+<td>Misses slot queues, decode load; cascades under churn</td>
+</tr>
+<tr>
+<td><code>prefix-cache-scorer</code></td>
+<td>Match ratio, absolute</td>
+<td><code>matchLengthScaleTokens</code> 8192 (~P95 prompt)
+<sup>[<a href="https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/framework/plugins/scheduling/scorer/prefix/README.md">14</a>]</sup>;
+3 in legacy blend
+<sup>[<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/configuration">3</a>]</sup></td>
+<td>Blends; one per cache tier</td>
+<td>Never after the filter
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>]</sup></td>
+</tr>
+<tr>
+<td><code>token-load-scorer</code></td>
+<td>1 − min(1, uncached in-flight tokens ÷ threshold)</td>
+<td>4,194,304; sole scorer, weight inert
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/tokenload/README.md">15</a>]</sup></td>
+<td>Prefill-bound: long prompts, RAG (retrieval-augmented generation),
+code, agents</td>
+<td>Decode-blind without <code>addEstimatedOutputTokens</code>
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3245">16</a>]</sup></td>
+</tr>
+<tr>
+<td><code>active-request-scorer</code></td>
+<td>In-flight request count</td>
+<td><code>idleThreshold</code> 0
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/activerequest/README.md">17</a>]</sup></td>
+<td>Decode-bound; P/D decode</td>
+<td>100- and 100k-token requests count equally
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3880">18</a>]</sup></td>
+</tr>
+<tr>
+<td><code>queue-scorer</code>,
+<code>running-requests-size-scorer</code></td>
+<td>Scraped counts, min-max</td>
+<td>Queue 2 in legacy blend
+<sup>[<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/configuration">3</a>]</sup></td>
+<td>Legacy blends</td>
+<td>Full swing on trivial gaps</td>
+</tr>
+<tr>
+<td><code>kv-cache-utilization-scorer</code></td>
+<td>1 − scraped KV use</td>
+<td>2 in legacy blend
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/kvcacheutilization/README.md">5</a>]</sup></td>
+<td>Memory-pressure tie-break</td>
+<td>~1.0 when idle; lags dispatch</td>
+</tr>
+<tr>
+<td><code>load-aware-scorer</code></td>
+<td>Scraped queue, capped at 0.5</td>
+<td>Threshold 128; 4 matches queue at 2
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/loadaware/README.md">19</a>]</sup></td>
+<td>Legacy</td>
+<td>Half-weight pull; size-blind</td>
+</tr>
+<tr>
+<td><code>no-hit-lru-scorer</code></td>
+<td>Cold: least-recently-used pod first; warm: 0.5 everywhere</td>
+<td><code>lruSize</code> 1024; near queue weight
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/nohitlru/README.md">20</a>]</sup></td>
+<td>Scale-out, cold prefixes</td>
+<td>Partial matches count as warm
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4214">21</a>]</sup></td>
+</tr>
+<tr>
+<td>Session affinity scorer / filter</td>
+<td>Scorer: 1 for prior pod; filter pins</td>
+<td>TTL 300 s
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity/README.md">10</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/sessionaffinity/README.md">22</a>]</sup></td>
+<td>Unrebuildable KV state</td>
+<td>Hotspots; emptying filter returns 503
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity/README.md">10</a>]</sup></td>
+</tr>
+<tr>
+<td><code>lora-affinity-scorer</code></td>
+<td>LoRA (low-rank adapter) residency: 1.0/0.8/0.6/0.0</td>
+<td>None
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/README.md">23</a>]</sup></td>
+<td>Multi-adapter pools</td>
+<td>Small weights decide nothing</td>
+</tr>
+<tr>
+<td><code>context-length-aware</code></td>
+<td>In range (0.3, 1], out [0, 0.3), unlabeled 0.5</td>
+<td>Example weight 8
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/contextlengthaware/README.md">24</a>]</sup></td>
+<td>Mixed context limits</td>
+<td>Can swamp load scorers</td>
+</tr>
+<tr>
+<td><code>topology-affinity</code></td>
+<td>1.0/0.2/0.05/0.02 by tier shared with P/D peer</td>
+<td>None
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/topologyaffinity/README.md">4</a>]</sup></td>
+<td>Cross-host or cross-rack P/D</td>
+<td>Host ≠ NVLink domain on NVL72 (72-GPU racks)</td>
+</tr>
+<tr>
+<td><code>latency-scorer</code> + predictor</td>
+<td>Predicted TTFT and TPOT (time per output token) headroom</td>
+<td>5000 ms; weighted-random
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/router/predicted-latency.values.yaml">13</a>,
+<a href="https://llm-d.ai/docs/0.10/architecture/advanced/latency-predictor">25</a>]</sup></td>
+<td>Homogeneous, high-variance pools</td>
+<td>Sidecars; warm-up fallback
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/README.md">26</a>,
+<a href="https://docs.cloud.google.com/kubernetes-engine/docs/how-to/use-predicted-latency-based-routing">27</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<h3 id="families-freshness-and-prefix-accuracy">2.2 Families, freshness
+and prefix accuracy</h3>
+<p>The catalog falls into four families: one affinity mechanism, load
+signals, capability scorers, and one spreader (no-hit-LRU). Most bad
+configurations stack two members of one family, such as a prefix scorer
+behind the filter or three gauges measuring the same load.</p>
+<p><strong>Freshness separates the load signals.</strong> Token-load and
+active-request read EPP-local counters updated at dispatch; gauge
+scorers read lagging scraped values. In the BLIS simulator at eight
+instances and 80 requests per second, metrics-only routing gave mean/p99
+TTFT of 401.8/964.5 ms, against 105.4/186.0 ms with the in-flight
+producer
+<sup>[<a href="https://inference-sim.github.io/inference-sim/latest/guide/routing/">28</a>]</sup>.</p>
+<p><strong>Accuracy separates the prefix producers.</strong> The
+approximate index sees only routing history
+<sup>[<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/scheduling">1</a>]</sup>;
+a cache-freshness fix was folded into another issue in September 2025
+<sup>[<a href="https://github.com/kubernetes-sigs/gateway-api-inference-extension/issues/972">29</a>]</sup>.
+The precise index sees resident blocks, but with speculative indexing
+off it briefly reports zero for a cold endpoint just sent a long prefix,
+a window the November 2026 overload incident named as a contributor
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4042">30</a>]</sup>.
+The precise guide sets <code>speculativeIndexing: true</code>
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/precise-prefix-cache-routing/router/precise-prefix-cache-routing.values.yaml">31</a>]</sup>.
+Under heavy eviction the gap is large: at 73% cluster cache demand,
+precise routing reached a TTFT p90 of 0.54 s against 31 s for
+approximate, on an older scheduler
+<sup>[<a href="https://llm-d.ai/blog/kvcache-wins-you-can-see">32</a>]</sup>.</p>
+<h2
+id="deciding-which-scorers-to-enable-by-workload-and-deployment-shape">3.
+Deciding Which Scorers to Enable by Workload and Deployment Shape</h2>
+<p>Two questions decide the composition: which resource saturates first,
+and what the base pair (the affinity filter plus one load scorer) cannot
+see.</p>
+<h3 id="decision-procedure">3.1 Decision procedure</h3>
+<ol type="1">
+<li><strong>Confirm that the engine caches prefixes.</strong> If not,
+drop the filter, as the project’s NPU overlay does; otherwise it “would
+pin requests to endpoints it believes are cache-warm while the model
+servers reuse nothing”
+<sup>[<a href="https://github.com/llm-d/llm-d/tree/main/guides/recipes/router/calibration">33</a>]</sup>.</li>
+<li><strong>Name the saturating resource.</strong> Long prompts with
+modest outputs are prefill-bound; short prompts with long outputs are
+decode-bound. If vLLM sits at <code>max-num-seqs</code> with a queue
+while KV use stays low, the pool is slot-bound, which the default gate
+cannot see
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3422">34</a>]</sup>.
+If the shared prefix never reaches 0.8 of the prompt, the filter does
+nothing, as with the 250-token prompt in the reasoning benchmark
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.
+Where affinity recovers only a few points of hit rate, pinning skew can
+make it a net loss: CacheRoute measured 0.50–0.67× the capacity of flat
+load balancing when hit rate rose only from about 1% to 12%
+<sup>[<a href="https://arxiv.org/html/2608.19677">36</a>]</sup>. Compare
+the filter against a load-only profile at production load, or in a BLIS
+replay, before adopting it.</li>
+<li><strong>Pick one load scorer for that resource and a prefix
+source</strong>: approximate by default, precise under heavy eviction or
+with tiered caches.</li>
+<li><strong>Check whether decode load is two-dimensional.</strong> Where
+short turns mix with 24k–100k contexts, active-request can overflow KV
+while token-load stacks requests onto full batch slots
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3880">18</a>]</sup>.
+An unmerged length-adaptive prototype cut peak decode KV from 92.6% to
+78.8% and long-request P99 TTFT by 10.7% across three seeds, which no
+fixed per-profile weight can imitate
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3880">18</a>]</sup>.
+A capacity ledger tracking KV blocks, step tokens and slots is also
+proposed
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3110">37</a>]</sup>.
+Until either lands, enable <code>addEstimatedOutputTokens</code>, cap KV
+with a utilization filter, or use the predictor.</li>
+<li><strong>Add capability scorers only for what the base pair cannot
+see.</strong></li>
+</ol>
+<h3 id="decision-table">3.2 Decision table</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Workload</th>
+<th>Composition</th>
+<th>Confidence and evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prefill-bound, shared prefixes</td>
+<td>Filter 0.8 + token-load; calibrate the gate</td>
+<td>Medium-high: 2.9× knee throughput (highest load before latency
+climbs steeply) over round-robin on code generation; single runs
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup></td>
+</tr>
+<tr>
+<td>Decode-bound, uniform lengths</td>
+<td>Active-request; filter usually inert</td>
+<td>Low-medium: best TPOT p90, throughput parity (7.0k vs 6.8k tok/s)
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup></td>
+</tr>
+<tr>
+<td>Agentic short turns, cached harness</td>
+<td>Filter + token-load, <code>addEstimatedOutputTokens</code>, penalty
+~4000 ms</td>
+<td>Medium: three repeats, one reporter
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3245">16</a>]</sup></td>
+</tr>
+<tr>
+<td>P/D</td>
+<td>Prefill: filter + token-load (+ topology); decode: active-request;
+one EPP replica</td>
+<td>Medium prefill; low mixed-length decode
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/pd-disaggregation/router/pd-disaggregation.values.yaml">11</a>,
+<a href="https://github.com/llm-d/llm-d-router/issues/3880">18</a>]</sup></td>
+</tr>
+<tr>
+<td>Multimodal</td>
+<td>Filter at 0.6, longer penalty, token-load</td>
+<td>Medium: parity with the blend
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup></td>
+</tr>
+<tr>
+<td>Unique prompts</td>
+<td>One load scorer; filter inert</td>
+<td>High, mechanical
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>]</sup></td>
+</tr>
+<tr>
+<td>Tiered GPU + CPU cache</td>
+<td>Queue, KV, GPU- and CPU-prefix, no-hit-LRU at weight 1; CPU tier ≤
+GPU tier</td>
+<td>Low: no sweep
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/tiered-prefix-cache/router/single-host/tiered-prefix-cache-cpu.values.yaml">38</a>]</sup></td>
+</tr>
+<tr>
+<td>Fairness, flow control</td>
+<td>Queue 2, KV 2, prefix 3</td>
+<td>Low: inherited
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/turn-priority-fairness/router/turn-priority-fairness.values.yaml">39</a>]</sup></td>
+</tr>
+<tr>
+<td>Multi-LoRA</td>
+<td>LoRA affinity outweighing one load scorer; precise producer where
+<code>cache_salt</code> partitions the cache</td>
+<td>Low: no measured ratio
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/README.md">23</a>,
+<a href="https://llm-d.ai/docs/well-lit-paths/foundations/precise-prefix-cache-routing">40</a>,
+<a href="https://github.com/vllm-project/vllm/issues/16016">41</a>]</sup></td>
+</tr>
+<tr>
+<td>Mixed context limits</td>
+<td>Context-length-aware; filter on hard limits</td>
+<td>Low-medium
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/contextlengthaware/README.md">24</a>]</sup></td>
+</tr>
+<tr>
+<td>Stateful sessions</td>
+<td>Soft session scorer unless KV cannot be rebuilt; no guide sets its
+weight, and since it is binary, a weight at or above the summed load
+weights acts as a pin</td>
+<td>Medium
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity/README.md">10</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/sessionaffinity/README.md">22</a>]</sup></td>
+</tr>
+<tr>
+<td>Autoscaled pools</td>
+<td>No-hit-LRU near weight 2, or exploration 0.01</td>
+<td>Low: one small issue
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/nohitlru/README.md">20</a>,
+<a href="https://github.com/llm-d/llm-d-router/issues/4214">21</a>]</sup></td>
+</tr>
+<tr>
+<td>Homogeneous, high-variance, SLO-bearing</td>
+<td>Predictor + latency-scorer + weighted-random</td>
+<td>Medium: won or tied 4 of 5 scenarios; gate untested
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/router/predicted-latency.values.yaml">13</a>,
+<a href="https://llm-d.ai/blog/predicted-latency-based-scheduling-for-llms">42</a>]</sup></td>
+</tr>
+<tr>
+<td>Heterogeneous accelerators</td>
+<td>Blend with attribute or context scorers; predictor unsupported</td>
+<td>Low: Lodestar, a learned router, cut TTFT up to 4.38×
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/README.md">26</a>,
+<a href="https://arxiv.org/pdf/2606.00946">43</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>The rule underneath: the single-scorer default fits only when the
+gate’s own signal can see the bottleneck. When it cannot, the downstream
+scorer never gets a vote.</p>
+<h2 id="default-configurations-and-weights-in-llm-d-guides">4. Default
+Configurations and Weights in llm-d Guides</h2>
+<p>llm-d’s well-lit-path guides are Helm values files encoding the
+authoritative configuration per deployment shape, but a cluster can end
+up running a different one.</p>
+<h3 id="how-the-defaults-moved">4.1 How the defaults moved</h3>
+<p>The v0.4-era quickstart weighted prefix 3, queue 2, KV 2 and
+no-hit-LRU 2
+<sup>[<a href="https://notes.kodekloud.com/docs/llm-d-A-Deep-Dive/Smart-Routing-Live/The-Scorers-Behind-Every-Decision/page.md">44</a>]</sup>.
+Version 0.9 announced that “Sticky-until-saturated routing is now the
+default strategy across all guides” and that it “balances cache reuse
+against load distribution without manual tuning”
+<sup>[<a href="https://llm-d.ai/blog/llm-d-v0.9-hardened-for-scale">45</a>]</sup>.
+The maintainers’ reasons: the blend’s “emergent behavior was hard to
+predict and harder to tune”, and affinity without “an explicit
+saturation release” overloads the warm endpoint
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.
+Router v1.0.0 was tagged on 15 October 2026
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4214">21</a>]</sup>.</p>
+<h3 id="what-ships-today">4.2 What ships today</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Source</th>
+<th>Profile</th>
+<th>Key parameters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Optimized-baseline</td>
+<td>Approximate and in-flight producers, filter, token-load</td>
+<td>No weights; 15928 tok/s (Qwen3-32B, H100, two-way tensor
+parallelism)
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/optimized-baseline/router/optimized-baseline.values.yaml">46</a>]</sup></td>
+</tr>
+<tr>
+<td>Precise-prefix</td>
+<td>Precise producer, filter, token-load</td>
+<td>15926 tok/s; one replica
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/precise-prefix-cache-routing/router/precise-prefix-cache-routing.values.yaml">31</a>]</sup></td>
+</tr>
+<tr>
+<td>P/D</td>
+<td>Prefill: filter + token-load; decode: active-request</td>
+<td>33,821 tok/s measured through NIXL (NVIDIA’s KV-transfer library);
+one replica
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/pd-disaggregation/router/pd-disaggregation.values.yaml">11</a>]</sup></td>
+</tr>
+<tr>
+<td>Agentic-serving</td>
+<td>Filter + token-load</td>
+<td>16,444 tok/s (Qwen3-Coder-480B, TPU v7x)
+<sup>[<a href="https://github.com/llm-d/llm-d/tree/main/guides/recipes/router/calibration">33</a>]</sup></td>
+</tr>
+<tr>
+<td>Multimodal</td>
+<td>Filter + token-load</td>
+<td>0.6; 36000 ms; 15,751 tok/s
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup></td>
+</tr>
+<tr>
+<td>Predicted-latency</td>
+<td>Filter (predictor; 0.80, or 0.99 in SLO mode) + latency-scorer +
+weighted-random</td>
+<td>5000 ms
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/router/predicted-latency.values.yaml">13</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/router/predicted-latency-slo.values.yaml">47</a>]</sup></td>
+</tr>
+<tr>
+<td>Tiered-prefix-cache (CPU)</td>
+<td>Queue, KV, GPU- and CPU-prefix, no-hit-LRU</td>
+<td>Weight 1 each
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/tiered-prefix-cache/router/single-host/tiered-prefix-cache-cpu.values.yaml">38</a>]</sup></td>
+</tr>
+<tr>
+<td>Turn-priority-fairness</td>
+<td>Queue 2, KV 2, prefix 3 + flow control</td>
+<td>Explicit weights
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/turn-priority-fairness/router/turn-priority-fairness.values.yaml">39</a>]</sup></td>
+</tr>
+<tr>
+<td>Router chart default (EPP v0.10.0)</td>
+<td>Queue 2, KV 2, prefix 3</td>
+<td>Applies without a guide overlay
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4214">21</a>]</sup></td>
+</tr>
+<tr>
+<td>Configuration reference</td>
+<td>Prefix 3, KV 2, queue 2</td>
+<td>“recommended for a typical production setup”
+<sup>[<a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/configuration">3</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<h3 id="three-defaults-and-why-the-version-must-be-pinned">4.3 Three
+defaults, and why the version must be pinned</h3>
+<p>Guides, chart and reference thus disagree: a bare install gets the
+3/2/2 blend, which starves freshly scaled pods at low load
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4214">21</a>]</sup>.
+A pending pull request adds no-hit-LRU to the chart default, relying on
+a fix merged on 29 October 2026, after v1.0.0
+<sup>[<a href="https://github.com/llm-d/llm-d-router/pull/4215">48</a>]</sup>.
+The guides also pull the floating <code>ROUTER_CHART_VERSION=v0</code>
+channel
+<sup>[<a href="https://github.com/llm-d/llm-d/blob/main/guides/optimized-baseline/README.md">49</a>]</sup>.</p>
+<p>The documentation advertises two router replicas
+<sup>[<a href="https://llm-d.ai/docs/well-lit-paths/foundations/precise-prefix-cache-routing">40</a>]</sup>,
+but the values files pin one. Active-active replicas would each see only
+part of the per-endpoint load and so mis-gate the affinity filter
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/precise-prefix-cache-routing/router/precise-prefix-cache-routing.values.yaml">31</a>]</sup>.
+An earlier tiered-cache pull request’s −48.9% mean TTFT and +33.3%
+throughput from tuned scorers are confounded with enabling CPU offload,
+and its weights were not recorded
+<sup>[<a href="https://github.com/llm-d/llm-d/pull/457">50</a>]</sup>.</p>
+<p>Nor is the new default tuning-free. It replaced four weights with
+about five workload-specific constants, and the multimodal guide changed
+two of them to reach only “benchmark-validated to parity with the
+previously shipped weighted blend”
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.
+Treat 3/2/2 as historical, and 15,928 tok/s as one measurement rather
+than a portable default.</p>
+<h2 id="tuning-scorer-weights-method-ratios-and-measurement-loop">5.
+Tuning Scorer Weights: Method, Ratios and Measurement Loop</h2>
+<p>Single-scorer profiles need the gate calibrated; blends need weights
+set by arithmetic before any sweep. Both feed one measurement loop.</p>
+<h3 id="tier-1-calibrating-the-gate">5.1 Tier 1: calibrating the
+gate</h3>
+<p>With the default estimator, the gate is a token-gap threshold, τ =
+<code>peakPrefillThroughput</code> × <code>maxTTFTPenaltyMs</code>:
+stickiness breaks when the sticky endpoint carries τ more uncached
+tokens than the best alternative
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.
+The maintainers derive throughput from one prefill chunk, R_peak = B /
+T(B), for chunk size B and its prefill time T(B). For Qwen3-32B, 8192
+tokens in 0.40 s on H100 gives 20,480 tok/s, and a 14 s budget gives τ =
+286,720 tokens
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.
+The shipped 15,928 tok/s × 18 s gives about 286,704 tokens, but the
+match comes from offsetting choices. The two throughput methods differ
+by 29% on the same path, and the 14 s came from where b2b-saas (a small
+repeated-prefix benchmark corpus) saturates, not from a user SLO
+<sup>[<a href="https://github.com/llm-d/llm-d/tree/main/guides/recipes/router/calibration">33</a>,
+<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.
+Keep the method and penalty default paired.</p>
+<p><strong>Measure throughput; do not copy it.</strong>
+<code>calibrate.sh</code> sends random-token prompts of exactly
+<code>CHUNK_SIZE</code>, which should equal
+<code>--max-num-batched-tokens</code> so every request misses cache, and
+prints <code>CHUNK_SIZE / median(TTFT)</code> without applying it
+<sup>[<a href="https://github.com/llm-d/llm-d/tree/main/guides/recipes/router/calibration">33</a>]</sup>.
+Run it repeatedly: one NPU calibration ranged from 12,504 to 13,101
+tok/s over five runs, and the project used the median
+<sup>[<a href="https://github.com/llm-d/llm-d/tree/main/guides/recipes/router/calibration">33</a>]</sup>.
+Measured values span 1,970 tok/s on CPU to 39,065 tok/s for gpt-oss-120B
+on H100, and some vendor rows are borrowed rather than measured
+<sup>[<a href="https://github.com/llm-d/llm-d/blob/main/guides/recipes/router/calibration/configuration-matrix.md">51</a>]</sup>.
+A transplanted τ sets gpt-oss-120B’s gate about 1.9× too low and
+Qwen3-VL on H200’s about 1.3× too high, and one matrix row was twice the
+corrected figure
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>,
+<a href="https://github.com/llm-d/llm-d/blob/main/guides/recipes/router/calibration/configuration-matrix.md">51</a>]</sup>.
+For P/D, calibrate through KV transfer
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/pd-disaggregation/router/pd-disaggregation.values.yaml">11</a>]</sup>.</p>
+<p><strong>Treat <code>maxTTFTPenaltyMs</code> as a budget</strong>: the
+extra TTFT accepted to stay cache-warm rather than re-prefill elsewhere.
+At 4,274 tok/s, 18 s is about 77k tokens, which let 38 requests pile
+onto one endpoint, while 4 s released at about 9 and cut TTFT p90 from
+4.4 s to 0.65 s
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3245">16</a>]</sup>.
+Too small a τ fails too: on b2b-saas the cluster is bistable in τ, and
+small changes flip it from a stable partition into eviction churn with a
+collapsed hit rate. No τ-sensitivity curve is published, so sweep the
+penalty around the derived value at more than one load point and watch
+hit rate alongside TTFT
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.
+At 15,928 tok/s, 5 s is 79,640 tokens, so one 80k-token cold spill trips
+the gate
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4042">30</a>]</sup>.</p>
+<p><strong>Match the penalty to the estimator.</strong>
+<code>ttftEstimate: full</code>, merged on 11 November 2026 after
+v1.0.0, adds the request’s own uncached prefill; under it the 18 s
+default makes the filter “much stickier”, so <code>full</code> needs a
+lower penalty
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>,
+<a href="https://github.com/llm-d/llm-d-router/issues/3422">34</a>,
+<a href="https://github.com/llm-d/llm-d-router/pull/3514">52</a>]</sup>.
+Maintainer runs on the stacked queue-wait PR found no difference from
+<code>backlog</code>
+<sup>[<a href="https://github.com/llm-d/llm-d-router/pull/3514">52</a>,
+<a href="https://github.com/llm-d/llm-d-router/pull/3421">53</a>]</sup>.
+An open queue-wait term turns the penalty into a queueing budget; under
+it, 18 s queues settled at 8–10 s
+<sup>[<a href="https://github.com/llm-d/llm-d-router/pull/3421">53</a>]</sup>.</p>
+<p><strong>Set the remaining parameters</strong>:</p>
+<ul>
+<li>Keep <code>affinityThreshold</code> below the largest cacheable
+fraction, and <code>queueThresholdTokens</code> above in-flight peaks,
+or pods tie at zero
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/tokenload/README.md">15</a>]</sup>.</li>
+<li>Raise <code>maxPrefixTokensToMatch</code> for long contexts, since
+its 131,072 default counted 7–8× too many uncached tokens on ~262k-token
+prompts
+<sup>[<a href="https://github.com/llm-d/llm-d-router/pull/3421">53</a>]</sup>.</li>
+<li>With KV offload, disable the approximate producer’s
+<code>autoTune</code>, which counts HBM blocks only, and size
+<code>lruCapacityPerServer</code> manually, as the agentic guide does
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/agentic-serving/router/agentic-serving.values.yaml">54</a>]</sup>.</li>
+</ul>
+<h3 id="tier-2-budgeting-a-blend-by-effective-pull">5.2 Tier 2:
+budgeting a blend by effective pull</h3>
+<p>Effective pull is the weight times the scorer’s spread:</p>
+<ul>
+<li><strong>Relative scorers</strong> swing their full weight on any
+difference, so queues of 1 and 2 matter as much as 100 and 200
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/queuedepth/README.md">6</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/runningrequests/README.md">55</a>]</sup>.</li>
+<li><strong>Capped scorers</strong> swing half: load-aware tops out at
+0.5 and needs weight 4 to match queue at 2
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/loadaware/README.md">19</a>]</sup>.</li>
+<li><strong>Absolute scorers</strong> (prefix, KV, token-load) swing
+only as far as their signal varies.</li>
+<li><strong>Neutral scorers</strong> swing nothing; no-hit-LRU adds 0.5
+× weight to every pod on warm requests and never reorders them
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/nohitlru/README.md">20</a>]</sup>.</li>
+</ul>
+<p>Take the legacy blend: prefix P = 3, load weights queue 2 and KV 2 (L
+= 4), and a request fully cached on pod Hot.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Case</th>
+<th>Hot: prefix, queue, KV → total</th>
+<th>Cold: prefix, queue, KV → total</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Under load</td>
+<td>1.0, 0 (longest queue), 0.3 → 3.6</td>
+<td>0, 1.0, 0.9 → 3.8</td>
+</tr>
+<tr>
+<td>Low load</td>
+<td>1.0, 1.0 (queues equal), ~1.0 → 7</td>
+<td>0, 1.0, ~1.0 → 4</td>
+</tr>
+</tbody>
+</table>
+<p>Under load, Cold wins only because min-max queue scoring hands it a
+full two-point swing, identical whether Hot queues one request or a
+hundred. At low load Hot always wins, and for a new prefix the pods tie
+at 4.0 and a coin decides; the chart-default issue measured 0 of 20
+cached-prefix requests reaching a new pod
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4214">21</a>]</sup>.
+A blend’s release point is implicit and moves with load; the gate’s is
+explicit, in tokens and seconds.</p>
+<p>The same arithmetic explains the README’s strictest rule. After a
+release, load scorers can favor a non-sticky endpoint by at most L,
+while a prefix scorer penalizes it by P times the prefix-score gap. With
+P ≥ L a zero-match endpoint can at best tie; with P ≥ L ÷
+<code>affinityThreshold</code> it can never win. A prefix weight of 3
+over token-load at 1 shuts the gate for every cold endpoint, hence
+“Scorers running after this filter must not include a separately
+weighted prefix-affinity scorer”
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>]</sup>.</p>
+<p>For any blend, classify each scorer’s spread, then choose P:L to
+state how much full-range load advantage should beat one unit of prefix
+match; in 3 vs 2+2, a cold pod needs more than 0.675 of the range to
+beat a 0.9 match. Add no-hit-LRU near the queue weight.</p>
+<p>Tuning does pay inside blends. On production-shaped traffic, moving
+from (1,1,1) to a workload-tuned (3,2,2) cut E2E (end-to-end) p50 from
+16.42 s to 13.42 s, E2E p95 from 35.06 s to 26.55 s and TPOT p99 from
+103 ms to 63 ms, while TTFT p50 rose from 2.86 s to 3.38 s
+<sup>[<a href="https://llm-d.ai/blog/predicted-latency-based-scheduling-for-llms">42</a>]</sup>.
+GORGO’s online (1+1) evolution strategy on rolling p95 TTFT learned
+weights that held on held-out windows, improving p95 TTFT by 6.9–15.5%
+and p95 E2E by 14.3–30.9%
+<sup>[<a href="https://arxiv.org/pdf/2602.11688">7</a>]</sup>.</p>
+<h3 id="the-measurement-loop">5.3 The measurement loop</h3>
+<ol type="1">
+<li><strong>Screen in BLIS.</strong> It runs the real router with an
+unchanged <code>EndpointPickerConfig</code> and traces per-endpoint
+score margins, showing whether a weight change moves any decision. Sweep
+P:L from 0.5 to 2 at several concurrencies, with the deployment’s
+<code>--refresh-metrics-interval</code> in <code>router.epp_flags</code>
+so stale-scrape herding appears
+<sup>[<a href="https://inference-sim.github.io/inference-sim/latest/guide/routing/">28</a>]</sup>.
+No source documents a systematic weight search beyond this ratio
+arithmetic and sweeps. It is a screen, not a verdict: median latency
+error is 7–9% at about 200× cluster speed, with no published
+rank-fidelity figure
+<sup>[<a href="https://llm-d.ai/blog/blis-evolving-llm-d-at-simulation-speed">56</a>]</sup>,
+and replayed logs miss the cache and queue evolution another policy
+would cause
+<sup>[<a href="https://arxiv.org/pdf/2602.11688">7</a>]</sup>.</li>
+<li><strong>Validate with inference-perf</strong>, a load-generation
+benchmark: workload-matched presets, with and without the change, as the
+maintainers require for gate changes
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3422">34</a>]</sup>.</li>
+<li><strong>Track</strong> TTFT and TPOT percentiles, prefix hit rate
+(<code>vllm:prefix_cache_hits_total</code> ÷ <code>queries_total</code>)
+and per-pod queue and KV use
+<sup>[<a href="https://github.com/llm-d/llm-d/blob/main/guides/optimized-baseline/README.md">49</a>]</sup>,
+plus per-endpoint QPS (queries per second) and preemptions
+<sup>[<a href="https://github.com/llm-d/llm-d/blob/main/docs/operations/observability/promql.md">57</a>]</sup>.</li>
+<li><strong>Watch
+<code>llm_d_epp_prefix_cache_affinity_filter_decisions_total{outcome="load_override"}</code>
+most closely.</strong> If it climbs while the sticky endpoint’s queue
+holds steady, the gate is firing without changing routing, the signature
+of a stacked prefix scorer
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>]</sup>.</li>
+<li><strong>Re-calibrate</strong> after changes to model, accelerator,
+parallelism, batch size, engine, router or reuse pattern; Google
+Kubernetes Engine (GKE) documentation treats frequent re-tuning as the
+cue to adopt the predictor
+<sup>[<a href="https://docs.cloud.google.com/kubernetes-engine/docs/how-to/use-predicted-latency-based-routing">27</a>]</sup>.</li>
+</ol>
+<h3 id="the-same-knob-in-other-routers">5.4 The same knob in other
+routers</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Router</th>
+<th>Knob (default)</th>
+<th>Direction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>llm-d</td>
+<td><code>peakPrefillThroughput</code> × <code>maxTTFTPenaltyMs</code>
+(15,928 tok/s × 18 s)</td>
+<td>Lower penalty releases earlier
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>]</sup></td>
+</tr>
+<tr>
+<td>NVIDIA Dynamo</td>
+<td><code>overlap_score_credit</code> (1.0), with decay</td>
+<td>Higher lowers TTFT; lower spreads load and lowers ITL (inter-token
+latency); decay protects new workers
+<sup>[<a href="https://docs.nvidia.com/dynamo/components/router/configuration-and-tuning">58</a>]</sup></td>
+</tr>
+<tr>
+<td>SGLang gateway</td>
+<td><code>cache-threshold</code> (0.3); balance thresholds (64 absolute,
+1.5 relative)</td>
+<td>Least-load fallback only when both balance thresholds trip
+<sup>[<a href="https://docs.sglang.ai/advanced_features/sgl_model_gateway.html">59</a>,
+<a href="https://smg-dup.pages.dev/concepts/routing/cache-aware">60</a>]</sup></td>
+</tr>
+<tr>
+<td>Shepherd Model Gateway</td>
+<td>Same knobs</td>
+<td>0.1–0.2 conversational, 0.5–0.8 diverse traffic; lower balance
+thresholds for bursty fleets
+<sup>[<a href="https://smg-dup.pages.dev/concepts/routing/cache-aware">60</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>Dynamo warns that its experimental decode weight “can regress
+throughput, TTFT, and ITL when decode remains primarily memory-bound”
+<sup>[<a href="https://docs.nvidia.com/dynamo/components/router/configuration-and-tuning">58</a>]</sup>.
+All these routers keep affinity until imbalance is measured; llm-d alone
+states the release point in physical units, which is why it calibrates
+rather than searching over weights.</p>
+<h2 id="evidence-disagreements-and-pitfalls">6. Evidence, Disagreements
+and Pitfalls</h2>
+<p>Nearly every llm-d comparison is a single first-party run without
+confidence intervals, issue measurements come from single reporters, and
+the peer-reviewed work studies other systems.</p>
+<h3 id="weighted-blend-versus-filter-and-gate">6.1 Weighted blend versus
+filter and gate</h3>
+<p>The gate wins on robustness in its authors’ single runs per cell,
+made with the pre-estimator token-penalty form, so the result supports
+the design rather than the current estimator. It reached 2.0× knee
+throughput on b2b-saas, while the blend cliff-failed on code generation
+and hot-spotted above concurrency 50 on reasoning
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.
+An earlier llm-d benchmark found that under heavy prefix sharing,
+prefix-only scoring served about 55% of requests, against 100% for
+prefix plus load
+<sup>[<a href="https://llm-d.ai/blog/intelligent-inference-scheduling-with-llm-d">61</a>]</sup>.</p>
+<p>The blend’s one win is real. On b2b-saas it held a 96–97% hit rate
+against 70–73% at 50+ QPS, with the best TTFT p90, because “the legacy
+blend has no such valve”. The authors concede that “a carefully tuned
+weight set will outperform a general configuration on the specific
+workload it was tuned for”, yet call that small, bistable corpus “a poor
+benchmark for hyperparameter sweeps”
+<sup>[<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.</p>
+<p>The gate is the right default and the blend a scoped exception for
+multi-signal profiles or benchmarked corpora. The gate’s failures
+concentrate risk in knobs whose meaning changed between releases.</p>
+<h3 id="static-calibration-versus-predicted-latency">6.2 Static
+calibration versus predicted latency</h3>
+<p>The predictor beat the tuned (3,2,2) blend on E2E p50 (9.06 s vs
+13.42 s) and TTFT p50 (0.97 s vs 3.38 s), tying on synthetic cache-churn
+scenarios
+<sup>[<a href="https://llm-d.ai/blog/predicted-latency-based-scheduling-for-llms">42</a>]</sup>.
+Its documentation states that “No fixed weight configuration is correct
+in all regimes”
+<sup>[<a href="https://llm-d.ai/docs/0.10/architecture/advanced/latency-predictor">25</a>]</sup>.
+Lodestar extends the critique to thresholds: the best prefix-hit
+threshold was 20% for one workload and 60% for another, both trailed a
+learned router by 300–400 ms. At high request rates, a prefix-and-load
+heuristic averaged 3,468 ms TTFT against 1,409 ms for plain
+least-request
+<sup>[<a href="https://arxiv.org/pdf/2606.00946">43</a>]</sup>. In one
+scale-out run the predictor gave new replicas 73–74% of traffic, and the
+reporter called it “the better option today” for that case
+<sup>[<a href="https://github.com/llm-d/llm-d-router/pull/3421">53</a>]</sup>.</p>
+<p>Its rationale is that cache reuse concentrates load while low
+utilization spreads it, and the right balance shifts with the workload
+<sup>[<a href="https://llm-d.ai/blog/predicted-latency-based-scheduling-for-llms">42</a>]</sup>.
+The costs: homogeneous pools only, an 18-vCPU router pod, about 300 QPS
+per prediction server, <code>stream: true</code> for SLO mode, and a
+heuristic fallback during warm-up that brings weights back
+<sup>[<a href="https://llm-d.ai/docs/0.10/architecture/advanced/latency-predictor">25</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/README.md">26</a>,
+<a href="https://docs.cloud.google.com/kubernetes-engine/docs/how-to/use-predicted-latency-based-routing">27</a>]</sup>.
+Tuning moves rather than disappears: the guides still set affinity
+thresholds (0.8, plus a stacked 0.99 filter in SLO mode) and a 5000 ms
+penalty
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/router/predicted-latency.values.yaml">13</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/router/predicted-latency-slo.values.yaml">47</a>]</sup>.
+No benchmark compares the predictor with the calibrated gate. It is the
+escalation path for homogeneous pools where request cost varies by
+orders of magnitude and per-request SLOs or hit-rate stability
+matter.</p>
+<h3 id="how-strong-affinity-should-be">6.3 How strong affinity should
+be</h3>
+<p>Dynamo calls its default overlap credit of 1.0 “a reasonable starting
+point” and adds decay against starvation
+<sup>[<a href="https://docs.nvidia.com/dynamo/components/router/configuration-and-tuning">58</a>]</sup>.
+Lodestar documents the downside: bursts of long, prefix-matching
+requests saturate one pod’s KV cache into eviction and preemption
+<sup>[<a href="https://arxiv.org/pdf/2606.00946">43</a>]</sup>. The
+strongest independent evidence is DualMap (ICLR 2026). It keeps affinity
+until pending prefill tokens would breach a threshold derived from the
+TTFT SLO, then routes to the least-loaded instance. The full system
+reached up to 2.25× capacity; the SLO-aware step alone cut P50/P90 TTFT
+by 23.5%/18.5%. It also finds per-request minimum-TTFT routing lands
+between affinity and least-loaded on both hit rate and balance, and
+argues that single-mapping hybrids cannot achieve both
+<sup>[<a href="https://arxiv.org/pdf/2602.06502">62</a>]</sup>.</p>
+<p>Its threshold is R_peak × T_max under another name. That supports
+SLO-derived release thresholds, not llm-d’s design as a whole. A sticky
+set whose release reopens every endpoint is such a hybrid, consistent
+with the gate’s 70–73% hit rate on b2b-saas and the #4042 cascade, which
+bounded spillover targets
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4042">30</a>,
+<a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">35</a>]</sup>.
+Start affinity at the shipped 0.8, a value never swept for llm-d and,
+per Lodestar, workload-dependent
+<sup>[<a href="https://arxiv.org/pdf/2606.00946">43</a>]</sup>, with a
+load-gated release and a cold-start mechanism. The remaining disputes,
+documentation versus guides and blog versus recipe throughput, reflect
+lag rather than substance.</p>
+<h3 id="pitfalls">6.4 Pitfalls</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Trigger and symptom</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gate misses a slot-bound queue</td>
+<td>Cached waiting requests add few uncached tokens: 64 running, 93
+waiting, TTFT p50 17.7 s while the estimated penalty peaked at 1.99 s
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3422">34</a>]</sup></td>
+<td>Queue-wait term (TTFT p50 0.59 s in the open PR), or a
+utilization-filter queue cap
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/utilization/README.md">2</a>,
+<a href="https://github.com/llm-d/llm-d-router/pull/3421">53</a>]</sup></td>
+</tr>
+<tr>
+<td>Decode hotspot never released</td>
+<td>Tokens released at first chunk: 0/0/96 split, TPOT 288 ms vs ~95 ms
+spread
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3245">16</a>]</sup></td>
+<td><code>addEstimatedOutputTokens</code> plus ~4000 ms gave 29/38/29;
+an in-flight-request gate PR closed on 19 October 2026
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/3245">16</a>,
+<a href="https://github.com/llm-d/llm-d-router/pull/3278">63</a>]</sup></td>
+</tr>
+<tr>
+<td>Override cascade under churn</td>
+<td>Override reopens all endpoints, a utilization detector drops the
+warm home, empty replacements pull the alternative’s TTFT to zero
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4042">30</a>]</sup></td>
+<td>Emergency <code>maxTTFTPenaltyMs: 0</code>; then <code>full</code>
+plus opt-in <code>maxSpillEndpoints</code> (sticky + 1 recovered in 5 of
+5 toy seeds)
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4042">30</a>]</sup></td>
+</tr>
+<tr>
+<td>Scale-out starvation</td>
+<td>Release needs load: new replicas got 0% at 18 s versus 74.7% with
+load-only routing
+<sup>[<a href="https://github.com/llm-d/llm-d-router/pull/3421">53</a>]</sup></td>
+<td>Smaller penalty or load-only for short prefixes; no-hit-LRU after
+the fix; exploration ~0.01
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>,
+<a href="https://github.com/llm-d/llm-d-router/pull/4215">48</a>]</sup></td>
+</tr>
+<tr>
+<td>Stacked prefix scorer</td>
+<td><code>load_override</code> climbs, routing unchanged</td>
+<td>Remove it
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>]</sup></td>
+</tr>
+<tr>
+<td>Herding on stale gauges</td>
+<td>Bursts land on one pod
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/298">12</a>]</sup></td>
+<td>In-flight producers; weighted-random within the sticky set
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">8</a>,
+<a href="https://inference-sim.github.io/inference-sim/latest/guide/routing/">28</a>]</sup></td>
+</tr>
+<tr>
+<td>Several EPP replicas</td>
+<td>Per-process in-flight accounting mis-fires the gate</td>
+<td>One replica
+<sup>[<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/pd-disaggregation/router/pd-disaggregation.values.yaml">11</a>,
+<a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/precise-prefix-cache-routing/router/precise-prefix-cache-routing.values.yaml">31</a>]</sup></td>
+</tr>
+<tr>
+<td>Floating chart version</td>
+<td>Estimator semantics change silently</td>
+<td>Pin it
+<sup>[<a href="https://github.com/llm-d/llm-d/blob/main/guides/optimized-baseline/README.md">49</a>,
+<a href="https://github.com/llm-d/llm-d-router/pull/3514">52</a>]</sup></td>
+</tr>
+<tr>
+<td>Pool-wide saturation</td>
+<td>Flow control admits requests, gated by a utilization detector fusing
+queue depth and KV pressure, before any scorer runs
+<sup>[<a href="https://developers.redhat.com/articles/2026/08/27/llm-d-flow-control-priority-queuing-for-shared-gpu-inference">64</a>]</sup></td>
+<td>Tune admission; weights only place admitted requests</td>
+</tr>
+</tbody>
+</table>
+<p>Gate failures are observable through <code>load_override</code>, but
+only the decode hotspot and the slot-bound queue have configuration
+workarounds. The cascade has only an off switch, and the real fixes are
+unmerged or closed code
+<sup>[<a href="https://github.com/llm-d/llm-d-router/issues/4042">30</a>,
+<a href="https://github.com/llm-d/llm-d-router/pull/3421">53</a>,
+<a href="https://github.com/llm-d/llm-d-router/pull/3278">63</a>]</sup>.
+The blend’s failures are not all structural either: its cold-pod tie
+yields to a configuration change, adding no-hit-LRU
+<sup>[<a href="https://github.com/llm-d/llm-d-router/pull/4215">48</a>]</sup>.</p>
+<h2 id="recommended-playbook">7. Recommended Playbook</h2>
+<ol type="1">
+<li><strong>Classify the workload</strong>: prefill- or decode-bound,
+slot- or token-bound, shared prefix above 0.8, homogeneous pool, engine
+prefix caching on.</li>
+<li><strong>Copy your release’s guide values file and pin the router
+chart.</strong></li>
+<li><strong>Run the base profile</strong>: affinity filter plus
+token-load (active-request if decode-bound; one per P/D profile),
+max-score, no weights, one EPP replica.</li>
+<li><strong>Calibrate <code>peakPrefillThroughput</code></strong> on
+your own serving path, taking the median of five runs, as the project
+did.</li>
+<li><strong>Set <code>maxTTFTPenaltyMs</code> from the TTFT
+budget</strong>, check τ against your prompt sizes, and lower it under
+<code>full</code>. For agentic short turns, one reporter’s 4000 ms with
+<code>addEstimatedOutputTokens</code> is a starting point.</li>
+<li><strong>Add capability scorers only where needed</strong>, sized by
+effective pull; add no-hit-LRU or small exploration if the pool
+autoscales; never add a weighted prefix scorer after the filter.</li>
+<li><strong>If a blend is unavoidable</strong>, set P:L by arithmetic,
+screen in BLIS, and, we recommend, validate with five repeats per load
+point, matching calibration.</li>
+<li><strong>Monitor</strong> <code>load_override</code>, hit rate,
+per-pod spread, and estimated versus measured TTFT. Use
+<code>maxTTFTPenaltyMs: 0</code> only as a short emergency brake: it
+disables the release and reintroduces warm-endpoint hotspots.</li>
+<li><strong>Escalate to predicted latency</strong> only for homogeneous,
+high-variance pools with SLOs, and re-calibrate after every model,
+hardware, engine or router change.</li>
+</ol>
+<p>Pending gate work moves the estimate toward real TTFT: the request’s
+own prefill cost, queue wait, bounded spillover that warms one extra
+endpoint rather than the whole pool, and estimate-versus-actual
+histograms. The capacity-ledger and length-adaptive proposals bring
+multi-signal combination back, computed per request rather than fixed
+per profile. Weights will likely survive as derived or learned
+coefficients rather than YAML constants, and the operator’s question
+will shift from choosing weights to checking whether the calibration
+still holds.</p>
+<p>Two caveats remain. Per-request precision could revive the
+instability DualMap documented, so bounded spillover and stable
+thresholds are the features to watch. And no multi-run benchmark yet
+compares a tuned blend, the calibrated gate and the predictor on one
+workload, so every number above is a starting point to verify.</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li><a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/scheduling">Request
+Scheduler | llm-d</a><span class="dom">llm-d.ai</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/utilization/README.md">llm-d-router
+utilization filter README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://llm-d.ai/docs/dev/architecture/core/router/epp/configuration">Configuration
+| llm-d</a><span class="dom">llm-d.ai</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/topologyaffinity/README.md">llm-d-router
+topology-affinity scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/kvcacheutilization/README.md">llm-d-router
+kv-cache-utilization scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/queuedepth/README.md">llm-d-router
+queue scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://arxiv.org/pdf/2602.11688">GORGO: Online Tuning for
+Cross-Region</a><span class="dom">arxiv.org</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/README.md">llm-d-router
+prefix-cache-affinity-filter README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/attributeweight/README.md">llm-d-router
+endpoint-attribute-weight scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity/README.md">llm-d-router
+session-affinity filter README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/pd-disaggregation/router/pd-disaggregation.values.yaml">llm-d
+P/D disaggregation guide router values</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/issues/298">llm-d-router
+issue #298: Poor performance with bursty workloads</a><span
+class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/router/predicted-latency.values.yaml">llm-d
+predicted-latency guide router values</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/framework/plugins/scheduling/scorer/prefix/README.md">llm-d-router
+prefix-cache scorer README</a><span class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/tokenload/README.md">llm-d-router
+token-load scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/issues/3245">llm-d-router
+issue #3245: prefix-cache-affinity-filter TTFT load gate does not
+release a decode hotspot</a><span class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/activerequest/README.md">llm-d-router
+active-request scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/issues/3880">llm-d-router
+issue #3880: Add length-adaptive-load-scorer for decode load balancing
+in P/D disaggregation</a><span class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/loadaware/README.md">llm-d-router
+load-aware scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/nohitlru/README.md">llm-d-router
+no-hit-lru scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/issues/4214">llm-d-router
+issue #4214: Default profile routes zero traffic to freshly scaled-out
+endpoints at low load</a><span class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/sessionaffinity/README.md">llm-d-router
+session-affinity scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/README.md">llm-d-router
+lora-affinity scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/contextlengthaware/README.md">llm-d-router
+context-length-aware scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://llm-d.ai/docs/0.10/architecture/advanced/latency-predictor">Latency
+Predictor | llm-d</a><span class="dom">llm-d.ai</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/README.md">llm-d
+predicted-latency routing guide README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://docs.cloud.google.com/kubernetes-engine/docs/how-to/use-predicted-latency-based-routing">Use
+predicted latency-based routing with GKE Inference Gateway, Google Cloud
+Documentation</a><span class="dom">docs.cloud.google.com</span></li>
+<li><a href="https://inference-sim.github.io/inference-sim/latest/guide/routing/">Routing
+(llm-d router), BLIS Blackbox Inference Simulator</a><span
+class="dom">inference-sim.github.io</span></li>
+<li><a href="https://github.com/kubernetes-sigs/gateway-api-inference-extension/issues/972">gateway-api-inference-extension
+issue #972: Prefix Scorer should consider cache freshness</a><span
+class="dom">github.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/issues/4042">llm-d-router
+issue #4042: prevent prefix-cache-affinity-filter load_override
+cascading overload</a><span class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/precise-prefix-cache-routing/router/precise-prefix-cache-routing.values.yaml">llm-d
+precise-prefix-cache-routing guide router values</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://llm-d.ai/blog/kvcache-wins-you-can-see">KV-Cache
+Wins You Can See: From Prefix Caching in vLLM to Distributed Scheduling
+with llm-d</a><span class="dom">llm-d.ai</span></li>
+<li><a href="https://github.com/llm-d/llm-d/tree/main/guides/recipes/router/calibration">llm-d
+router calibration recipe</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/issues/3422">llm-d-router
+issue #3422: TTFT load gate does not fire on an endpoint with a long
+queue and an intact cache</a><span class="dom">github.com</span></li>
+<li><a href="https://llm-d.ai/blog/sticky-until-saturated-token-aware-routing">Sticky
+Until Saturated: Token-Aware Routing in llm-d</a><span
+class="dom">llm-d.ai</span></li>
+<li><a href="https://arxiv.org/html/2608.19677">CacheRoute: Planned
+Prefix-Affinity Routing for Large-Scale LLM Serving</a><span
+class="dom">arxiv.org</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/issues/3110">llm-d-router
+issue #3110: Add a capacity-ledger data producer that books KV blocks,
+step tokens, and slots per endpoint</a><span
+class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/tiered-prefix-cache/router/single-host/tiered-prefix-cache-cpu.values.yaml">llm-d
+tiered-prefix-cache CPU guide router values</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/turn-priority-fairness/router/turn-priority-fairness.values.yaml">llm-d
+turn-priority-fairness guide router values</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://llm-d.ai/docs/well-lit-paths/foundations/precise-prefix-cache-routing">Precise
+Prefix Cache Routing | llm-d</a><span class="dom">llm-d.ai</span></li>
+<li><a href="https://github.com/vllm-project/vllm/issues/16016">vLLM
+issue #16016: RFC, Cache Salting for Secure and Flexible Prefix Caching
+in vLLM</a><span class="dom">github.com</span></li>
+<li><a href="https://llm-d.ai/blog/predicted-latency-based-scheduling-for-llms">Predicted-Latency
+Based Scheduling for LLMs</a><span class="dom">llm-d.ai</span></li>
+<li><a href="https://arxiv.org/pdf/2606.00946">Lodestar: An
+Online-Learning LLM Inference Router</a><span
+class="dom">arxiv.org</span></li>
+<li><a href="https://notes.kodekloud.com/docs/llm-d-A-Deep-Dive/Smart-Routing-Live/The-Scorers-Behind-Every-Decision/page.md">KodeKloud,
+llm-d: A Deep Dive, The Scorers Behind Every Decision</a><span
+class="dom">notes.kodekloud.com</span></li>
+<li><a href="https://llm-d.ai/blog/llm-d-v0.9-hardened-for-scale">llm-d
+v0.9: Hardened for Scale</a><span class="dom">llm-d.ai</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/optimized-baseline/router/optimized-baseline.values.yaml">llm-d
+optimized-baseline guide router values</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/predicted-latency-routing/router/predicted-latency-slo.values.yaml">llm-d
+predicted-latency SLO guide router values</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/pull/4215">llm-d-router
+pull request #4215: enable no-hit-lru-scorer in the default chart
+profile</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d/blob/main/guides/optimized-baseline/README.md">llm-d
+optimized-baseline guide README</a><span
+class="dom">github.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d/pull/457">llm-d pull request
+#457: benchmark results, LMCache results and tuned EPP scorers</a><span
+class="dom">github.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d/blob/main/guides/recipes/router/calibration/configuration-matrix.md">llm-d
+router calibration configuration matrix</a><span
+class="dom">github.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/pull/3514">llm-d-router
+pull request #3514: add uncached tokens in TTFT estimation for
+prefix-cache-affinity-filter</a><span class="dom">github.com</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/pull/3421">llm-d-router
+pull request #3421: add queue wait to the prefix-cache-affinity TTFT
+estimate</a><span class="dom">github.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d/main/guides/agentic-serving/router/agentic-serving.values.yaml">llm-d
+agentic-serving guide router values</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://raw.githubusercontent.com/llm-d/llm-d-router/main/pkg/epp/framework/plugins/scheduling/scorer/runningrequests/README.md">llm-d-router
+running-requests-size scorer README</a><span
+class="dom">raw.githubusercontent.com</span></li>
+<li><a href="https://llm-d.ai/blog/blis-evolving-llm-d-at-simulation-speed">BLIS:
+Evolving llm-d at Simulation Speed</a><span
+class="dom">llm-d.ai</span></li>
+<li><a href="https://github.com/llm-d/llm-d/blob/main/docs/operations/observability/promql.md">llm-d
+observability PromQL reference</a><span
+class="dom">github.com</span></li>
+<li><a href="https://docs.nvidia.com/dynamo/components/router/configuration-and-tuning">Configuration
+and Tuning, NVIDIA Dynamo Documentation</a><span
+class="dom">docs.nvidia.com</span></li>
+<li><a href="https://docs.sglang.ai/advanced_features/sgl_model_gateway.html">SGLang
+Model Gateway, SGLang Documentation</a><span
+class="dom">docs.sglang.ai</span></li>
+<li><a href="https://smg-dup.pages.dev/concepts/routing/cache-aware">Concepts,
+Shepherd Model Gateway</a><span
+class="dom">smg-dup.pages.dev</span></li>
+<li><a href="https://llm-d.ai/blog/intelligent-inference-scheduling-with-llm-d">Intelligent
+Inference Scheduling with llm-d</a><span
+class="dom">llm-d.ai</span></li>
+<li><a href="https://arxiv.org/pdf/2602.06502">DualMap, conference paper
+at ICLR 2026</a><span class="dom">arxiv.org</span></li>
+<li><a href="https://github.com/llm-d/llm-d-router/pull/3278">llm-d-router
+pull request #3278: add in-flight request gate to prefix cache affinity
+filter</a><span class="dom">github.com</span></li>
+<li><a href="https://developers.redhat.com/articles/2026/08/27/llm-d-flow-control-priority-queuing-for-shared-gpu-inference">llm-d
+flow control: Priority queuing for shared GPU inference, Red Hat
+Developer</a><span class="dom">developers.redhat.com</span></li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Choosing and
+Weighting Scorers in the llm-d Endpoint Picker</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-11-13</span></div>
+  <div><span class="k">Sources cited</span><span class="v">64</span></div>
+</div>
+</div></div>
+</body>
+</html>
