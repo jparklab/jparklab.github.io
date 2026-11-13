@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>gVNIC vs virtio-net on Google Cloud: Device Model, Performance
+and Migration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>gVNIC vs virtio-net on Google Cloud: Device Model, Performance and
+Migration</h1>
+<div class="byline">Research report · 18 cited sources · reviewed 2026-11-13</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#what-gvnic-is" id="toc-what-gvnic-is">1. What gVNIC
+Is</a></li>
+<li><a href="#how-gvnic-differs-from-virtio-net"
+id="toc-how-gvnic-differs-from-virtio-net">2. How gVNIC Differs from
+virtio-net</a></li>
+<li><a
+href="#performance-bandwidth-tiers-and-machine-series-requirements"
+id="toc-performance-bandwidth-tiers-and-machine-series-requirements">3.
+Performance, Bandwidth Tiers and Machine-Series Requirements</a></li>
+<li><a href="#os-driver-and-dpdk-support"
+id="toc-os-driver-and-dpdk-support">4. OS, Driver and DPDK
+Support</a></li>
+<li><a href="#choosing-and-migrating-between-the-two"
+id="toc-choosing-and-migrating-between-the-two">5. Choosing and
+Migrating Between the Two</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>gVNIC (Google Virtual NIC) is a Google-only paravirtual PCI
+network device that replaces virtio-net on Compute Engine. The main
+difference is not one feature. virtio-net is an open, vendor-neutral
+standard that every guest OS can drive. gVNIC is a Google-specific
+device with its own register layout, admin queue and descriptor formats,
+built for Google’s Andromeda network stack. In practice the choice is
+mostly made for you. Third-generation and later machine series, Arm VMs,
+Confidential VMs, Tier_1 networking (50–200 Gbps), jumbo frames and the
+GPU machine families all require gVNIC. virtio-net remains an option
+only on first- and second-generation VMs at default bandwidth. It does
+keep one advantage there: up to 32 queues per vNIC against gVNIC’s 16.
+Google’s own benchmarks show gVNIC cutting MPI latency by 26% and
+raising 100 Gbps throughput by 57% compared with virtio-net. These are
+vendor numbers from 2021, and no independent replication was found.
+Moving from virtio-net to gVNIC is an image and driver task. The image
+must carry the <code>GVNIC</code> guest OS feature and load the
+<code>gve</code> driver. Most migration failures come from skipping one
+of those two steps.</strong></p>
+</div>
+<h2 id="what-gvnic-is">1. What gVNIC Is</h2>
+<p>Google describes gVNIC as “a virtual network interface designed
+specifically for Compute Engine” and “an alternative to the virtIO-based
+ethernet driver.” It also calls gVNIC “the next generation network
+interface which succeeds VirtIO.” For all new machine types (Generation
+3 onward), gVNIC replaces virtio-net as the only supported interface
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>]</sup>.
+Google gives three reasons: better performance, more consistent
+performance through fewer noisy-neighbor effects, and network
+capabilities that virtio cannot offer
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>]</sup>.
+The 2021 launch post adds that gVNIC is “tightly integrated with our
+high performance, flexible Andromeda virtual network stack.” It also
+says gVNIC is required for the 50–100 Gbps bandwidth configurations
+<sup>[<a href="https://cloud.google.com/blog/topics/hpc/running-mpi-workloads-efficiently-on-google-cloud-using-gvnic">4</a>]</sup>.</p>
+<p>To the guest, gVNIC is an ordinary PCI Ethernet device with Google’s
+own identity. It uses vendor ID 0x1AE0 (Google), device ID 0x0042,
+subsystem 0x1AE0/0x0058 and class 0x200 (Ethernet)
+<sup>[<a href="https://docs.kernel.org/networking/device_drivers/ethernet/google/gve.html">2</a>]</sup>.
+It exposes three 32-bit memory BARs. BAR0 holds the configuration and
+status registers, BAR1 the MSI-X vector table, and BAR2 the interrupt,
+RX and TX doorbells
+<sup>[<a href="https://docs.kernel.org/networking/device_drivers/ethernet/google/gve.html">2</a>]</sup>.
+The driver controls the device in four ways [2]:</p>
+<ul>
+<li><strong>MMIO registers</strong> for initialization and status.</li>
+<li><strong>An Admin Queue (AQ).</strong> This is one page of command
+slots. The driver fills slots, rings
+<code>GVE_ADMIN_QUEUE_DOORBELL</code>, and polls an event counter until
+the device has executed the commands.</li>
+<li><strong>Device reset</strong>, triggered by writing 0 to the AQ PFN
+register. The device then releases every resource the driver
+allocated.</li>
+<li><strong>Two kinds of interrupt.</strong> A management interrupt
+tells the driver to read <code>GVE_DEVICE_STATUS</code>.
+Per-notification-block interrupts schedule NAPI polling of the
+queues.</li>
+</ul>
+<p>The Linux driver is called <code>gve</code>. Google maintains it
+upstream in the kernel and also as an out-of-tree DKMS package (for
+example version 1.4.6) for distros whose built-in copy is old
+<sup>[<a href="https://docs.kernel.org/networking/device_drivers/ethernet/google/gve.html">2</a>,
+<a href="https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux">13</a>]</sup>.
+Windows uses an NDIS miniport driver that binds the same 1AE0:0042
+device. FreeBSD and DPDK drivers also exist
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>,
+<a href="https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-windows">14</a>,
+<a href="https://doc.dpdk.org/guides/nics/gve.html">7</a>]</sup>.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Property</th>
+<th>gVNIC</th>
+<th>virtio-net</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Who defines it</td>
+<td>Google, for Compute Engine only</td>
+<td>OASIS VIRTIO standard, vendor-neutral</td>
+</tr>
+<tr>
+<td>PCI identity</td>
+<td>Vendor 0x1AE0, device 0x0042</td>
+<td>Vendor 0x1AF4, device 0x1041 (modern) or 0x1000 (transitional)</td>
+</tr>
+<tr>
+<td>Where it runs</td>
+<td>Compute Engine (and GKE nodes on it)</td>
+<td>KVM/QEMU, most hypervisors and clouds, some hardware NICs</td>
+</tr>
+<tr>
+<td>Guest drivers</td>
+<td><code>gve</code> (Linux), GooGet <code>gvnic</code> (Windows),
+FreeBSD, DPDK <code>net_gve</code></td>
+<td>Built into practically every OS; DPDK <code>net_virtio</code></td>
+</tr>
+<tr>
+<td>Google’s positioning</td>
+<td>Recommended for all families; required on Gen3+</td>
+<td>Legacy; Gen1/Gen2 only</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-gvnic-differs-from-virtio-net">2. How gVNIC Differs from
+virtio-net</h2>
+<h3 id="standard-device-vs-proprietary-device">2.1 Standard device vs
+proprietary device</h3>
+<p>virtio is a specification for a family of paravirtual devices. A
+virtio device can sit on PCI, MMIO or channel I/O transports. The driver
+and device negotiate capabilities through feature bits and exchange
+buffers through <em>virtqueues</em> in guest memory
+<sup>[<a href="https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.html">3</a>,
+<a href="https://www.redhat.com/en/blog/virtio-devices-and-drivers-overview-headjack-and-phone">6</a>]</sup>.
+Any virtio-net device must use PCI vendor ID 0x1AF4. Its device ID is
+derived from the virtio device type: 0x1041 for the network card, or
+transitional 0x1000
+<sup>[<a href="https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.html">3</a>]</sup>.
+The same guest driver therefore works on QEMU/KVM, on hardware virtio
+NICs and on any cloud that exposes virtio
+<sup>[<a href="https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.html">3</a>,
+<a href="https://www.redhat.com/en/blog/virtio-devices-and-drivers-overview-headjack-and-phone">6</a>]</sup>.
+The backend can be QEMU or the in-kernel vhost-net, and the guest never
+knows which. In vhost-net, a kernel worker thread polls for guest
+notifications through ioeventfd and injects interrupts through irqfd, so
+packets bypass the QEMU process. The Red Hat write-up notes these
+backend changes “are completely transparent to the guest who still uses
+the standard virtio interface”
+<sup>[<a href="https://www.redhat.com/en/blog/deep-dive-virtio-networking-and-vhost-net">5</a>]</sup>.</p>
+<p>gVNIC drops that portability. Its control plane (admin queue,
+registers, reset protocol) and its data plane (descriptor formats) are
+defined only by Google’s driver documentation
+<sup>[<a href="https://docs.kernel.org/networking/device_drivers/ethernet/google/gve.html">2</a>]</sup>.
+In exchange, Google controls both sides of the interface and can shape
+it around its own host stack.</p>
+<h3 id="queue-and-descriptor-formats">2.2 Queue and descriptor
+formats</h3>
+<p>virtio-net has two ring layouts:</p>
+<ul>
+<li><strong>Split virtqueue.</strong> The original layout, and the only
+one in virtio 1.0 and earlier. It keeps a descriptor table plus separate
+available and used rings
+<sup>[<a href="https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.html">3</a>,
+<a href="https://www.redhat.com/en/blog/virtio-devices-and-drivers-overview-headjack-and-phone">6</a>]</sup>.</li>
+<li><strong>Packed virtqueue.</strong> Added in virtio 1.1 and
+negotiated through <code>VIRTIO_F_RING_PACKED</code>. It folds
+everything into one descriptor ring of up to 2^15 entries. Each
+descriptor carries a buffer ID, address, length and flags. The device
+writes completions back over the driver’s descriptors, and
+event-suppression areas control notifications
+<sup>[<a href="https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.html">3</a>]</sup>.</li>
+</ul>
+<p>gVNIC has its own two descriptor formats, which “have entirely
+different descriptors” from each other [2]:</p>
+<ul>
+<li><strong>GQI.</strong> Each queue is a power-of-two descriptor ring
+paired with a buffer and assigned to a notification block. The head
+advances through a big-endian doorbell in BAR2 and the tail through a
+big-endian counter. Every queue’s buffers must be pre-registered with
+the device as a <em>queue page list</em> (QPL), and packet data can only
+live in those pages. On transmit the driver copies packets into a FIFO
+built from the QPL. On receive, a data ring the same length as the
+descriptor ring advances in lockstep with it
+<sup>[<a href="https://docs.kernel.org/networking/device_drivers/ethernet/google/gve.html">2</a>]</sup>.</li>
+<li><strong>DQO.</strong> This is a submission/completion design, closer
+to modern hardware NICs. TX and RX buffer queues post descriptors and
+ring MMIO doorbells. Separate completion queues return results and use a
+generation bit to mark new entries. TX packets carry a 16-bit completion
+tag and RX buffers a 16-bit buffer ID, so completions can arrive out of
+order. DQO descriptors are little-endian. Packet buffers are DMA-mapped
+directly, and a received packet can span several fixed-size RX buffers
+<sup>[<a href="https://docs.kernel.org/networking/device_drivers/ethernet/google/gve.html">2</a>]</sup>.</li>
+</ul>
+<p>Separately, gVNIC has two <strong>addressing modes</strong>. QPL uses
+a fixed, pre-registered page set. RDA (raw DMA addressing) uses a
+dynamic page set, so “the packet buffers can be anywhere in guest
+memory”
+<sup>[<a href="https://docs.kernel.org/networking/device_drivers/ethernet/google/gve.html">2</a>]</sup>.
+DPDK’s driver documentation names the three combinations that exist:
+GQI_QPL, GQI_RDA (deprecated) and DQO_RDA. It explains the cost of QPL
+directly: TX “needs to copy packets to QPL memory” and RX must “copy
+packets from the address to get real packets data”
+<sup>[<a href="https://doc.dpdk.org/guides/nics/gve.html">7</a>]</sup>.
+Under RDA, by contrast, the driver writes physical addresses into
+descriptors “like usual NICs”
+<sup>[<a href="https://doc.dpdk.org/guides/nics/gve.html">7</a>]</sup>.</p>
+<p>That leaves a real design difference. virtio-net always lets the
+device read and write driver-supplied buffers in place. gVNIC offers
+both a bounce-buffer mode (QPL) and a direct-DMA mode (RDA). The device
+tells the driver which queue format to use; it is not a guest choice
+<sup>[<a href="https://docs.kernel.org/networking/device_drivers/ethernet/google/gve.html">2</a>,
+<a href="https://doc.dpdk.org/guides/nics/gve.html">7</a>]</sup>.</p>
+<h3 id="offloads-and-newer-features">2.3 Offloads and newer
+features</h3>
+<p>virtio-net negotiates its offloads as feature bits. Examples include
+[3]:</p>
+<ul>
+<li><strong>Checksum offload</strong>
+(<code>VIRTIO_NET_F_CSUM</code>).</li>
+<li><strong>TSO in both directions</strong> (<code>HOST_TSO4/6</code>,
+<code>GUEST_TSO4/6</code>).</li>
+<li><strong>Mergeable receive buffers</strong>
+(<code>MRG_RXBUF</code>).</li>
+<li><strong>Multiqueue with automatic receive steering</strong>
+(<code>VIRTIO_NET_F_MQ</code>, which requires the control
+virtqueue).</li>
+<li><strong>RSC and failover standby.</strong></li>
+</ul>
+<p>The software stays portable, but each feature works only if the host
+backend implements it.</p>
+<p>gVNIC’s newer features ride on the DQO format and on Google’s
+driver:</p>
+<ul>
+<li><strong>Header split.</strong> Merged into Linux in March 2024 and
+controlled with ethtool’s <code>tcp-data-split</code> ringparam. The
+series adds a 128-byte header buffer per RX descriptor and raises the
+maximum RX buffer to 4096 bytes. It also adds counters for split packets
+and for packets left unsplit (when the header overflows its buffer or
+has zero length)
+<sup>[<a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19b427a403f2a12603a33d619bab937d57a72b06">8</a>]</sup>.
+Header split is a precondition for zero-copy receive paths in the
+kernel.</li>
+<li><strong>RSS and flow steering.</strong> DPDK’s gVNIC driver supports
+RSS with a 40-byte key and a 128-entry redirection table. It also
+supports 5-tuple receive flow steering through the rte_flow API
+<sup>[<a href="https://doc.dpdk.org/guides/nics/gve.html">7</a>]</sup>.</li>
+<li><strong>Hardware timestamps.</strong> Per-packet RX timestamps and
+<code>read_clock</code> work only in the DQO format
+<sup>[<a href="https://doc.dpdk.org/guides/nics/gve.html">7</a>]</sup>.</li>
+<li><strong>Jumbo frames.</strong> On Compute Engine these require gVNIC
+driver 1.3 or later (or IDPF on bare metal), not virtio-net
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">10</a>]</sup>.</li>
+</ul>
+<p>The DPDK documentation is internally inconsistent. The same page says
+the poll-mode driver supports only the GQI formats, and that only the
+GQI_QPL format is in use on GCP. Yet it lists a timestamp feature that
+needs DQO
+<sup>[<a href="https://doc.dpdk.org/guides/nics/gve.html">7</a>]</sup>.
+That part of the page is probably out of date. Check the DPDK release
+notes for your version before relying on DQO in DPDK.</p>
+<h3 id="queue-counts">2.4 Queue counts</h3>
+<p>The two device types also get different default queue allocations,
+and gVNIC is the more limited of the two here:</p>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Default queues per vNIC</th>
+<th>Max per vNIC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gen1/Gen2 VM, virtio-net</td>
+<td>vCPUs ÷ vNICs</td>
+<td>32</td>
+</tr>
+<tr>
+<td>Gen1/Gen2 VM or M3, gVNIC</td>
+<td>vCPUs ÷ vNICs ÷ 2</td>
+<td>16</td>
+</tr>
+<tr>
+<td>Gen3+ VM (Titanium), gVNIC</td>
+<td>vCPUs ÷ vNICs</td>
+<td>16</td>
+</tr>
+</tbody>
+</table>
+<p>Sources:
+<sup>[<a href="https://cloud.google.com/blog/products/compute/boost-your-vm-with-virtual-network-interfaces">9</a>,
+<a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">10</a>]</sup>.</p>
+<p>Custom queue counts let you raise these numbers. The cap is still
+“with virtIO, the maximum queue count is 32, while with gVNIC, it’s 16”
+<sup>[<a href="https://cloud.google.com/blog/products/compute/boost-your-vm-with-virtual-network-interfaces">9</a>]</sup>.
+In return, gVNIC with Tier_1 on N2, N2D, C2 and C2D allows queue
+<em>oversubscription</em>. That means 16 queues per vNIC even when the
+total exceeds the vCPU count. In Google’s multi-NIC network-appliance
+test, this raised aggregate throughput from about 50% to about 99% of
+the VM’s stated bandwidth
+<sup>[<a href="https://cloud.google.com/blog/products/compute/boost-your-vm-with-virtual-network-interfaces">9</a>]</sup>.</p>
+<h2 id="performance-bandwidth-tiers-and-machine-series-requirements">3.
+Performance, Bandwidth Tiers and Machine-Series Requirements</h2>
+<h3 id="where-gvnic-is-mandatory">3.1 Where gVNIC is mandatory</h3>
+<p>The machine generation decides most cases [1]:</p>
+<ul>
+<li><strong>Generation 3 and later</strong> (C3, C4, N4, Z3, A3, and so
+on, excluding bare metal): gVNIC is the only virtual NIC. Bare metal
+uses Intel’s IDPF driver instead
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>,
+<a href="https://docs.cloud.google.com/compute/docs/troubleshooting/gvnic">17</a>]</sup>.</li>
+<li><strong>Generation 1 and 2</strong> (N1, N2, N2D, C2, C2D, A2, G2…):
+virtio-net is allowed. gVNIC is required if the VM runs on Arm, is a
+Confidential VM, or needs 50–100 Gbps through Tier_1 networking or the
+A2/G2/N1 high-bandwidth GPU configurations
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>]</sup>.</li>
+</ul>
+<h3 id="tier_1-networking">3.2 Tier_1 networking</h3>
+<p>Per-VM Tier_1 networking raises a VM’s egress ceiling. The limits run
+from 50 Gbps up to 200 Gbps on large C3, C3D, C4, C4D and Z3 shapes
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">11</a>,
+<a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">10</a>]</sup>.
+N2, N2D, C2, C2D, M3 and C4A top out at 100 Gbps under Tier_1
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">10</a>]</sup>.
+Tier_1 “requires the gVNIC virtual network driver and a gVNIC-compatible
+OS or custom image.” Gen3+ VMs also need driver 1.4.2 or later to reach
+the highest bandwidth
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">11</a>]</sup>.
+The setting is tied to the NIC type: Tier_1 can be enabled at creation
+only “if the instance doesn’t use the VirtioNet interface.” It can be
+added later only if the instance was created with gVNIC or IDPF
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">11</a>]</sup>.
+So a virtio-net VM stays at default bandwidth. On a large N2, for
+example, that is 32 Gbps internal versus up to 100 Gbps with Tier_1
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">11</a>]</sup>.</p>
+<p>Google’s bandwidth guide lists “using VirtIO instead of gVNIC with
+compute instances that support both network interface drivers” as one
+factor that can lower achieved bandwidth
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">10</a>]</sup>.
+It also warns that large C3, C4 and Z3 VMs can hit NUMA bottlenecks
+above 100 Gbps whichever driver you use
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">11</a>]</sup>.</p>
+<h3 id="gpu-machines">3.3 GPU machines</h3>
+<p>GPU families use gVNIC for their general-purpose (non-RDMA)
+networking. For most GPU instances, Google recommends gVNIC to get rates
+of 50 Gbps and above
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/gpus/gpu-network-bandwidth">12</a>]</sup>.
+The NIC layout differs by family:</p>
+<ul>
+<li><strong>A4 (B200) and A3 Ultra (H200)</strong> VMs have eight
+ConnectX-7 RDMA NICs for GPU-to-GPU traffic and two gVNICs for regular
+VPC traffic. Each gVNIC must attach to a different VPC network
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/gpus/gpu-network-bandwidth">12</a>]</sup>.</li>
+<li><strong>A3 High, Mega and Edge (H100)</strong> layouts attach their
+NICs per PCIe/NUMA domain
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/gpus/gpu-network-bandwidth">12</a>]</sup>.</li>
+<li><strong>A4X</strong> also uses gVNIC for its VPC networks
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/gpus/gpu-network-bandwidth">12</a>]</sup>.</li>
+<li><strong>A5X and A4X Max</strong>, the newest shapes, move those VPC
+interfaces to IDPF
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/gpus/gpu-network-bandwidth">12</a>]</sup>.</li>
+</ul>
+<h3 id="measured-differences">3.4 Measured differences</h3>
+<p>The only head-to-head numbers found come from Google’s 2021 HPC post.
+That test used c2-standard-60 VMs with compact placement and the HPC
+CentOS 7 image with gve 1.2.3 [4]:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Benchmark</th>
+<th>Result for gVNIC vs virtio-net</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IMB PingPong, 2 kB–4 MB messages, default tier</td>
+<td>26% lower latency on average</td>
+</tr>
+<tr>
+<td>OSU multi-pair bandwidth, Tier_1 100 Gbps</td>
+<td>57% higher throughput (gVNIC required for 100 Gbps)</td>
+</tr>
+<tr>
+<td>WRF v3 CONUS 12 km, 24 VMs / 720 ranks</td>
+<td>51% faster</td>
+</tr>
+<tr>
+<td>ANSYS Fluent</td>
+<td>13% faster</td>
+</tr>
+<tr>
+<td>ANSYS LS-DYNA</td>
+<td>11% faster</td>
+</tr>
+</tbody>
+</table>
+<p>Two cautions apply:</p>
+<ul>
+<li>The 57% throughput figure partly reflects Tier_1 itself, since
+virtio-net cannot use Tier_1
+<sup>[<a href="https://cloud.google.com/blog/topics/hpc/running-mpi-workloads-efficiently-on-google-cloud-using-gvnic">4</a>,
+<a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">11</a>]</sup>.</li>
+<li>All of these are vendor benchmarks on one 2021 machine type with no
+independent replication found, so treat them as directional.</li>
+</ul>
+<h2 id="os-driver-and-dpdk-support">4. OS, Driver and DPDK Support</h2>
+<p><strong>Linux.</strong> The <code>gve</code> driver is in the
+mainline kernel, and Google also ships an out-of-tree DKMS build from
+GitHub. Distros listed as gVNIC-capable ship a native driver. The DKMS
+build can replace it “to get the latest enhancements” and supports
+clean, non-EOL LTS kernels
+<sup>[<a href="https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux">13</a>]</sup>.
+Native drivers often report version <code>1.0.0</code> regardless of
+their real feature level, and the repository says to ignore that string
+<sup>[<a href="https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux">13</a>]</sup>.
+Feature gates are tied to driver versions: jumbo frames need 1.3+ and
+full Tier_1 bandwidth on Gen3+ needs 1.4.2+
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">10</a>,
+<a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">11</a>]</sup>.
+An old distro kernel can therefore run gVNIC but miss features.
+virtio-net has no such gap, because its features are negotiated and the
+in-kernel driver is mature everywhere
+<sup>[<a href="https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.html">3</a>]</sup>.</p>
+<p><strong>Windows.</strong> The gVNIC driver ships as the GooGet
+package <code>google-compute-engine-driver-gvnic</code>
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>,
+<a href="https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-windows">14</a>]</sup>.
+Use version <code>1.0.0@45</code> or later. Earlier versions cause poor
+throughput on Windows Server 2022 and Windows 11
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/troubleshooting/gvnic">17</a>,
+<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>]</sup>.
+The GitHub README still describes the driver as Early Access, which
+looks out of date given that the product docs present it as generally
+supported
+<sup>[<a href="https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-windows">14</a>,
+<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>]</sup>.</p>
+<p><strong>DPDK.</strong> Both device types work with DPDK on Compute
+Engine. Google labels gVNIC “Recommended” and VirtIO-Net the open-source
+alternative. Both VPC networks in a DPDK setup must use the same vNIC
+type. Tier_1 with DPDK requires gVNIC
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/use-dpdk">15</a>]</sup>.
+When unbinding DPDK, the guest driver directory is <code>gvnic</code>
+for gVNIC and <code>virtio-pci</code> for virtio-net
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/use-dpdk">15</a>]</sup>.
+The DPDK drivers differ:</p>
+<ul>
+<li><code>net_gve</code> is based on gve kernel driver 1.3.0 and
+supports multi-queue, TSO, checksum offload, RSS, flow steering and
+timestamps
+<sup>[<a href="https://doc.dpdk.org/guides/nics/gve.html">7</a>]</sup>.</li>
+<li><code>net_virtio</code> is the generic virtio driver. It supports
+split and packed rings, mergeable buffers and hash reports in packed
+mode. It also inherits virtio’s dependence on what the backend
+negotiates
+<sup>[<a href="https://doc.dpdk.org/guides/nics/virtio.html">16</a>]</sup>.</li>
+</ul>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Area</th>
+<th>gVNIC</th>
+<th>virtio-net</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux driver</td>
+<td><code>gve</code>: in-tree, plus DKMS for newest features</td>
+<td><code>virtio_net</code>: in-tree everywhere</td>
+</tr>
+<tr>
+<td>Version-gated features</td>
+<td>Jumbo frames ≥1.3, full Tier_1 on Gen3+ ≥1.4.2</td>
+<td>Feature-bit negotiation</td>
+</tr>
+<tr>
+<td>Windows</td>
+<td>GooGet <code>gvnic</code>, ≥1.0.0@45</td>
+<td>virtio drivers (on Gen1/2 images)</td>
+</tr>
+<tr>
+<td>DPDK</td>
+<td><code>net_gve</code> (recommended on GCE)</td>
+<td><code>net_virtio</code></td>
+</tr>
+<tr>
+<td>Image requirement</td>
+<td>Image tagged with <code>GVNIC</code> guest OS feature</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<h2 id="choosing-and-migrating-between-the-two">5. Choosing and
+Migrating Between the Two</h2>
+<p><strong>Choosing.</strong> On Gen3+ machines, Arm, Confidential VMs,
+GPU families, Tier_1 or jumbo frames, there is no choice: use gVNIC
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>,
+<a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">10</a>,
+<a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">11</a>,
+<a href="https://docs.cloud.google.com/compute/docs/gpus/gpu-network-bandwidth">12</a>]</sup>.
+On Gen1/Gen2 at default bandwidth, Google recommends gVNIC but
+virtio-net still works
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>]</sup>.
+Keeping virtio-net makes sense in three cases:</p>
+<ul>
+<li>The guest OS has no usable gVNIC driver.</li>
+<li>You need a single image that boots unchanged on other KVM
+platforms.</li>
+<li>A network appliance needs more than 16 queues per vNIC
+<sup>[<a href="https://cloud.google.com/blog/products/compute/boost-your-vm-with-virtual-network-interfaces">9</a>]</sup>.</li>
+</ul>
+<p>The last reason does not carry forward. A virtio-net VM with more
+than 16 custom queues per vNIC cannot change its machine type to a Gen3+
+series. It has to be rebuilt as a new instance
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">10</a>]</sup>.</p>
+<p><strong>Migrating a VM.</strong> The NIC type belongs to the
+instance, and the guest feature belongs to the image. You need both:</p>
+<ol type="1">
+<li><strong>Tag the image.</strong> Create the image with
+<code>--guest-os-features=GVNIC</code> (or
+<code>guestOsFeatures: [{type: GVNIC}]</code> in REST), starting from a
+gVNIC-capable source image
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>]</sup>.
+If you skip this, creation fails with
+<code>NetworkInterface NicType can only be set to GVNIC on instances with GVNIC GuestOsFeature</code>
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/troubleshooting/gvnic">17</a>]</sup>.</li>
+<li><strong>Make sure the driver loads.</strong> If the VM boots but has
+no network, the driver usually didn’t install or load. Check with
+<code>modinfo gve</code> and <code>lsmod | grep gve</code> on Linux, or
+look for <code>gvnic.inf</code> in
+<code>dism /online /get-drivers</code> on Windows
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/troubleshooting/gvnic">17</a>]</sup>.
+When replacing the in-tree module by hand, run <code>rmmod</code> and
+<code>modprobe</code> on a single line, because running
+<code>rmmod</code> alone drops connectivity. Regenerate the initramfs so
+the out-of-tree driver loads at boot
+<sup>[<a href="https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux">13</a>]</sup>.</li>
+<li><strong>Create the VM with <code>nic-type=GVNIC</code> on every
+interface.</strong> Mixing NIC types on a multi-NIC VM is allowed but
+not recommended
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>]</sup>.
+Add Tier_1 at creation, or later only if the VM already uses gVNIC
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">11</a>]</sup>.</li>
+<li><strong>Check MTU and queues afterward.</strong> If the VPC’s jumbo
+MTU isn’t taking effect, the driver is too old
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/troubleshooting/gvnic">17</a>]</sup>.
+Expect queue counts to change per the queue-count table above
+<sup>[<a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">10</a>]</sup>.</li>
+</ol>
+<p><strong>GKE.</strong> Standard node pools enable gVNIC with
+<code>--enable-gvnic</code> when you create or update a node pool, and
+disable it with <code>--no-enable-gvnic</code>. Either change recreates
+the nodes. Autopilot nodes on 1.30.2-gke.1023000 and later get gVNIC
+automatically
+<sup>[<a href="https://docs.cloud.google.com/kubernetes-engine/docs/how-to/using-gvnic">18</a>]</sup>.
+The GKE page says gVNIC “is not supported on memory-optimized machine
+types.” This conflicts with the Compute Engine page, which says Gen3+
+series, including M3, support only gVNIC
+<sup>[<a href="https://docs.cloud.google.com/kubernetes-engine/docs/how-to/using-gvnic">18</a>,
+<a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">1</a>]</sup>.
+Treat the GKE statement as possibly stale, and check it for the specific
+M-series you plan to use.</p>
+<p><strong>The bottom line.</strong> virtio-net’s strengths are
+portability and a generous queue cap. gVNIC’s strengths are
+Google-specific: a device co-designed with Andromeda, with its own DQO
+completion queues, header split, timestamps and access to Tier_1
+bandwidth. Google ties all new machine series and high-bandwidth
+features to it. For any new deployment on Compute Engine, the practical
+question is no longer which NIC to pick. It is whether your image
+carries the <code>GVNIC</code> tag and a recent enough <code>gve</code>
+driver.</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li><a href="https://docs.cloud.google.com/compute/docs/networking/using-gvnic">Using
+Google Virtual NIC | Compute Engine</a><span
+class="dom">docs.cloud.google.com</span></li>
+<li><a href="https://docs.kernel.org/networking/device_drivers/ethernet/google/gve.html">Linux
+kernel driver for Compute Engine Virtual Ethernet (gve)</a><span
+class="dom">docs.kernel.org</span></li>
+<li><a href="https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.html">Virtual
+I/O Device (VIRTIO) Version 1.1 (OASIS)</a><span
+class="dom">docs.oasis-open.org</span></li>
+<li><a href="https://cloud.google.com/blog/topics/hpc/running-mpi-workloads-efficiently-on-google-cloud-using-gvnic">Accelerating
+MPI applications using Google Virtual NIC (gVNIC)</a><span
+class="dom">cloud.google.com</span></li>
+<li><a href="https://www.redhat.com/en/blog/deep-dive-virtio-networking-and-vhost-net">Deep
+dive into Virtio-networking and vhost-net (Red Hat)</a><span
+class="dom">redhat.com</span></li>
+<li><a href="https://www.redhat.com/en/blog/virtio-devices-and-drivers-overview-headjack-and-phone">Virtio
+devices and drivers overview: The headjack and the phone (Red
+Hat)</a><span class="dom">redhat.com</span></li>
+<li><a href="https://doc.dpdk.org/guides/nics/gve.html">GVE poll mode
+driver (DPDK documentation)</a><span
+class="dom">doc.dpdk.org</span></li>
+<li><a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19b427a403f2a12603a33d619bab937d57a72b06">Merge
+branch 'net-gve-header-split-support' (Linux kernel)</a><span
+class="dom">git.kernel.org</span></li>
+<li><a href="https://cloud.google.com/blog/products/compute/boost-your-vm-with-virtual-network-interfaces">Increase
+Compute Engine VM performance with custom queues (Google Cloud
+Blog)</a><span class="dom">cloud.google.com</span></li>
+<li><a href="https://docs.cloud.google.com/compute/docs/network-bandwidth">Network
+bandwidth | Compute Engine</a><span
+class="dom">docs.cloud.google.com</span></li>
+<li><a href="https://docs.cloud.google.com/compute/docs/networking/configure-vm-with-high-bandwidth-configuration">Configure
+per VM Tier_1 networking performance | Compute Engine</a><span
+class="dom">docs.cloud.google.com</span></li>
+<li><a href="https://docs.cloud.google.com/compute/docs/gpus/gpu-network-bandwidth">Networking
+and GPU machines | Compute Engine</a><span
+class="dom">docs.cloud.google.com</span></li>
+<li><a href="https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux">compute-virtual-ethernet-linux:
+Compute Engine Virtual Ethernet Linux driver (GitHub)</a><span
+class="dom">github.com</span></li>
+<li><a href="https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-windows">compute-virtual-ethernet-windows:
+Compute Engine Virtual Ethernet Windows driver (GitHub)</a><span
+class="dom">github.com</span></li>
+<li><a href="https://docs.cloud.google.com/compute/docs/networking/use-dpdk">Enable
+faster network packet processing with DPDK | Compute Engine</a><span
+class="dom">docs.cloud.google.com</span></li>
+<li><a href="https://doc.dpdk.org/guides/nics/virtio.html">Poll Mode
+Driver for Emulated Virtio NIC (DPDK documentation)</a><span
+class="dom">doc.dpdk.org</span></li>
+<li><a href="https://docs.cloud.google.com/compute/docs/troubleshooting/gvnic">Troubleshooting
+network drivers for Compute Engine instances</a><span
+class="dom">docs.cloud.google.com</span></li>
+<li><a href="https://docs.cloud.google.com/kubernetes-engine/docs/how-to/using-gvnic">Increase
+network traffic speed for GPU nodes (GKE)</a><span
+class="dom">docs.cloud.google.com</span></li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">gVNIC vs virtio-net
+on Google Cloud: Device Model, Performance and Migration</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-11-13</span></div>
+  <div><span class="k">Sources cited</span><span class="v">18</span></div>
+</div>
+</div></div>
+</body>
+</html>
