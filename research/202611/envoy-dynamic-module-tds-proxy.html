@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Building the SQL Server Proxy as an Envoy Dynamic Module</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Building the SQL Server Proxy as an Envoy Dynamic Module</h1>
+<div class="byline">Research report · 6 cited sources · reviewed 2026-11-14</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#what-a-dynamic-module-can-do"
+id="toc-what-a-dynamic-module-can-do">1. What a Dynamic Module Can
+Do</a></li>
+<li><a href="#case-a-a-proxy-without-sharing"
+id="toc-case-a-a-proxy-without-sharing">2. Case A: A Proxy Without
+Sharing</a></li>
+<li><a href="#case-b-sharing-connections"
+id="toc-case-b-sharing-connections">3. Case B: Sharing
+Connections</a></li>
+<li><a href="#plan" id="toc-plan">4. Plan</a></li>
+<li><a href="#what-would-change-this" id="toc-what-would-change-this">5.
+What Would Change This</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>Summary.</strong> An Envoy dynamic module can carry a SQL
+Server (TDS) proxy in which each client session keeps its own server
+connection. Place the module as a network filter in front of Envoy’s
+built-in <code>tcp_proxy</code>. The module reads and rewrites TDS
+traffic, picks the backend cluster, and can delay the server connection.
+<code>tcp_proxy</code> opens and owns the server connection. Every
+callback this needs exists in Envoy v1.40.2, the current release.</p>
+<p>Connection sharing is different. The module interface has no way to
+borrow a connection from Envoy’s connection pool and return it later,
+and that borrow-and-return is the core of sharing. A module can share
+connections only by opening and managing its own server sockets. That
+means rebuilding the pool, health checks and upstream TLS that a
+compiled C++ filter gets from Envoy. So build the no-sharing proxy as a
+module, and build sharing, if measurement justifies it, as the C++
+filter from the <a
+href="https://jparklab.github.io/research/202611/envoy-mssql-session-sharing.html">earlier
+report</a>. The TDS parsing code carries over unchanged.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Case</th>
+<th>Dynamic module?</th>
+<th>Shape</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A. Proxy, one server connection per client</td>
+<td><strong>Yes</strong></td>
+<td>Module filter → <code>tcp_proxy</code></td>
+</tr>
+<tr>
+<td>A2. Same, but connect only when the first query arrives</td>
+<td><strong>Yes, with a faked login</strong></td>
+<td>Module answers PRELOGIN and LOGIN7 itself, then releases them
+upstream</td>
+</tr>
+<tr>
+<td>B1. Sharing through Envoy’s connection pool</td>
+<td><strong>No</strong></td>
+<td>No pool-borrowing callback exists</td>
+</tr>
+<tr>
+<td>B2. Sharing through the module’s own sockets</td>
+<td>Possible, not recommended</td>
+<td>Terminal module with its own pool, TLS and health checks</td>
+</tr>
+<tr>
+<td>B3. Sharing in C++</td>
+<td>Recommended for sharing</td>
+<td>Terminal C++ filter on <code>Tcp::ConnectionPool</code></td>
+</tr>
+</tbody>
+</table>
+<p>This report rests on reading Envoy source: <a
+href="https://github.com/envoyproxy/envoy/blob/35005437106e90105a9d8b76fdfa9e7152ed4287/source/extensions/dynamic_modules/abi/abi.h"><code>abi.h</code>
+on <code>main</code></a> (commit <code>3500543</code>, 2026-11-13), <a
+href="https://github.com/envoyproxy/envoy/blob/v1.40.2/source/extensions/dynamic_modules/abi/abi.h"><code>abi.h</code>
+at v1.40.2</a>, and <code>tcp_proxy</code>’s <a
+href="https://github.com/envoyproxy/envoy/blob/main/api/envoy/extensions/filters/network/tcp_proxy/v3/tcp_proxy.proto">config</a>
+and <a
+href="https://github.com/envoyproxy/envoy/blob/main/source/common/tcp_proxy/tcp_proxy.cc">source</a>.
+No module was built or run. All code below is an unbuilt
+illustration.</p>
+</div>
+<h2 id="what-a-dynamic-module-can-do">1. What a Dynamic Module Can
+Do</h2>
+<p>A dynamic module is a shared library that Envoy loads at runtime. It
+implements the C interface in <code>abi.h</code>, and official SDKs
+exist for C++, Go and Rust (<a
+href="https://github.com/envoyproxy/envoy/blob/main/docs/root/intro/arch_overview/advanced/dynamic_modules.rst">docs</a>).
+No custom Envoy build is needed. The project’s stated goal is that
+modules can do “any functionality that can be implemented by the
+built-in C++ extensions”, and it adds: “This is work in progress and
+many features are not yet available.”</p>
+<h3 id="the-network-filter-callbacks-that-matter-here">1.1 The network
+filter callbacks that matter here</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Need</th>
+<th>Callback (prefix <code>envoy_dynamic_module_</code>)</th>
+<th>v1.40.2</th>
+<th><code>main</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>See client bytes</td>
+<td><code>on_network_filter_read</code>, returns <code>Continue</code>
+or <code>StopIteration</code></td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>See server bytes</td>
+<td><code>on_network_filter_write</code></td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Read, drain, prepend, append buffered bytes</td>
+<td><code>callback_network_filter_{get,drain,prepend,append}_{read,write}_buffer*</code></td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Answer the client directly</td>
+<td><code>callback_network_filter_write</code> (“write data directly to
+the connection (downstream)”)</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Release held bytes to the next filter</td>
+<td><code>callback_network_filter_inject_read_data</code>,
+<code>continue_reading</code></td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Choose the <code>tcp_proxy</code> cluster</td>
+<td><code>callback_network_set_filter_state_typed</code> with key
+<code>envoy.tcp_proxy.cluster</code> (timing: see 2.4)</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Metrics</td>
+<td><code>callback_network_filter_config_define_{counter,gauge,histogram}</code></td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Hand work back from another thread</td>
+<td><code>callback_network_filter_scheduler_commit</code>, “safe to call
+from any thread”</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>TLS upgrade on Envoy’s connections</td>
+<td><code>callback_network_filter_start_{downstream,upstream}_secure_transport</code>
+(StartTLS sockets only)</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Custom transport socket</td>
+<td><code>on_transport_socket_*</code>, upstream or downstream</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Report an upstream the module reached itself</td>
+<td><code>callback_network_filter_set_upstream_host</code> and
+related</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>set_filter_state_typed</code> documentation names this use
+directly: it exists “for interoperability with built-in Envoy filters
+that read filter state as typed objects (e.g., tcp_proxy reads
+PerConnectionCluster via the key "envoy.tcp_proxy.cluster")”.</p>
+<h3 id="what-is-missing">1.2 What is missing</h3>
+<p>There is no callback that opens, borrows or returns a raw TCP
+connection from an Envoy cluster. A search of the <code>main</code>
+header for <code>tcp_conn</code>, <code>conn_pool</code>,
+<code>connection_pool</code>, <code>raw_socket</code> and
+<code>tcp_callout</code> finds nothing. The only module-initiated
+upstream call is an HTTP callout. Sections 3 and 4 follow from this
+gap.</p>
+<h3 id="version-stability">1.3 Version stability</h3>
+<p>The interface follows a no-breaking-change policy: “Released ABI is
+frozen. Once a function, type or struct in the ABI has shipped in an
+Envoy release, it never changes.” Superseded entries stay “for at least
+four Envoy release cycles, roughly one year”. The flip side is that “it
+must be ABI-compatible with the Envoy binary that loads it.” Build
+against a pinned Envoy release with the matching SDK, and treat
+<code>main</code>-only callbacks as unavailable until they ship.</p>
+<h2 id="case-a-a-proxy-without-sharing">2. Case A: A Proxy Without
+Sharing</h2>
+<h3 id="layout">2.1 Layout</h3>
+<pre><code>client ──TLS──▶ [listener: TLS termination]
+                  └─ module network filter  (parse TDS, decide, rewrite, count)
+                  └─ tcp_proxy               (owns the one server connection)
+                                   ──TLS──▶ SQL Server</code></pre>
+<p><code>tcp_proxy</code> provides the standard parts: connect timeouts,
+cluster load balancing, health checks, outlier detection, circuit
+breakers, upstream TLS through the cluster’s transport socket, and
+access logs. The module adds TDS awareness.</p>
+<p>Illustrative listener configuration, with field names checked against
+the <code>main</code> protos:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">filter_chains</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">transport_socket</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> ... downstream TLS</span><span class="kw">,</span><span class="at"> for TDS 8.0 clients ... </span><span class="kw">}</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">filters</span><span class="kw">:</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> tds</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">typed_config</span><span class="kw">:</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;@type&quot;</span><span class="kw">:</span><span class="at"> type.googleapis.com/envoy.extensions.filters.network.dynamic_modules.v3.DynamicModuleNetworkFilter</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">dynamic_module_config</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="fu"> </span><span class="at">tds_proxy </span><span class="kw">}</span><span class="at">      </span><span class="co"># loads libtds_proxy.so</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">filter_name</span><span class="kw">:</span><span class="at"> tds</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">filter_config</span><span class="kw">:</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">&quot;@type&quot;</span><span class="kw">:</span><span class="at"> type.googleapis.com/google.protobuf.StringValue</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&#39;{&quot;route_by&quot;:&quot;database&quot;}&#39;</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> tcp</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">typed_config</span><span class="kw">:</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;@type&quot;</span><span class="kw">:</span><span class="at"> type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">stat_prefix</span><span class="kw">:</span><span class="at"> mssql</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">cluster</span><span class="kw">:</span><span class="at"> mssql_default</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">upstream_connect_mode</span><span class="kw">:</span><span class="at"> ON_DOWNSTREAM_DATA       # see 2.4</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">max_early_data_bytes</span><span class="kw">:</span><span class="at"> </span><span class="dv">65536</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="co"># bootstrap: needed so the module&#39;s cluster choice is read at connect time (2.4)</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="fu">layered_runtime</span><span class="kw">:</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">layers</span><span class="kw">:</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> static</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">static_layer</span><span class="kw">:</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">envoy.reloadable_features.tcp_proxy_delay_route_selection</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
+<h3 id="what-the-module-does-with-the-bytes">2.2 What the module does
+with the bytes</h3>
+<p>TDS framing is cheap. Each packet starts with an 8-byte header: Type,
+Status, big-endian Length, SPID, PacketID and Window. A message ends at
+the packet whose Status has the EOM bit set. The module keeps a small
+per-connection reassembly buffer, because a read can end mid-header or
+mid-packet. Dispatch on Type: PRELOGIN 0x12, LOGIN7 0x10, SQLBatch 0x01,
+RPC 0x03, Attention 0x06, Transaction Manager 0x0E, and server responses
+0x04.</p>
+<p>What this enables, in rising order of cost:</p>
+<ol type="1">
+<li><strong>Observe:</strong> count logins by user and database,
+sessions that never send a query, batch and RPC rates, and Attention
+messages. This needs only framing and a LOGIN7 parse.</li>
+<li><strong>Route:</strong> after parsing LOGIN7, set
+<code>envoy.tcp_proxy.cluster</code>, for example by database or
+application name.</li>
+<li><strong>Allow or block:</strong> inspect SQLBatch text or RPC
+procedure names. To refuse a request, drop it and write a TDS ERROR and
+DONE token back to the client. That requires generating server-style
+tokens correctly.</li>
+<li><strong>Rewrite:</strong> change request bytes, fixing up packet
+Length and splitting across packets. Any rewrite of server responses
+needs a token walker, which the earlier report calls the expensive
+part.</li>
+</ol>
+<p>Each step needs only the callbacks in section 1.1.</p>
+<h3 id="encryption-decides-what-the-module-can-see">2.3 Encryption
+decides what the module can see</h3>
+<p>This limit applies to C++ as well:</p>
+<ul>
+<li><strong>TDS 8.0 (strict):</strong> TLS comes first on the
+connection, so Envoy’s normal TLS listener terminates it. The module
+sees plain TDS, and the cluster’s TLS socket re-encrypts toward the
+server.</li>
+<li><strong>TDS 7.x with full encryption:</strong> the TLS handshake
+travels “encapsulated in TDS packet(s) of type PRELOGIN (0x12)”
+(MS-TDS). Envoy’s stock TLS socket can’t unwrap that, so without extra
+work the module sees PRELOGIN and then ciphertext.</li>
+<li><strong>TDS 7.x with only the login encrypted:</strong> traffic
+after login is plain, but the module can’t read the login, so it can’t
+route by user or database.</li>
+</ul>
+<p>There is a new option here. A module can now implement a transport
+socket (<code>on_transport_socket_do_read</code> and
+<code>do_write</code>, with an <code>is_upstream</code> flag). A module
+transport socket using its own TLS library could, in principle, wrap and
+unwrap the PRELOGIN-framed handshake. The earlier report identified that
+custom socket as the largest encryption unknown, and it no longer
+requires C++. It remains inference: nobody has built one, and it is a
+project of its own. Ship TDS 8.0 first. JDBC’s default is
+<code>encrypt=true</code>, not strict, so this means reconfiguring
+clients.</p>
+<h3 id="choosing-the-backend-after-reading-the-login">2.4 Choosing the
+backend after reading the login</h3>
+<p>By default <code>tcp_proxy</code> connects as soon as the client
+connects, before any TDS arrives. With
+<code>upstream_connect_mode: ON_DOWNSTREAM_DATA</code> and
+<code>max_early_data_bytes</code> set, it connects when the first client
+data reaches it.</p>
+<p>Delaying the connection is not enough on its own.
+<code>tcp_proxy</code> also has to choose its route late, and by default
+it doesn’t: it picks the route when the client connects. It picks the
+route just before connecting only when the runtime flag
+<code>envoy.reloadable_features.tcp_proxy_delay_route_selection</code>
+is on. That flag is a <code>FALSE_RUNTIME_GUARD</code>, off by default
+in both v1.40.2 and <code>main</code>. Turn it on in the bootstrap’s
+runtime layer. With it on, a cluster the module puts in filter state
+before passing data on is the one <code>tcp_proxy</code> uses. Without
+it, the filter-state cluster is read before the module has seen any TDS.
+Runtime guards are usually removed once a behaviour becomes the default,
+so check the flag at your pinned release.</p>
+<p>The <code>tcp_proxy</code> documentation warns that this mode “is not
+suitable for server-first protocols (e.g., SMTP, MySQL, POP3)”. TDS is
+client-first: the client sends PRELOGIN before the server says anything.
+So the mode fits, but only for PRELOGIN. To route on the user or
+database, the module needs LOGIN7, and the client won’t send LOGIN7
+until it has a PRELOGIN response. Two choices follow:</p>
+<ul>
+<li><strong>Route by listener or SNI:</strong> connect on PRELOGIN. This
+is simple and needs no faking.</li>
+<li><strong>Route by login contents:</strong> answer PRELOGIN locally,
+hold the LOGIN7, set the cluster, then release both. This is the first
+half of section 2.5. The module’s PRELOGIN response must agree with what
+the real server will accept, especially the encryption option.</li>
+</ul>
+<p>The connect modes, <code>max_early_data_bytes</code> and the runtime
+flag all exist in v1.40.2.</p>
+<h3 id="case-a2-connecting-only-when-the-first-query-arrives">2.5 Case
+A2: Connecting only when the first query arrives</h3>
+<p>Delaying the connection until the first SQLBatch or RPC means the
+module must complete the whole login with the client itself. FreeTDS’s
+tdspool used the same faked-login technique.</p>
+<pre><code>client                     module                       tcp_proxy / server
+  PRELOGIN ───────────────▶ hold bytes
+           ◀─────────────── module&#39;s PRELOGIN response
+  LOGIN7   ───────────────▶ hold bytes, parse user/db, set cluster
+           ◀─────────────── module&#39;s LOGINACK + ENVCHANGEs + DONE
+  SQLBatch ───────────────▶ inject PRELOGIN, LOGIN7, SQLBatch ──▶ connect
+                            remove server&#39;s PRELOGIN response ◀──
+                            check and remove login response   ◀──
+           ◀─────────────── query results                     ◀──</code></pre>
+<p>Illustrative read-side logic (pseudocode, unbuilt):</p>
+<pre><code>on_network_filter_read(len):
+    frame bytes from read buffer into TDS messages; drain them
+    for msg in complete messages:
+        match state, msg.type:
+          (NEW, PRELOGIN):  held += msg; network_filter_write(fake_prelogin_reply)
+          (PRE, LOGIN7):    held += msg; parse; set_filter_state_typed(&quot;envoy.tcp_proxy.cluster&quot;, c)
+                            network_filter_write(fake_login_reply(captured template)); state = FAKED
+          (FAKED, ATTENTION): network_filter_write(attention_ack)
+          (FAKED, BATCH|RPC|TXN_MGR):
+                            inject_read_data(held + msg); state = CONNECTING
+          (FAKED, other):   inject_read_data(held + msg); state = CONNECTING   # don&#39;t guess
+          (CONNECTED, _):   pass through
+    return StopIteration unless CONNECTED
+
+on_network_filter_write(len):          # server → client
+    if CONNECTING: consume the PRELOGIN reply, then the login reply up to its DONE;
+                   on login error or any ENVCHANGE that differs from the faked one:
+                       send TDS error to client, close
+                   else state = CONNECTED; let the remaining bytes through</code></pre>
+<p>The module never needs the password: it replays the client’s LOGIN7
+bytes as received.</p>
+<p>Limits:</p>
+<ul>
+<li><strong>Only SQL Server password logins.</strong> Windows
+authentication (Kerberos, NTLM) runs several round trips with the server
+during login, so it can’t be faked. The earlier report could not verify
+that Entra ID logins can be faked either. Send both through a listener
+that connects immediately.</li>
+<li><strong>TDS 8.0 or no encryption.</strong> With 7.x, the
+PRELOGIN-framed TLS handshake has to happen with the real server.</li>
+<li><strong>Login errors arrive late.</strong> A wrong password or a
+missing database surfaces on the first query, not at login. Test how
+your drivers and connection pools handle that.</li>
+<li><strong>The faked response must match the server’s.</strong> Capture
+database, collation, language and packet size from your real server for
+each login key. Close the session on any mismatch.</li>
+<li><strong>Small benefit if pools validate connections.</strong> This
+only saves connections that never send a query. Measure that count with
+the step-1 counters before building A2.</li>
+</ul>
+<h3 id="effort">2.6 Effort</h3>
+<p>The Envoy integration is a small part of the work: one filter, a
+state enum, and two callbacks doing most of it. Almost all the effort is
+TDS: framing, the LOGIN7 parse, generating server tokens for refusals or
+faked logins, and a test matrix across drivers (SqlClient, mssql-jdbc,
+ODBC 18, go-mssqldb, tedious). The Rust crates <code>mssql-tds</code>
+and <code>tds-driver</code> may provide parsers. Check their licences
+and coverage.</p>
+<h2 id="case-b-sharing-connections">3. Case B: Sharing Connections</h2>
+<h3 id="why-tcp_proxy-plus-a-module-cant-share">3.1 Why
+<code>tcp_proxy</code> plus a module can’t share</h3>
+<p>Sharing means a session gives its server connection back when it is
+clean and later borrows another one. <code>tcp_proxy</code> holds
+exactly one upstream per client connection for the session’s whole life,
+and the module can’t take that connection or pass it to another session.
+The module interface has no pool-borrowing callback (section 1.2). So
+sharing inside Envoy’s pool is not possible from a module today.</p>
+<h3 id="b2-the-module-owns-its-sockets">3.2 B2: the module owns its
+sockets</h3>
+<p><code>main</code> now documents this shape explicitly: “A terminal
+network filter that reaches its upstream itself, rather than through an
+Envoy upstream connection, reports that upstream and the outcome of the
+connection with these callbacks.” Set
+<code>terminal_filter: true</code>, drop <code>tcp_proxy</code>, and the
+module becomes the proxy. Its architecture:</p>
+<ul>
+<li><strong>Pool:</strong> owned by the module, keyed per login as the
+earlier report requires (no re-authentication in TDS). It can be per
+Envoy worker thread or process-wide. The process-wide option needs its
+own I/O thread.</li>
+<li><strong>I/O:</strong> sockets run on module-owned threads (for
+example a Rust async runtime). Results return to the session’s worker
+through <code>network_filter_scheduler_commit</code>. That adds a thread
+hop per message, and the module must stop those threads before worker
+shutdown.</li>
+<li><strong>Hosts:</strong> <code>set_upstream_host</code> needs an
+address the module already knows, and
+<code>get_cluster_host_count</code> returns only counts. The module
+therefore needs its own host discovery, such as DNS or config.</li>
+<li><strong>TLS to the server:</strong> the module’s own TLS library.
+<code>start_upstream_secure_transport</code> applies only to Envoy’s
+upstream connection, which doesn’t exist here.</li>
+<li><strong>Health, timeouts, circuit breaking, outlier
+detection:</strong> reimplemented.</li>
+<li><strong>Observability:</strong> module metrics, plus the
+<code>main</code>-only reporting callbacks for access logs. These are
+not in v1.40.2.</li>
+</ul>
+<p>Everything the earlier report specified still applies on top: the
+release rule, the session-state walker, the scrub batch, pinning and
+Attention handling. The result is a standalone TDS pooler running inside
+Envoy. It keeps Envoy’s listener, downstream TLS and config delivery,
+and gives up the upstream half, which is most of the reason to use Envoy
+for this.</p>
+<h3 id="b3-the-c-filter">3.3 B3: the C++ filter</h3>
+<p>The terminal C++ filter on <code>Tcp::ConnectionPool</code> holds a
+lease while a session is dirty and releases it when clean, and Envoy
+supplies the pool, health checks, upstream TLS and stats. The cost is a
+custom Envoy build and tracking Envoy’s internal C++ headers. The
+earlier report covers the design.</p>
+<h3 id="decision">3.4 Decision</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th></th>
+<th>A (module proxy)</th>
+<th>B2 (module, own sockets)</th>
+<th>B3 (C++ filter)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Custom Envoy build</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Envoy upstream features</td>
+<td>All</td>
+<td>None</td>
+<td>All</td>
+</tr>
+<tr>
+<td>Server-connection savings</td>
+<td>None (A2: idle sessions only)</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Works on v1.40.2</td>
+<td>Yes</td>
+<td>Partly (no upstream reporting)</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Main risk</td>
+<td>TDS correctness</td>
+<td>Rebuilding an upstream stack</td>
+<td>Header churn, C++</td>
+</tr>
+</tbody>
+</table>
+<p>Choose B2 only if a custom Envoy binary is ruled out and sharing is
+required. Even then, compare it with a standalone pooler outside Envoy,
+which would be the same code without the threading constraints.</p>
+<h2 id="plan">4. Plan</h2>
+<ol type="1">
+<li><strong>Module proxy, observe only (A, step 1).</strong> TDS 8.0
+listener, framing and LOGIN7 parse, counters per user and database:
+sessions, sessions with zero queries, session duration, and transaction
+and temp-table use. No data-path changes. This is the census the earlier
+report asks for before any sharing work.</li>
+<li><strong>Routing and policy (A, steps 2–3),</strong> if you need
+them.</li>
+<li><strong>Delayed connect (A2),</strong> only if step 1 shows many
+sessions that never query.</li>
+<li><strong>Decide on sharing</strong> from step 1’s numbers, using the
+earlier report’s ratios and gates. If you proceed, move the TDS crate
+into the C++ filter (B3) or rebuild it there. Under a C ABI, a Rust
+parser can link into the C++ filter (inference: check build
+integration).</li>
+<li><strong>TDS 7.x encryption,</strong> as a separate prototype of a
+module transport socket, only if clients cannot move to TDS 8.0.</li>
+</ol>
+<h2 id="what-would-change-this">5. What Would Change This</h2>
+<ul>
+<li><strong>A pool-borrowing callback in the module interface.</strong>
+Watch <code>abi.h</code> for network-filter callbacks that acquire and
+release upstream TCP connections. With one, B moves to a module and the
+C++ requirement goes away.</li>
+<li><strong>Upstream reporting callbacks in a release.</strong> They
+make B2 observable like <code>tcp_proxy</code> but don’t remove its
+other costs.</li>
+<li><strong>A working PRELOGIN-framed TLS transport socket.</strong>
+That would bring TDS 7.x clients into scope for A without client
+changes.</li>
+<li><strong>Step-1 numbers.</strong> Few idle or clean sessions per
+login key would end the sharing question in favour of case A alone.</li>
+</ul>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ul>
+<li>Envoy dynamic modules ABI header: <a
+href="https://github.com/envoyproxy/envoy/blob/35005437106e90105a9d8b76fdfa9e7152ed4287/source/extensions/dynamic_modules/abi/abi.h"><code>main</code>
+@ 3500543</a>, <a
+href="https://github.com/envoyproxy/envoy/blob/v1.40.2/source/extensions/dynamic_modules/abi/abi.h">v1.40.2</a></li>
+<li>Envoy dynamic modules architecture and compatibility policy: <a
+href="https://github.com/envoyproxy/envoy/blob/main/docs/root/intro/arch_overview/advanced/dynamic_modules.rst">dynamic_modules.rst</a></li>
+<li>Dynamic module network filter config: <a
+href="https://github.com/envoyproxy/envoy/blob/main/api/envoy/extensions/filters/network/dynamic_modules/v3/dynamic_modules.proto">dynamic_modules.proto</a></li>
+<li><code>tcp_proxy</code> config and source: <a
+href="https://github.com/envoyproxy/envoy/blob/main/api/envoy/extensions/filters/network/tcp_proxy/v3/tcp_proxy.proto">tcp_proxy.proto</a>,
+<a
+href="https://github.com/envoyproxy/envoy/blob/main/source/common/tcp_proxy/tcp_proxy.cc">tcp_proxy.cc</a></li>
+<li>MS-TDS protocol specification: <a
+href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/b46a581a-39de-4745-b076-ec4dbb7d13ec">Microsoft
+Learn</a></li>
+<li>Earlier report, with TDS details, sharing design and its source
+list: <a
+href="https://jparklab.github.io/research/202611/envoy-mssql-session-sharing.html">Envoy
+MSSQL session sharing</a></li>
+</ul>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Building the SQL
+Server Proxy as an Envoy Dynamic Module</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-11-14</span></div>
+  <div><span class="k">Sources cited</span><span class="v">6</span></div>
+</div>
+</div></div>
+</body>
+</html>
