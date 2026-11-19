@@ -1,0 +1,402 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>mssql_proxy Filter Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: one wide schematic on a dotted drafting grid, a mode switch above it,
+   a detail panel beside it, then the connection walk-through and reference cards. */
+:root {
+  --bg: #050a16; --panel: #0b1324; --mask: #0a1222; --grid: #17223a;
+  --line: #22304a; --text: #f1f5fb; --muted: #93a3bb; --dim: #56657e;
+  --arrow: #8193ad; --emph: #34d399;
+  --k-ext: #94a3b8; --k-glue: #fb923c; --k-frame: #22d3ee; --k-tls: #34d399;
+  --k-login: #a78bfa; --k-policy: #fbbf24; --k-krb: #fb7185;
+  --f-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --f-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #f3f5f8; --panel: #ffffff; --mask: #ffffff; --grid: #e2e7ee;
+  --line: #d5dce6; --text: #101827; --muted: #556176; --dim: #98a3b4;
+  --arrow: #64748b; --emph: #059669;
+  --k-ext: #64748b; --k-glue: #ea580c; --k-frame: #0891b2; --k-tls: #059669;
+  --k-login: #7c3aed; --k-policy: #b45309; --k-krb: #e11d48;
+  color-scheme: light; } }
+:root[data-theme="light"] {
+  --bg: #f3f5f8; --panel: #ffffff; --mask: #ffffff; --grid: #e2e7ee;
+  --line: #d5dce6; --text: #101827; --muted: #556176; --dim: #98a3b4;
+  --arrow: #64748b; --emph: #059669;
+  --k-ext: #64748b; --k-glue: #ea580c; --k-frame: #0891b2; --k-tls: #059669;
+  --k-login: #7c3aed; --k-policy: #b45309; --k-krb: #e11d48;
+  color-scheme: light; }
+
+body { background: var(--bg); color: var(--text); font-family: var(--f-body); font-size: 14px; line-height: 1.55; }
+.wrap { max-width: 1480px; margin: 0 auto; padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px; }
+header { display: grid; gap: 6px; }
+.eyebrow { font-family: var(--f-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--emph); display: flex; align-items: center; gap: 8px; }
+.eyebrow::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--emph); box-shadow: 0 0 0 4px color-mix(in srgb, var(--emph) 20%, transparent); }
+h1 { font-family: var(--f-display); font-size: clamp(24px, 3vw, 34px); font-weight: 600; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+.lede { color: var(--muted); max-width: 78ch; margin: 0; }
+code, .mono { font-family: var(--f-mono); font-size: .9em; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls .label { font-family: var(--f-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.chip { font: 500 13px var(--f-body); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; cursor: pointer; }
+.chip:hover { border-color: var(--arrow); }
+.chip[aria-pressed="true"] { border-color: var(--emph); background: color-mix(in srgb, var(--emph) 14%, var(--panel)); }
+.chip:focus-visible, g.node:focus-visible { outline: 2px solid var(--emph); outline-offset: 2px; }
+.theme { margin-left: auto; }
+.mode-note { color: var(--muted); font-size: 13px; margin: 0; min-height: 1.55em; }
+
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.canvas { border: 1px solid var(--line); border-radius: 10px; overflow-x: auto;
+  background-color: var(--bg); background-image: radial-gradient(var(--grid) 1px, transparent 1.2px); background-size: 18px 18px; }
+.canvas svg { display: block; width: 100%; min-width: 980px; height: auto; }
+.detail { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 16px 18px; display: grid; gap: 10px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+.detail .kind { font-family: var(--f-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; display: flex; gap: 8px; align-items: center; }
+.detail .kind i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.detail h2 { font-family: var(--f-display); font-size: 20px; margin: 0; font-weight: 600; }
+.detail p { margin: 0; color: var(--muted); }
+.detail ul { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 4px; }
+.detail .file { font-family: var(--f-mono); font-size: 12px; color: var(--text); background: color-mix(in srgb, var(--arrow) 14%, transparent); border-radius: 4px; padding: 2px 6px; justify-self: start; }
+
+/* SVG */
+.lane-title { font: 600 10px var(--f-mono); letter-spacing: .14em; fill: var(--muted); }
+.lane-sep { stroke: var(--line); stroke-dasharray: 3 5; }
+.box { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 6 4; }
+.box-title { font: 600 10px var(--f-mono); letter-spacing: .1em; fill: var(--muted); }
+g.node { cursor: pointer; transition: opacity .2s; }
+g.node rect.body { stroke-width: 1.5; }
+g.node:hover rect.body, g.node.sel rect.body { stroke-width: 2.6; }
+g.node .t1 { font: 600 12px var(--f-body); fill: var(--text); }
+g.node .t2 { font: 400 9.5px var(--f-body); fill: var(--muted); }
+g.node .t3 { font: 600 8.5px var(--f-mono); }
+.edge path { fill: none; stroke: var(--arrow); stroke-width: 1.4; transition: opacity .2s; }
+.edge.emph path { stroke: var(--emph); stroke-width: 1.8; }
+.edge.dash path { stroke-dasharray: 5 4; }
+.edge text { font: 500 9px var(--f-mono); fill: var(--muted); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+.dim { opacity: .14; }
+.flow path { stroke-dasharray: 7 6; animation: run 1.1s linear infinite; }
+@keyframes run { to { stroke-dashoffset: -13; } }
+@media (prefers-reduced-motion: reduce) { .flow path { animation: none; } g.node, .edge path { transition: none; } }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 11px; height: 11px; border-radius: 3px; border: 1.5px solid; display: inline-block; }
+
+h3 { font-family: var(--f-display); font-size: 20px; font-weight: 600; margin: 0 0 12px; }
+.walk ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; counter-reset: s; }
+.walk li { counter-increment: s; border-top: 2px solid var(--emph); padding-top: 10px; display: grid; gap: 4px; min-width: 0; }
+.walk li::before { content: "0" counter(s); font: 600 11px var(--f-mono); color: var(--emph); letter-spacing: .08em; }
+.walk b { font-weight: 600; }
+.walk p { margin: 0; color: var(--muted); font-size: 13.5px; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.card h4 { margin: 0; font: 600 14px var(--f-display); display: flex; align-items: center; gap: 8px; }
+.card h4 i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; display: grid; gap: 5px; }
+.card li b { color: var(--text); font-weight: 600; }
+footer { color: var(--dim); font-size: 12px; font-family: var(--f-mono); }
+
+@media (max-width: 900px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .detail { position: static; }
+  .theme { margin-left: 0; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">envoy-ext-workbench · modules/mssql_proxy</div>
+    <h1>mssql_proxy: architecture of the TDS network filter</h1>
+    <p class="lede">A dynamic-module network filter that sits in front of <code>tcp_proxy</code> on the TDS&nbsp;7.x filter chain. It either watches the TDS stream unchanged or terminates TLS on both legs, so it can read LOGIN7, apply a login policy, pick the backend cluster and authenticate Kerberos clients itself. Pick a mode to light its path; click any box for details.</p>
+  </header>
+
+  <div class="controls" role="group" aria-label="Highlight a mode">
+    <span class="label">Mode</span>
+    <button class="chip" id="m-all" data-mode="all" aria-pressed="true">Everything</button>
+    <button class="chip" id="m-observe" data-mode="observe" aria-pressed="false">Observe</button>
+    <button class="chip" id="m-terminate" data-mode="terminate" aria-pressed="false">Terminate TLS</button>
+    <button class="chip" id="m-route" data-mode="route" aria-pressed="false">Route by login</button>
+    <button class="chip" id="m-kerberos" data-mode="kerberos" aria-pressed="false">Kerberos terminate</button>
+    <button class="chip" id="m-strict" data-mode="strict" aria-pressed="false">TDS 8.0 strict</button>
+    <button class="chip theme" id="theme-btn" type="button">Theme: system</button>
+  </div>
+  <p class="mode-note" id="mode-note" aria-live="polite"></p>
+
+  <div class="stage">
+    <div class="canvas"><svg id="diagram" viewBox="0 0 1430 790" role="img" aria-labelledby="dtitle"><title id="dtitle">mssql_proxy filter architecture</title></svg></div>
+    <aside class="detail" id="detail" aria-live="polite"></aside>
+  </div>
+
+  <div class="legend" id="legend"></div>
+
+  <section class="walk">
+    <h3>One routed login, step by step</h3>
+    <ol>
+      <li><b>PRELOGIN</b><p>The client opens with PRELOGIN (<code>0x12</code>). With routing on, the bridge answers it itself and nothing reaches <code>tcp_proxy</code> yet. Without routing it is forwarded, with the client-certificate bit cleared.</p></li>
+      <li><b>Client TLS handshake</b><p>The TLS handshake travels inside PRELOGIN packets. The proxy is the TLS server here and presents its own certificate chain.</p></li>
+      <li><b>LOGIN7 read</b><p>LOGIN7 is decrypted and parsed: user, database, app, host, library and the SSPI token. The password is never decoded. The policy may refuse with error 18456 and close.</p></li>
+      <li><b>Route</b><p>The first matching route sets <code>envoy.tcp_proxy.cluster</code>. <code>tcp_proxy</code>, in <code>ON_DOWNSTREAM_DATA</code> mode, only connects now.</p></li>
+      <li><b>Server leg</b><p>The bridge sends PRELOGIN upstream, runs its own TLS handshake as the client and forwards LOGIN7. Toward a login-only server, only LOGIN7's first packet is encrypted.</p></li>
+      <li><b>Login result</b><p>The server's reply is scanned for LOGINACK or ERROR and the packet size. The verdict goes into dynamic metadata, and messages are re-encrypted per leg from then on.</p></li>
+    </ol>
+  </section>
+
+  <section>
+    <h3>Reference</h3>
+    <div class="cards">
+      <div class="card"><h4><i style="background:var(--k-tls)"></i>Encryption per leg</h4><ul>
+        <li><b>None:</b> plain TDS throughout.</li>
+        <li><b>Login-only</b> (server ENCRYPTION=OFF): TLS handshake in PRELOGIN packets, the first LOGIN7 packet in one TLS record, then plain TDS both ways.</li>
+        <li><b>Full</b> (ON or REQ): the handshake, then TLS records only.</li>
+        <li>With local PRELOGIN the two legs may differ; the bridge asks the server for at least login encryption.</li>
+      </ul></div>
+      <div class="card"><h4><i style="background:var(--k-krb)"></i>Kerberos options</h4><ul>
+        <li><b>Unset:</b> Kerberos logins are relayed unread.</li>
+        <li><b>read_ticket:</b> the service keytab decrypts the ticket to learn the client principal; the AP-REQ goes on unchanged.</li>
+        <li><b>terminate · service_account:</b> the proxy accepts the client with its own SPN, then logs in as its own account.</li>
+        <li><b>terminate · delegate:</b> logs in as the client with a forwarded TGT, or with S4U2Proxy constrained delegation.</li>
+      </ul></div>
+      <div class="card"><h4><i style="background:var(--k-policy)"></i>Config switches</h4><ul>
+        <li><b>no <code>tls</code>:</b> ConnectionTracker only. Bytes are never changed.</li>
+        <li><b><code>tls</code>:</b> TlsBridge terminates both legs.</li>
+        <li><b><code>routing</code>:</b> local PRELOGIN; match on database, user, server_name, app_name, client_host, library or principal.</li>
+        <li><b><code>auth</code>:</b> deny list; NTLM <code>pass_through</code>, <code>v2_only</code> or <code>deny</code>; Kerberos mode.</li>
+      </ul></div>
+      <div class="card"><h4><i style="background:var(--k-glue)"></i>What closes a connection</h4><ul>
+        <li>Malformed framing, or a unit that breaks the encryption mode: <code>mssql_proxy_protocol_error</code>.</li>
+        <li>A TLS failure on either leg.</li>
+        <li>A login the policy refuses: error 18456 + DONE is flushed first, then <code>mssql_proxy_login_denied</code>.</li>
+        <li>A stream that doesn't open with PRELOGIN is not closed: the filter goes passive and passes it through.</li>
+      </ul></div>
+      <div class="card"><h4><i style="background:var(--k-ext)"></i>Outside the module</h4><ul>
+        <li><b>TDS 8.0 strict:</b> starts with a TLS ClientHello, so <code>tls_inspector</code> sends it to a chain with only <code>tcp_proxy</code>. No routing or policy applies there.</li>
+        <li><b>Connection sharing:</b> not possible with the v1.40.2 module ABI.</li>
+        <li><b>Forged LOGINACK:</b> never; the client always gets the server's own reply.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <footer>Sources: mssql_proxy.cc · tls_bridge.h · tds_connection.h · config.h · auth.h · kerberos_terminate.h · plan.md</footer>
+</div>
+
+<script>
+(() => {
+  const KINDS = {
+    ext:    ["Outside the module", "--k-ext"],
+    glue:   ["Envoy glue", "--k-glue"],
+    frame:  ["Framing & observation", "--k-frame"],
+    tls:    ["TLS termination", "--k-tls"],
+    login:  ["Login parsing", "--k-login"],
+    policy: ["Policy & routing", "--k-policy"],
+    krb:    ["Kerberos", "--k-krb"],
+  };
+  const ALL4 = ["observe", "terminate", "route", "kerberos"];
+  const TERM = ["terminate", "route", "kerberos"];
+  const H = 60;
+  // id, x, y, w, kind, label, sub, tag, modes, file, text, bullets
+  const N = [
+    ["client8", 40, 110, 140, "ext", "TDS 8.0 client", "strict encryption", "opens with 0x16", ["strict"], null,
+      "A strict-encryption client starts with a TLS ClientHello, not PRELOGIN.", ["Never reaches the module", "Routable only on SNI and ALPN (tds/8.0)"]],
+    ["client7", 40, 240, 140, "ext", "TDS 7.x client", "ODBC · JDBC · FreeTDS", "opens with 0x12", ALL4, null,
+      "Any TDS 7.x driver. It opens with a PRELOGIN packet, which is what the module expects.", ["Encryption off, on, required or not supported", "MARS passes through"]],
+    ["inspector", 220, 175, 140, "ext", "tls_inspector", "listener filter", "chooses filter chain", ["strict", ...ALL4], null,
+      "Envoy's listener filter peeks at the first byte and picks the filter chain by transport protocol.", ["tls → chain with tcp_proxy only", "raw_buffer → mssql_proxy then tcp_proxy"]],
+    ["tcp_tls", 1095, 110, 140, "ext", "tcp_proxy", "tls chain", "TLS passed through", ["strict"], null,
+      "Strict clients go straight to tcp_proxy; TLS passes through untouched.", ["No LOGIN7 routing, identity logging or policy", "Plan's open question: deny strict, or terminate it with Envoy's own TLS"]],
+    ["glue", 405, 240, 200, "glue", "MssqlProxyFilter", "onRead · onWrite · inject", "mssql_proxy.cc", ALL4, "mssql_proxy.cc",
+      "The only part that talks to Envoy, through the dynamic-module C++ SDK (v1.40.2 ABI). Every other piece is plain C++ with no Envoy dependency.", ["Feeds each buffer to the tracker or the bridge", "Replaces bytes in terminating mode; injects output for the other direction", "Sets envoy.tcp_proxy.cluster, metadata and counters", "Closes with termination details on errors"]],
+    ["tracker", 650, 240, 200, "frame", "ConnectionTracker", "observe: bytes unchanged", "tds_connection.h", ["observe"], "tds_connection.h",
+      "Used when there is no \"tls\" config. Follows both directions and checks every unit against the negotiated encryption mode.", ["Reads PRELOGIN to learn None, login-only or Full", "Reads the login response for the packet size when it is visible", "Goes passive if the stream doesn't open with PRELOGIN"]],
+    ["metadata", 885, 240, 170, "glue", "Access log & stats", "dynamic metadata", "24 counters", ALL4, "mssql_proxy.cc",
+      "What the filter learned, for access logs and Prometheus.", ["Metadata under mssql_proxy: user, database, app_name, client_host, login_method, login_result, cluster", "Counters such as mssql_proxy_login_succeeded_total and mssql_proxy_encryption_login_only_total"]],
+    ["split", 650, 340, 200, "frame", "StreamSplitter", "TDS · TLS record · SMP", "tds.h", ALL4, "tds.h",
+      "Cuts one direction's byte stream into units, told apart by the first byte.", ["0x14–0x17: raw TLS record", "0x53: MARS SMP packet, once MARS is on", "Anything else: TDS packet, 8-byte header", "Bounds-checks every length; caps at the negotiated packet size"]],
+    ["bridge", 415, 460, 210, "tls", "TlsBridge", "plain view of every message", "tls_bridge.h", TERM, "tls_bridge.h",
+      "Used with \"tls\" config. Bytes in, bytes out: it decrypts each leg, acts on the plain messages, and re-encrypts for the other leg.", ["Forwarded PRELOGIN (default) or local PRELOGIN (routing)", "Holds the client's login until the server leg is ready", "Hands blocking Kerberos steps to the filter as work"]],
+    ["legs", 650, 460, 200, "tls", "TLS legs", "BoringSSL, memory BIOs", "mode per leg", TERM, "tls_bridge.cc",
+      "TLS server toward the client with the proxy's certificate; TLS client toward SQL Server, verifying upstream_ca_file and the server name.", ["Handshake carried inside PRELOGIN packets", "Each leg has its own None, login-only or Full mode", "Login-only server: LOGIN7's first packet in one record, the rest plain"]],
+    ["login7", 415, 555, 125, "login", "LOGIN7 reader", "user · db · app", "login7.h", TERM, "login7.h",
+      "Parses LOGIN7 (MS-TDS 2.2.6.4) from UTF-16LE into the fields routing and logging use.", ["Never decodes the password", "Hands the SSPI token to the classifier"]],
+    ["auth", 570, 555, 125, "policy", "Login policy", "deny → error 18456", "auth.h", TERM, "auth.h",
+      "Tracks how the client authenticates, who it claims to be, and the server's verdict.", ["Identities are claims until LOGINACK, so the policy only denies on them", "Refusal: ERROR 18456 + DONE, then close", "NTLM: pass_through, v2_only or deny"]],
+    ["route", 725, 555, 125, "policy", "Route select", "first match wins", "config.h", ["route"], "config.h",
+      "Picks the cluster from LOGIN7 once the login's identity is final, just before the server leg opens.", ["Exact match, ASCII case ignored; every given field must match", "No match: tcp_proxy's own cluster", "Under Kerberos terminate, also picks that cluster's SPN"]],
+    ["gss", 415, 650, 125, "login", "Token classifier", "SPNEGO · Kerberos · NTLM", "gss_token.h", TERM, "gss_token.h",
+      "Says which mechanism an integrated login uses, without verifying it, by unwrapping SPNEGO and GSS framing with a bounds-checked DER reader.", ["NTLM messages are only read, never changed: the MIC covers all three", "Wraps the proxy's own Kerberos tokens in SPNEGO"]],
+    ["read", 570, 650, 125, "krb", "read_ticket", "keytab decrypts ticket", "kerberos.h", ["kerberos"], "kerberos.h",
+      "Learns the client principal by decrypting the service ticket with SQL Server's keytab and checking the authenticator.", ["The AP-REQ goes on to the server unchanged", "No replay cache here; the server does its own check", "A ticket it can't read is refused"]],
+    ["term", 725, 650, 125, "krb", "Kerberos terminate", "MIT GSS-API", "kerberos_terminate.h", ["kerberos"], "kerberos_terminate.h",
+      "The proxy accepts the client's Kerberos login with its own SPN's keys, then logs in to SQL Server with a Kerberos exchange of its own.", ["service_account: as the proxy's account", "delegate: forwarded TGT, or S4U2Proxy", "Rebuilt LOGIN7 carries the new token"]],
+    ["workers", 885, 650, 170, "glue", "WorkerPool", "blocking GSS steps", "reads paused", ["kerberos"], "worker_pool.h",
+      "GSS steps may wait on the KDC, so they run on a fixed pool owned by the filter config, not on Envoy's event loop.", ["The connection's reads are paused meanwhile", "The result returns on the connection's thread through its scheduler", "Dropped if the connection closed first"]],
+    ["tcp", 1095, 460, 140, "ext", "tcp_proxy", "TDS 7.x chain", "ON_DOWNSTREAM_DATA", ALL4, null,
+      "Envoy's TCP proxy carries the bytes the module passes on.", ["With routing: upstream_connect_mode ON_DOWNSTREAM_DATA and delayed route selection", "Reads the cluster from filter state envoy.tcp_proxy.cluster"]],
+    ["sql", 1275, 460, 135, "ext", "SQL Server", "route clusters", "sql_sales · sql_batch", ["strict", ...ALL4], null,
+      "The real backend. The client always gets the server's own LOGINACK, never a forged one.", ["One client connection, one server connection", "No connection sharing in this ABI"]],
+    ["kdc", 1275, 650, 135, "ext", "KDC", "Active Directory or MIT", "tickets for the proxy", ["kerberos"], null,
+      "Issues the proxy's tickets when it terminates Kerberos.", ["Its own TGT for constrained delegation", "A service ticket for SQL Server's SPN"]],
+  ];
+  // from, to, path, label, lx, ly, style ("emph" main data path, "dash" control/bypass)
+  const E = [
+    ["client8", "inspector", "M180,140 H200 V195 H220", "", 0, 0, "dash"],
+    ["client7", "inspector", "M180,270 H200 V215 H220", "", 0, 0, "emph"],
+    ["inspector", "tcp_tls", "M290,175 V140 H1095", "tls chain · module bypassed", 690, 133, "dash"],
+    ["inspector", "glue", "M360,205 H383 V270 H405", "raw_buffer", 336, 250, "emph"],
+    ["glue", "tracker", "M605,270 H650", "", 0, 0, "emph"],
+    ["glue", "bridge", "M500,300 V460", "\"tls\" set", 500, 400, "emph"],
+    ["tracker", "split", "M750,300 V340", "", 0, 0, ""],
+    ["legs", "split", "M750,460 V400", "units", 772, 437, ""],
+    ["glue", "metadata", "M505,240 V215 H970 V240", "metadata · counters", 790, 211, "dash"],
+    ["bridge", "legs", "M625,490 H650", "", 0, 0, "emph"],
+    ["legs", "tcp", "M850,490 H1095", "TDS toward the server", 975, 483, "emph"],
+    ["route", "tcp", "M850,585 H1165 V520", "envoy.tcp_proxy.cluster", 1000, 578, "dash"],
+    ["tcp", "sql", "M1235,490 H1275", "", 0, 0, "emph"],
+    ["tcp_tls", "sql", "M1235,140 H1342 V460", "TDS 8.0 TLS", 1342, 300, "dash"],
+    ["bridge", "login7", "M477,520 V555", "", 0, 0, ""],
+    ["login7", "auth", "M540,585 H570", "", 0, 0, ""],
+    ["auth", "route", "M695,585 H725", "", 0, 0, ""],
+    ["login7", "gss", "M477,615 V650", "SSPI", 494, 636, ""],
+    ["gss", "read", "M540,680 H570", "", 0, 0, ""],
+    ["read", "auth", "M632,650 V615", "principal", 655, 636, ""],
+    ["gss", "term", "M477,710 V728 H787 V710", "", 0, 0, ""],
+    ["term", "workers", "M850,680 H885", "", 0, 0, "dash"],
+    ["workers", "kdc", "M1055,680 H1275", "TGS / S4U2Proxy", 1165, 673, "dash"],
+  ];
+  const MODES = {
+    all: "Everything the filter can do. Grey boxes are Envoy or the network; coloured boxes live in the module.",
+    observe: "No \"tls\" config: ConnectionTracker follows framing and encryption mode and never changes a byte. Malformed streams are closed.",
+    terminate: "\"tls\" config: TlsBridge terminates both legs, reads LOGIN7 in plain text and applies the login policy.",
+    route: "\"routing\" config: the bridge answers PRELOGIN itself and holds tcp_proxy back until LOGIN7 picks the cluster.",
+    kerberos: "auth.kerberos read_ticket or terminate: tickets are read with a keytab, or the proxy runs its own Kerberos exchange on the worker pool.",
+    strict: "TDS 8.0 strict clients start with TLS, so tls_inspector routes them to a chain without the module.",
+  };
+  const MODE_NODES = { all: null };
+  for (const m of ["observe", "terminate", "route", "kerberos", "strict"]) {
+    MODE_NODES[m] = new Set(N.filter(n => n[8].includes(m)).map(n => n[0]));
+  }
+  // Kerberos mode also shows the login path that leads to it.
+  for (const id of ["glue", "split", "bridge", "legs", "login7", "auth", "gss", "tcp", "sql", "client7", "inspector", "metadata"]) MODE_NODES.kerberos.add(id);
+
+  const svg = document.getElementById("diagram");
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent, text) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    (parent || svg).appendChild(e);
+    return e;
+  };
+  const defs = el("defs", {});
+  for (const [id, color] of [["ah", "var(--arrow)"], ["ah-e", "var(--emph)"]]) {
+    const m = el("marker", { id, markerWidth: 9, markerHeight: 7, refX: 8.5, refY: 3.5, orient: "auto" }, defs);
+    el("polygon", { points: "0 0, 9 3.5, 0 7", style: `fill:${color}` }, m);
+  }
+  // Lanes
+  el("text", { x: 40, y: 34, class: "lane-title" }, null, "CLIENTS");
+  el("text", { x: 220, y: 34, class: "lane-title" }, null, "ENVOY LISTENER · TDS PORT");
+  el("text", { x: 1275, y: 34, class: "lane-title" }, null, "UPSTREAM");
+  el("line", { x1: 200, y1: 20, x2: 200, y2: 770, class: "lane-sep" });
+  el("line", { x1: 1255, y1: 20, x2: 1255, y2: 770, class: "lane-sep" });
+  el("rect", { x: 385, y: 200, width: 690, height: 565, rx: 12, class: "box", style: "stroke: var(--k-glue); opacity:.55" });
+  el("text", { x: 393, y: 192, class: "box-title", style: "fill: var(--k-glue)" }, null, "MSSQL_PROXY · DYNAMIC MODULE (.so)");
+  el("rect", { x: 400, y: 432, width: 465, height: 320, rx: 10, class: "box", style: "stroke: var(--k-tls); opacity:.5" });
+  el("text", { x: 855, y: 746, "text-anchor": "end", class: "box-title", style: "fill: var(--k-tls)" }, null, "TLSBRIDGE · TERMINATING MODE");
+
+  const edgeEls = [];
+  const edgeLayer = el("g", {});
+  for (const [from, to, d, label, lx, ly, style] of E) {
+    const g = el("g", { class: "edge " + style }, edgeLayer);
+    el("path", { d, "marker-end": style === "emph" ? "url(#ah-e)" : "url(#ah)" }, g);
+    if (label) el("text", { x: lx, y: ly, "text-anchor": "middle" }, g, label);
+    edgeEls.push({ from, to, g });
+  }
+  const nodeEls = {};
+  const byId = {};
+  for (const n of N) {
+    const [id, x, y, w, kind, label, sub, tag] = n;
+    byId[id] = n;
+    const color = `var(${KINDS[kind][1]})`;
+    const g = el("g", { class: "node", tabindex: 0, role: "button", "aria-label": `${label}, ${sub}` });
+    el("title", {}, g, `${label} · ${sub} · ${tag}`);
+    el("rect", { x, y, width: w, height: H, rx: 8, style: "fill: var(--mask)" }, g);
+    el("rect", { x, y, width: w, height: H, rx: 8, class: "body", style: `stroke:${color}; fill: color-mix(in srgb, ${color} 11%, var(--mask))` }, g);
+    const cx = x + w / 2;
+    el("text", { x: cx, y: y + 22, "text-anchor": "middle", class: "t1" }, g, label);
+    el("text", { x: cx, y: y + 37, "text-anchor": "middle", class: "t2" }, g, sub);
+    el("text", { x: cx, y: y + 51, "text-anchor": "middle", class: "t3", style: `fill:${color}` }, g, tag);
+    g.addEventListener("click", () => select(id));
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(id); } });
+    nodeEls[id] = g;
+  }
+
+  const detail = document.getElementById("detail");
+  function select(id) {
+    const [, , , , kind, label, , , , file, text, bullets] = byId[id];
+    for (const k in nodeEls) nodeEls[k].classList.toggle("sel", k === id);
+    detail.innerHTML = "";
+    const k = document.createElement("div");
+    k.className = "kind";
+    k.innerHTML = `<i style="background:var(${KINDS[kind][1]})"></i>`;
+    k.append(KINDS[kind][0]);
+    const h = document.createElement("h2"); h.textContent = label;
+    detail.append(k, h);
+    if (file) { const f = document.createElement("span"); f.className = "file"; f.textContent = file; detail.append(f); }
+    const p = document.createElement("p"); p.textContent = text; detail.append(p);
+    const ul = document.createElement("ul");
+    for (const b of bullets) { const li = document.createElement("li"); li.textContent = b; ul.append(li); }
+    detail.append(ul);
+  }
+
+  const note = document.getElementById("mode-note");
+  function setMode(mode) {
+    const on = MODE_NODES[mode];
+    for (const id in nodeEls) nodeEls[id].classList.toggle("dim", !!on && !on.has(id));
+    for (const { from, to, g } of edgeEls) {
+      const active = !on || (on.has(from) && on.has(to));
+      g.classList.toggle("dim", !active);
+      g.classList.toggle("flow", !!on && active);
+    }
+    // Observe never enters the bridge.
+    if (mode === "observe") for (const { from, to, g } of edgeEls) if (to === "bridge" || from === "legs") { g.classList.add("dim"); g.classList.remove("flow"); }
+    for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+    note.textContent = MODES[mode];
+  }
+  for (const b of document.querySelectorAll("[data-mode]")) b.addEventListener("click", () => setMode(b.dataset.mode));
+
+  const legend = document.getElementById("legend");
+  for (const key in KINDS) {
+    const s = document.createElement("span");
+    s.innerHTML = `<i style="border-color:var(${KINDS[key][1]}); background: color-mix(in srgb, var(${KINDS[key][1]}) 18%, transparent)"></i>`;
+    s.append(KINDS[key][0]);
+    legend.append(s);
+  }
+
+  const themeBtn = document.getElementById("theme-btn");
+  const order = ["system", "dark", "light"];
+  let theme = "system";
+  try { theme = localStorage.getItem("theme") || "system"; } catch (e) {}
+  const applyTheme = () => {
+    if (theme === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", theme);
+    themeBtn.textContent = "Theme: " + theme;
+  };
+  themeBtn.addEventListener("click", () => {
+    theme = order[(order.indexOf(theme) + 1) % 3];
+    try { localStorage.setItem("theme", theme); } catch (e) {}
+    applyTheme();
+  });
+  applyTheme();
+  setMode("all");
+  select("bridge");
+})();
+</script>
+
+</body></html>
