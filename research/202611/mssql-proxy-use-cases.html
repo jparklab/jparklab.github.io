@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme" content="jp-sheet">
+<title>Use Cases for an MSSQL Proxy: What SQL Server Proxies Are Used
+For, Who Ships Them, and Where the Evidence Is Thin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Long-form report: same tokens and fonts as sheet.css, laid out per
+   skills/research/references/report-html-style.md */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --paper:#ffffff; --ink:#1b1d21; --muted:#6b7078; --faint:#9aa0a8;
+  --line:#1b1d21; --rule:#d9dce1; --zebra:#f5f6f8; --box:#e8eef7; --boxline:#5b7fb3;
+  --blue:#1f5fbf; --red:#c62828; --amber:#9a5b00;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;padding:16px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font:12.5px "IBM Plex Mono",ui-monospace,monospace;background:var(--zebra);padding:1px 4px}
+pre code{display:block;padding:10px 12px;overflow-x:auto}
+
+/* double frame: outer border, inner sheet */
+.frame{max-width:1000px;margin:0 auto;border:1px solid var(--line);padding:10px}
+.sheet{border:1px solid var(--line);padding:32px 40px}
+
+header h1{font-size:26px;line-height:1.25;font-weight:600;margin:0 0 6px}
+.byline{font:11.5px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:22px}
+
+/* contents box */
+nav#TOC{border:1.5px solid var(--line);padding:10px 16px;margin-bottom:22px}
+nav#TOC:before{content:"Contents";display:block;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-bottom:6px}
+nav#TOC ul{list-style:none;margin:0;padding:0;columns:2;column-gap:28px}
+nav#TOC li{padding:2px 0;break-inside:avoid}
+nav#TOC a{color:var(--ink)}
+
+/* executive summary: the only box in the body */
+.summary{background:var(--box);border:1.5px solid var(--boxline);padding:12px 18px;margin-bottom:8px}
+.summary p:first-child{margin-top:0}
+.summary>:last-child{margin-bottom:0}
+
+h2{font-size:19px;font-weight:600;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h3{font-size:15.5px;font-weight:600;margin:24px 0 8px}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+hr{border:0;border-top:1px solid var(--rule);margin:24px 0}
+blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--rule);color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px;display:block;overflow-x:auto}
+th{background:var(--ink);color:var(--paper);font-weight:500;text-align:left;padding:6px 9px;border:1px solid var(--ink)}
+th code{background:rgba(255,255,255,.16);color:inherit}
+td{padding:6px 9px;border:1px solid var(--rule);vertical-align:top}
+tbody tr:nth-child(even){background:var(--zebra)}
+
+sup{line-height:0;font:10.5px "IBM Plex Mono",monospace}
+
+/* sources */
+#sources+ol{font-size:12.5px;padding-left:26px}
+#sources+ol li{padding:2px 0}
+.dom{font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:6px}
+
+/* title block */
+.tb{display:grid;grid-template-columns:2fr 1fr 1fr;border:1.5px solid var(--line);margin-top:36px}
+.tb>div{padding:6px 10px}
+.tb>div+div{border-left:1.5px solid var(--line)}
+.tb .k{display:block;font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+.tb .v{font-weight:600}
+
+@media (max-width:720px){
+  body{padding:8px}
+  .frame{padding:6px}
+  .sheet{padding:18px 16px}
+  header h1{font-size:21px}
+  nav#TOC ul{columns:1}
+  .tb{grid-template-columns:1fr}
+  .tb>div+div{border-left:0;border-top:1.5px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="frame"><div class="sheet">
+<header>
+<h1>Use Cases for an MSSQL Proxy: What SQL Server Proxies Are Used For,
+Who Ships Them, and Where the Evidence Is Thin</h1>
+<div class="byline">Research report · 23 cited sources · reviewed 2026-11-22</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#what-an-mssql-proxy-is" id="toc-what-an-mssql-proxy-is">1.
+What an MSSQL Proxy Is</a></li>
+<li><a href="#use-cases" id="toc-use-cases">2. Use Cases</a></li>
+<li><a href="#products-and-which-use-cases-they-serve"
+id="toc-products-and-which-use-cases-they-serve">3. Products and Which
+Use Cases They Serve</a></li>
+<li><a href="#adoption-evidence-and-limits"
+id="toc-adoption-evidence-and-limits">4. Adoption Evidence and
+Limits</a></li>
+<li><a href="#summary-which-use-cases-justify-a-proxy"
+id="toc-summary-which-use-cases-justify-a-proxy">5. Summary: Which Use
+Cases Justify a Proxy</a></li>
+</ul>
+</nav>
+<div class="summary">
+<p><strong>A proxy that speaks SQL Server’s wire protocol (TDS) is used
+for six things: sharing backend connections, keeping clients connected
+through failover, splitting reads from writes, caching results,
+enforcing security and audit policy, and brokering identity. Managed
+proxies (AWS RDS Proxy, the Azure SQL gateway) cover pooling and
+failover. Commercial products cover read/write split, caching (Heimdall,
+ScaleArc, F5) and security (DataSunrise, Teleport). Open-source TDS
+proxies are small, partial projects. The engine and DNS already handle
+some of these jobs: availability group read-only routing, client-side
+driver pooling, and DNS aliases for migration cutover. That narrows the
+case for a proxy to workloads that can’t change their application code
+or connection strings. Almost all adoption evidence is vendor-published,
+and several of the strongest case studies concern PostgreSQL or SQL
+Server 2012-era deployments.</strong></p>
+</div>
+<h2 id="what-an-mssql-proxy-is">1. What an MSSQL Proxy Is</h2>
+<p>An MSSQL proxy is a process that accepts TDS connections from SQL
+Server clients on port 1433, or on a port of its choosing, and opens its
+own connections to one or more SQL Server backends. Because it
+terminates the client session, it can do things a network load balancer
+cannot. It can reuse a backend between clients, hold a client while the
+backend changes, inspect each batch, and refuse or rewrite what it
+sees.</p>
+<p>The pattern is common inside SQL Server’s own cloud platforms. Azure
+SQL Database puts a gateway in front of every logical server. Clients
+connect to the gateway on port 1433, and depending on the connection
+policy the gateway either redirects or proxies the traffic to the right
+database cluster
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/connectivity-architecture">1</a>]</sup>.
+In Proxy mode all connections go through the gateway, which Microsoft
+says increases latency and reduces throughput. Microsoft recommends
+Redirect, where clients reach the node that hosts the database directly
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/connectivity-architecture">1</a>]</sup>.
+Azure SQL Managed Instance went further and made redirect the default in
+October 2025. It describes proxy as a legacy mechanism that trades
+performance for compatibility with TDS drivers older than 7.4
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/managed-instance/connection-types-overview">2</a>]</sup>.
+The platform vendor’s own guidance therefore treats a full-session proxy
+as a cost to minimize, not a feature. Third-party proxies have to
+justify that hop with functions the gateway lacks.</p>
+<p>Proxies differ by how much of the protocol they understand:</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Depth</th>
+<th>What it sees</th>
+<th>Example</th>
+<th>Typical use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L4 TCP balancer</td>
+<td>Bytes and health checks</td>
+<td>HAProxy in TCP mode
+<sup>[<a href="https://discourse.haproxy.org/t/haproxy-with-sql2019-alwayson/6463">12</a>]</sup></td>
+<td>Spread connections; cannot tell primary from secondary</td>
+</tr>
+<tr>
+<td>Session-aware TDS proxy</td>
+<td>Login, session state, transactions</td>
+<td>AWS RDS Proxy
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>,
+<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html">6</a>]</sup></td>
+<td>Pooling, multiplexing, failover hold</td>
+</tr>
+<tr>
+<td>Statement-aware TDS proxy</td>
+<td>Batch text and RPC calls</td>
+<td>Heimdall
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>]</sup>,
+F5 BIG-IP
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup>,
+SQLumAI
+<sup>[<a href="https://github.com/Caripson/SQLumAI/wiki/tds-parser">21</a>]</sup></td>
+<td>Read/write split, caching, rule-based block or rewrite</td>
+</tr>
+<tr>
+<td>Security gateway</td>
+<td>Statements plus identity</td>
+<td>DataSunrise
+<sup>[<a href="https://www.datasunrise.com/firewall/ms-sql-server/">14</a>,
+<a href="https://www.datasunrise.com/professional-info/datasunrise-database-proxy/">15</a>]</sup>,
+Teleport
+<sup>[<a href="https://goteleport.com/docs/ver/19.x/enroll-resources/database-access/enrollment/self-hosted/sql-server-ad-pkinit.md">17</a>,
+<a href="https://goteleport.com/docs/enroll-resources/database-access/enrollment/aws/rds/sql-server-ad.md">18</a>]</sup></td>
+<td>Firewall, masking, audit, identity brokering</td>
+</tr>
+</tbody>
+</table>
+<h2 id="use-cases">2. Use Cases</h2>
+<h3 id="connection-pooling-and-multiplexing">2.1 Connection pooling and
+multiplexing</h3>
+<p>The most widely deployed use case is absorbing connection churn. AWS
+describes the target workload directly. Applications built on serverless
+functions, PHP or Ruby on Rails open and close database connections
+frequently. Establishing thousands of new connections consumes database
+resources that could otherwise process queries
+<sup>[<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup>.
+RDS Proxy keeps a pool of backend connections. It shares one database
+connection among many application connections when it is safe to do so,
+which helps applications with idle connections or long think time
+between transactions
+<sup>[<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup>.</p>
+<p>Pooling also gives the proxy an admission-control role. RDS Proxy
+queues or throttles application connections it cannot serve immediately
+from the pool. When connection requests exceed configured limits, it
+rejects them, which AWS explicitly calls shedding load
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>]</sup>.
+Heimdall makes a similar claim. It establishes only as many backend
+connections as there are concurrent queries, and lets operators limit
+connections per user and in aggregate
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>]</sup>.</p>
+<p>The limit on this use case is session state. A multiplexing proxy can
+reuse a backend only between transactions that leave no state behind.
+RDS Proxy pins a client to one backend connection for the rest of the
+session when it detects a state change that isn’t safe to share
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html">6</a>]</sup>.
+For SQL Server the pinning triggers include:</p>
+<ul>
+<li>multiple active result sets (MARS) and distributed transaction
+coordinator (DTC) communication;</li>
+<li>creating temporary tables, transactions, cursors or prepared
+statements;</li>
+<li>a long list of <code>SET</code> statements;</li>
+<li>any statement over 16 KB
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html">6</a>]</sup>.</li>
+</ul>
+<p>The proxy tracks a short list of settings, such as <code>USE</code>,
+<code>SET ANSI_NULLS</code> and
+<code>SET TRANSACTION ISOLATION LEVEL</code>, without pinning, and
+reuses connections only among sessions with matching values
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html">6</a>]</sup>.
+A SQL Server application that leans on temp tables, prepared statements
+or MARS will see little multiplexing.</p>
+<h3 id="high-availability-and-failover-hold">2.2 High availability and
+failover hold</h3>
+<p>The second use case is hiding failover from clients. RDS Proxy
+connects to the standby instance after a Multi-AZ failure and preserves
+application connections
+<sup>[<a href="https://aws.amazon.com/about-aws/whats-new/2022/09/amazon-rds-proxy-rds-sql-server">4</a>]</sup>.
+It bypasses DNS caches, so clients don’t wait for a stale record to
+expire
+<sup>[<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup>.
+In an AWS test on one m5.xlarge instance, RDS Proxy improved failover
+time by up to 36% over the Always On listener endpoint, 59% over the RDS
+endpoint, and 83% over a database mirroring endpoint
+<sup>[<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup>.
+These are vendor numbers from a single instance class, and AWS notes
+that in-flight transactions may still have to be retried
+<sup>[<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup>.</p>
+<p>Commercial proxies built on the same idea. Heimdall queues front-end
+connections when it detects a failover and transparently moves them to
+the standby
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>]</sup>.
+A ScaleArc case study describes a financial services company on SQL
+Server 2012 whose AlwaysOn and log-shipping setup made failover slow and
+error-prone. The company used ScaleArc as an abstraction layer to get
+automatic failover with zero application downtime, a migration path to
+SQL Server 2014 and multi-data-center DR. It reports DR testing cut from
+about two weeks to a few hours
+<sup>[<a href="https://www.casestudies.com/company/scalearc/case-study/financial-services-company-banks-on-scalearc-to-ensure-the-availability-of-its-online-credit-services">13</a>]</sup>.
+The customer is anonymous, the case study is vendor-hosted, and it
+describes a SQL Server 2012 deployment, so treat it as a historical
+example.</p>
+<p>A plain L4 balancer does not provide this. One operator put HAProxy
+in front of two SQL Server 2019 AG nodes with round-robin balancing, and
+connections landed on the read-only secondary. The operator concluded
+that HAProxy does not know which node is primary
+<sup>[<a href="https://discourse.haproxy.org/t/haproxy-with-sql2019-alwayson/6463">12</a>]</sup>.
+A TDS-aware product solves this with a health check that asks the
+replica its role. F5’s MSSQL monitor can send
+<code>SELECT role_desc ... FROM sys.dm_hadr_availability_replica_states WHERE is_local = 1</code>
+to find the primary
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup>.</p>
+<h3 id="readwrite-split-and-query-routing">2.3 Read/write split and
+query routing</h3>
+<p>Splitting reads to replicas without changing the application is the
+use case that statement-aware proxies sell hardest. Heimdall routes each
+query to the primary or a replica, accounting for replication lag and
+transactional state
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>]</sup>.
+It addresses three problems developers otherwise face [8]:</p>
+<ul>
+<li>reads issued right after a write can see stale data;</li>
+<li>DNS caching can pile many connections onto one replica;</li>
+<li>choosing the nearest reader in a global deployment is hard to
+code.</li>
+</ul>
+<p>Its lag logic is concrete. With a 10-second lag window, a table last
+written 20 seconds ago can be read from the replica, while one written 5
+seconds ago is read from the primary
+<sup>[<a href="https://aws.amazon.com/blogs/apn/how-heimdalls-database-proxy-improves-website-response-times-with-no-code-changes">9</a>]</sup>.</p>
+<p>F5 BIG-IP takes a coarser approach for SQL Server. It routes by the
+user issuing the commands, using a pool flag for whether users can write
+by default plus a read-only or write-enabled user list
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup>.
+F5 identifies a write request by keywords: create, update, insert,
+delete, into, alter, drop, rename, exec and execute
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup>.
+Because <code>exec</code> counts as a write, every stored-procedure call
+goes to the primary. For SQL Server applications built on stored
+procedures, that severely limits what keyword routing can offload.</p>
+<p>The baseline these products compete with is built into the engine.
+Since SQL Server 2016, an availability group listener routes connections
+that declare <code>ApplicationIntent=ReadOnly</code> to a readable
+secondary, and it can load-balance across a set of read-only replicas
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/configure-read-only-routing-for-an-availability-group-sql-server">11</a>]</sup>.
+Native routing is per connection and depends on the client declaring
+intent. A proxy routes per statement and needs no change to the client.
+The proxy’s value is greatest when the connection string can’t be
+changed, such as with third-party applications, which Heimdall names as
+a target
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>]</sup>.</p>
+<h3 id="result-caching-and-sql-offload">2.4 Result caching and SQL
+offload</h3>
+<p>Heimdall caches query results in a local heap or Redis, decides from
+its own analytics which queries to cache, and invalidates automatically
+without manual TTLs
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>,
+<a href="https://aws.amazon.com/blogs/architecture/offloading-sql-for-amazon-rds-using-the-heimdall-proxy">8</a>]</sup>.
+Multiple proxies coordinate caching and invalidation, and scaling out
+means adding proxies
+<sup>[<a href="https://aws.amazon.com/blogs/architecture/offloading-sql-for-amazon-rds-using-the-heimdall-proxy">8</a>]</sup>.
+The customer evidence comes from PostgreSQL rather than SQL Server.
+Questis, on Aurora PostgreSQL, estimated an in-house data-access layer
+at more than a year of work and chose Heimdall for read/write split,
+caching and analytics
+<sup>[<a href="https://aws.amazon.com/blogs/apn/how-heimdalls-database-proxy-improves-website-response-times-with-no-code-changes">9</a>]</sup>.
+Tornado, a brokerage, chose it for out-of-the-box read/write split with
+zero application changes before a traffic launch
+<sup>[<a href="https://aws.amazon.com/blogs/architecture/offloading-sql-for-amazon-rds-using-the-heimdall-proxy">8</a>]</sup>.
+Neither case study gives SQL Server numbers.</p>
+<p>Not everyone accepts the premise. A Microsoft forum thread asked
+about SQL Server proxies for pooling, caching and read/write split. A
+respondent replied that pooling is a client-side mechanism and that SQL
+Server already caches data in its buffer pool
+<sup>[<a href="https://techcommunity.microsoft.com/t5/sql-server/sql-server-proxies/m-p/2110662">23</a>]</sup>.
+The original poster answered that buffer-pool caching improves
+scalability but does not cut round-trip latency
+<sup>[<a href="https://techcommunity.microsoft.com/t5/sql-server/sql-server-proxies/m-p/2110662">23</a>]</sup>.
+Proxy caching saves the network round trip and the engine’s work, but
+only for queries whose results can tolerate the invalidation rules.</p>
+<h3
+id="security-database-firewall-masking-and-sql-injection-blocking">2.5
+Security: database firewall, masking and SQL injection blocking</h3>
+<p>Security vendors use the proxy position to enforce policy the engine
+does not. DataSunrise’s SQL Server firewall, in proxy mode, sits between
+clients and the database. It audits and logs traffic and blocks queries
+that violate policy
+<sup>[<a href="https://www.datasunrise.com/firewall/ms-sql-server/">14</a>]</sup>.
+DataSunrise claims it blocks several SQL injection techniques
+(out-of-band, time-delay, boolean, union and automated exploitation) on
+SQL Server 2005 and later
+<sup>[<a href="https://www.datasunrise.com/firewall/ms-sql-server/">14</a>]</sup>.
+The vendor runs three modes: sniffer (passive monitoring only), proxy
+(active protection, including the firewall and data masking) and
+database audit trail
+<sup>[<a href="https://www.datasunrise.com/professional-info/datasunrise-database-proxy/">15</a>]</sup>.
+Blocking and masking need the proxy, because a passive observer cannot
+change a result set. These are vendor descriptions with no independent
+test behind them.</p>
+<p>The open-source SQLumAI project shows how hard statement inspection
+is at the TDS level. It reassembles SQL Batch and RPC packets and
+recovers batch text. It applies rules with best-effort regex for simple
+<code>INSERT</code> and <code>UPDATE</code> statements and fails open,
+forwarding unchanged whatever it cannot parse
+<sup>[<a href="https://github.com/Caripson/SQLumAI/wiki/tds-parser">21</a>]</sup>.
+It does not rewrite <code>MERGE</code>, CTEs or nested queries. It does
+not guarantee <code>SQL_VARIANT</code>, XML or table-valued parameters.
+It needs TLS termination, off by default, to read payloads at all
+<sup>[<a href="https://github.com/Caripson/SQLumAI/wiki/tds-parser">21</a>]</sup>.
+Commercial firewalls face the same protocol, so how a product handles
+encrypted TDS and complex T-SQL is the first thing to test.</p>
+<h3
+id="audit-and-database-activity-monitoring-for-managed-databases">2.6
+Audit and database activity monitoring for managed databases</h3>
+<p>Managed databases block the traditional way of auditing. Imperva
+notes that on-premises database activity monitoring relied on agents
+installed on database servers, and that a server-side agent is not
+practical on DBaaS because the cloud provider controls the host
+<sup>[<a href="https://imperva.com/blog/?p=19458">16</a>]</sup>. It
+names a database reverse proxy, working like a web application firewall,
+as one option. It adds that a reverse proxy brings back the operational
+burden a managed database was meant to remove
+<sup>[<a href="https://imperva.com/blog/?p=19458">16</a>]</sup>.
+DataSunrise’s audit-trail mode reads native audit logs, the non-proxy
+alternative
+<sup>[<a href="https://www.datasunrise.com/professional-info/datasunrise-database-proxy/">15</a>]</sup>.
+A proxy is one of three ways to audit a managed SQL Server, alongside
+native audit logs and client-side agents. The cost of running it is the
+deciding factor.</p>
+<h3 id="identity-brokering-and-access-control">2.7 Identity brokering
+and access control</h3>
+<p>A proxy can also translate identities. RDS Proxy can enforce IAM
+authentication for clients and connect to the database with IAM or
+credentials from Secrets Manager, so applications don’t embed passwords
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>,
+<a href="https://aws.amazon.com/about-aws/whats-new/2022/09/amazon-rds-proxy-rds-sql-server">4</a>]</sup>.
+Teleport’s Database Service joins the SQL Server’s Active Directory
+domain. It authenticates to SQL Server with Kerberos, using either a
+keytab or PKINIT certificates trusted by AD, and forwards user traffic
+after applying Teleport’s RBAC
+<sup>[<a href="https://goteleport.com/docs/ver/19.x/enroll-resources/database-access/enrollment/self-hosted/sql-server-ad-pkinit.md">17</a>,
+<a href="https://goteleport.com/docs/enroll-resources/database-access/enrollment/aws/rds/sql-server-ad.md">18</a>]</sup>.
+This lets an organization give engineers short-lived, audited access to
+SQL Server without handing out SQL logins. Teleport’s enforcement is
+coarse for SQL Server. Its docs warn that database-name restrictions are
+only enforced for PostgreSQL, MongoDB and Cloud Spanner
+<sup>[<a href="https://goteleport.com/docs/enroll-resources/database-access/enrollment/aws/rds/sql-server-ad.md">18</a>]</sup>.
+Access is controlled at the server and user level, not per database.</p>
+<p>Identity support differs by product. RDS Proxy does not support
+connections that use Active Directory, and IAM authentication requires
+clients that support token properties
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>]</sup>.
+F5 supports only basic authentication when proxying SQL Server, so user
+names and passwords must be synchronized across every backend
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup>.
+DataSunrise says it supports Kerberos and LDAP for use as an
+authentication proxy
+<sup>[<a href="https://www.datasunrise.com/firewall/ms-sql-server/">14</a>]</sup>.</p>
+<h3 id="migration-and-cutover">2.8 Migration and cutover</h3>
+<p>A proxy that owns the client-facing address can move clients between
+backends. ScaleArc was sold partly as an upgrade path from SQL Server
+2012 to 2014
+<sup>[<a href="https://www.casestudies.com/company/scalearc/case-study/financial-services-company-banks-on-scalearc-to-ensure-the-availability-of-its-online-credit-services">13</a>]</sup>.
+Practitioners usually solve this without a proxy. Microsoft’s guidance
+for cutting over to Managed Instance is a DNS CNAME listener endpoint.
+Clients resolve one name, and cutover repoints the alias, with downtime
+bounded by the record’s TTL
+<sup>[<a href="https://techcommunity.microsoft.com/t5/azure-sql-blog/minimize-the-downtime-when-migrating-sql-workloads-to-azure-sql/ba-p/3944585">19</a>]</sup>.
+The approach has hard limits:</p>
+<ul>
+<li>the on-premises server and Managed Instance must both listen on port
+1433;</li>
+<li>it cannot refer to a named instance such as
+<code>SERVER01\INSTANCE01</code>;</li>
+<li>encrypted clients must set <code>TrustServerCertificate=true</code>
+<sup>[<a href="https://techcommunity.microsoft.com/t5/azure-sql-blog/minimize-the-downtime-when-migrating-sql-workloads-to-azure-sql/ba-p/3944585">19</a>]</sup>.</li>
+</ul>
+<p>A 2025 SQLServerCentral thread asked how to move a standalone named
+instance to an AG without changing connection strings. The answers were
+a SQL client alias, a DNS alias, or a load balancer placed in the
+connection strings for this and future moves. Named instances made
+redirection harder
+<sup>[<a href="https://www.sqlservercentral.com/?p=4562784">20</a>]</sup>.
+A TDS proxy is the general form of that load-balancer answer. It fits
+best where DNS aliasing fails: named instances, non-default ports, or
+the need to hold sessions during the switch.</p>
+<h3 id="observability">2.9 Observability</h3>
+<p>Statement-aware proxies collect per-query data as a side effect.
+Heimdall reports cache hit rate, database processing time, overall
+response time and query plans
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>]</sup>.
+Questis cited SQL performance analytics as one of three features it used
+<sup>[<a href="https://aws.amazon.com/blogs/apn/how-heimdalls-database-proxy-improves-website-response-times-with-no-code-changes">9</a>]</sup>.
+ScaleArc’s customer credited its real-time analytics with finding query
+issues before users did
+<sup>[<a href="https://www.casestudies.com/company/scalearc/case-study/financial-services-company-banks-on-scalearc-to-ensure-the-availability-of-its-online-credit-services">13</a>]</sup>.
+No source showed observability alone justifying a proxy. It is a
+byproduct of deploying one for routing or caching.</p>
+<h3 id="multi-tenancy">2.10 Multi-tenancy</h3>
+<p>No source in this survey describes a SQL Server proxy deployed to
+route or isolate tenants. Per-user connection limits
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>]</sup>,
+per-user routing
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup>
+and per-user RBAC
+<sup>[<a href="https://goteleport.com/docs/ver/19.x/enroll-resources/database-access/enrollment/self-hosted/sql-server-ad-pkinit.md">17</a>,
+<a href="https://goteleport.com/docs/enroll-resources/database-access/enrollment/aws/rds/sql-server-ad.md">18</a>]</sup>
+are building blocks for it, but tenant routing as a deployed SQL Server
+proxy use case is not documented here.</p>
+<h2 id="products-and-which-use-cases-they-serve">3. Products and Which
+Use Cases They Serve</h2>
+<table style="width:99%;">
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+</colgroup>
+<thead>
+<tr>
+<th>Product</th>
+<th>Type</th>
+<th>Pool / multiplex</th>
+<th>Failover hold</th>
+<th>R/W split</th>
+<th>Cache</th>
+<th>Firewall / mask</th>
+<th>Identity / audit</th>
+<th>SQL Server notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AWS RDS Proxy</td>
+<td>Managed</td>
+<td>Yes
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>,
+<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup></td>
+<td>Yes
+<sup>[<a href="https://aws.amazon.com/about-aws/whats-new/2022/09/amazon-rds-proxy-rds-sql-server">4</a>,
+<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup></td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>IAM, Secrets Manager
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>]</sup></td>
+<td>No AD auth, no RDS Custom, no SQL Server 2025,
+<code>@@IDENTITY</code>/<code>SCOPE_IDENTITY</code> may be inaccurate
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>]</sup></td>
+</tr>
+<tr>
+<td>Azure SQL gateway</td>
+<td>Platform</td>
+<td>No</td>
+<td>Routes to current cluster
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/connectivity-architecture">1</a>]</sup></td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>Proxy mode adds latency; Redirect recommended
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/connectivity-architecture">1</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/managed-instance/connection-types-overview">2</a>]</sup></td>
+</tr>
+<tr>
+<td>Heimdall Data</td>
+<td>Commercial</td>
+<td>Yes
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>]</sup></td>
+<td>Yes
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>]</sup></td>
+<td>Yes, lag-aware
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>,
+<a href="https://aws.amazon.com/blogs/apn/how-heimdalls-database-proxy-improves-website-response-times-with-no-code-changes">9</a>]</sup></td>
+<td>Yes
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>,
+<a href="https://aws.amazon.com/blogs/architecture/offloading-sql-for-amazon-rds-using-the-heimdall-proxy">8</a>]</sup></td>
+<td>No</td>
+<td>No</td>
+<td>Lists SQL Server support; case studies are PostgreSQL
+<sup>[<a href="https://aws.amazon.com/blogs/architecture/offloading-sql-for-amazon-rds-using-the-heimdall-proxy">8</a>,
+<a href="https://aws.amazon.com/blogs/apn/how-heimdalls-database-proxy-improves-website-response-times-with-no-code-changes">9</a>]</sup></td>
+</tr>
+<tr>
+<td>ScaleArc (IgniteTech)</td>
+<td>Commercial, legacy</td>
+<td>Not described in sources</td>
+<td>Yes
+<sup>[<a href="https://www.casestudies.com/company/scalearc/case-study/financial-services-company-banks-on-scalearc-to-ensure-the-availability-of-its-online-credit-services">13</a>]</sup></td>
+<td>Not described in sources</td>
+<td>Not described in sources</td>
+<td>No</td>
+<td>Query analytics
+<sup>[<a href="https://www.casestudies.com/company/scalearc/case-study/financial-services-company-banks-on-scalearc-to-ensure-the-availability-of-its-online-credit-services">13</a>]</sup></td>
+<td>Case study is SQL Server 2012 era
+<sup>[<a href="https://www.casestudies.com/company/scalearc/case-study/financial-services-company-banks-on-scalearc-to-ensure-the-availability-of-its-online-credit-services">13</a>]</sup></td>
+</tr>
+<tr>
+<td>F5 BIG-IP LTM</td>
+<td>Commercial ADC</td>
+<td>Load balancing</td>
+<td>Via role-aware monitor
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup></td>
+<td>By user, keyword-detected writes
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup></td>
+<td>No</td>
+<td>No</td>
+<td>Basic auth only
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup></td>
+<td>TDS-specific profile</td>
+</tr>
+<tr>
+<td>DataSunrise</td>
+<td>Security</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>Yes
+<sup>[<a href="https://www.datasunrise.com/firewall/ms-sql-server/">14</a>,
+<a href="https://www.datasunrise.com/professional-info/datasunrise-database-proxy/">15</a>]</sup></td>
+<td>Audit, Kerberos/LDAP
+<sup>[<a href="https://www.datasunrise.com/firewall/ms-sql-server/">14</a>]</sup></td>
+<td>SQL Server 2005+
+<sup>[<a href="https://www.datasunrise.com/firewall/ms-sql-server/">14</a>]</sup></td>
+</tr>
+<tr>
+<td>Teleport</td>
+<td>Access proxy</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>RBAC, AD Kerberos/PKINIT
+<sup>[<a href="https://goteleport.com/docs/ver/19.x/enroll-resources/database-access/enrollment/self-hosted/sql-server-ad-pkinit.md">17</a>,
+<a href="https://goteleport.com/docs/enroll-resources/database-access/enrollment/aws/rds/sql-server-ad.md">18</a>]</sup></td>
+<td>Database-name rules not enforced for SQL Server
+<sup>[<a href="https://goteleport.com/docs/enroll-resources/database-access/enrollment/aws/rds/sql-server-ad.md">18</a>]</sup></td>
+</tr>
+<tr>
+<td>SQLumAI</td>
+<td>Open source</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>Rule-based block / rewrite
+<sup>[<a href="https://github.com/Caripson/SQLumAI/wiki/tds-parser">21</a>]</sup></td>
+<td>Logs</td>
+<td>Fails open; TLS termination needed
+<sup>[<a href="https://github.com/Caripson/SQLumAI/wiki/tds-parser">21</a>]</sup></td>
+</tr>
+<tr>
+<td>TDSProxy (GitHub)</td>
+<td>Open source</td>
+<td>Unknown</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>Pluggable auth override
+<sup>[<a href="https://github.com/mrhamburg/TDSProxy/blob/master/README.md">22</a>]</sup></td>
+<td>README is a one-line stub
+<sup>[<a href="https://github.com/mrhamburg/TDSProxy/blob/master/README.md">22</a>]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>No product in the table covers both column groups. Traffic-management
+proxies (RDS Proxy, Heimdall, ScaleArc, F5) do not do security. Security
+proxies (DataSunrise, Teleport) do not pool or route. An organization
+that wants both runs two proxies in series. The open-source column is
+also nearly empty. Neither open-source project offers pooling, failover
+or read/write split, and one has a one-line README
+<sup>[<a href="https://github.com/Caripson/SQLumAI/wiki/tds-parser">21</a>,
+<a href="https://github.com/mrhamburg/TDSProxy/blob/master/README.md">22</a>]</sup>.</p>
+<h2 id="adoption-evidence-and-limits">4. Adoption Evidence and
+Limits</h2>
+<h3 id="what-the-evidence-shows">4.1 What the evidence shows</h3>
+<p>Adoption evidence for SQL Server specifically is thin and almost
+entirely vendor-published:</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Evidence</th>
+<th>Engine</th>
+<th>Source type</th>
+<th>Strength</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RDS Proxy failover improvements of 36%, 59% and 83%
+<sup>[<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup></td>
+<td>SQL Server</td>
+<td>Vendor test, one instance class</td>
+<td>Moderate, measured but vendor-run</td>
+</tr>
+<tr>
+<td>ScaleArc financial-services case study
+<sup>[<a href="https://www.casestudies.com/company/scalearc/case-study/financial-services-company-banks-on-scalearc-to-ensure-the-availability-of-its-online-credit-services">13</a>]</sup></td>
+<td>SQL Server 2012</td>
+<td>Vendor case study, anonymous customer</td>
+<td>Weak, dated</td>
+</tr>
+<tr>
+<td>Questis: in-house build estimated at more than 1 year
+<sup>[<a href="https://aws.amazon.com/blogs/apn/how-heimdalls-database-proxy-improves-website-response-times-with-no-code-changes">9</a>]</sup></td>
+<td>Aurora PostgreSQL</td>
+<td>Customer-authored partner blog</td>
+<td>Moderate, but not SQL Server</td>
+</tr>
+<tr>
+<td>Tornado: load tests handled several times prior load
+<sup>[<a href="https://aws.amazon.com/blogs/architecture/offloading-sql-for-amazon-rds-using-the-heimdall-proxy">8</a>]</sup></td>
+<td>Aurora PostgreSQL</td>
+<td>Customer quote in vendor blog</td>
+<td>Weak, not SQL Server</td>
+</tr>
+<tr>
+<td>Forum demand for a SQL Server pooling/caching proxy
+<sup>[<a href="https://techcommunity.microsoft.com/t5/sql-server/sql-server-proxies/m-p/2110662">23</a>]</sup></td>
+<td>SQL Server</td>
+<td>Forum thread, 2021</td>
+<td>Shows demand, no answer</td>
+</tr>
+</tbody>
+</table>
+<p>In 2021 a user asked for any SQL Server proxy that handles front-side
+connections. The reply questioned whether such a thing was needed, and
+the only products named were ScaleArc and ProxySQL
+<sup>[<a href="https://techcommunity.microsoft.com/t5/sql-server/sql-server-proxies/m-p/2110662">23</a>]</sup>.
+No independent benchmark of a SQL Server proxy turned up in this
+survey.</p>
+<h3 id="limits-that-apply-across-products">4.2 Limits that apply across
+products</h3>
+<ul>
+<li><strong>Session state defeats multiplexing.</strong> SQL Server
+features that carry state (MARS, DTC, temp tables, cursors, prepared
+statements and many <code>SET</code> options) pin sessions
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html">6</a>]</sup>.
+A proxy’s pooling benefit depends on how the application uses the
+connection, not just how many connections there are.</li>
+<li><strong>Semantics can change.</strong> RDS Proxy warns that
+<code>@@IDENTITY</code>, <code>@@ROWCOUNT</code> and
+<code>SCOPE_IDENTITY</code> aren’t always accurate through the proxy,
+and that MARS connections skip initialization queries
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>]</sup>.
+Anything that reuses backends risks this class of bug.</li>
+<li><strong>Identity gaps.</strong> Active Directory authentication, the
+norm in many SQL Server shops, is unsupported in RDS Proxy
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>]</sup>
+and absent from F5’s proxy mode
+<sup>[<a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">10</a>]</sup>.
+Teleport and DataSunrise support it
+<sup>[<a href="https://www.datasunrise.com/firewall/ms-sql-server/">14</a>,
+<a href="https://goteleport.com/docs/ver/19.x/enroll-resources/database-access/enrollment/self-hosted/sql-server-ad-pkinit.md">17</a>]</sup>.</li>
+<li><strong>Protocol coverage.</strong> TDS has many packet types, data
+types and RPC forms. A partial parser has to fail open, as SQLumAI does,
+which weakens any security guarantee
+<sup>[<a href="https://github.com/Caripson/SQLumAI/wiki/tds-parser">21</a>]</sup>.</li>
+<li><strong>Extra hop.</strong> Microsoft’s own gateway guidance says
+proxying every packet increases latency and reduces throughput
+<sup>[<a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/connectivity-architecture">1</a>,
+<a href="https://learn.microsoft.com/en-us/azure/azure-sql/managed-instance/connection-types-overview">2</a>]</sup>.</li>
+<li><strong>Native alternatives.</strong> AG read-only routing
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/configure-read-only-routing-for-an-availability-group-sql-server">11</a>]</sup>,
+client-side driver pooling
+<sup>[<a href="https://techcommunity.microsoft.com/t5/sql-server/sql-server-proxies/m-p/2110662">23</a>]</sup>
+and DNS aliases for cutover
+<sup>[<a href="https://techcommunity.microsoft.com/t5/azure-sql-blog/minimize-the-downtime-when-migrating-sql-workloads-to-azure-sql/ba-p/3944585">19</a>,
+<a href="https://www.sqlservercentral.com/?p=4562784">20</a>]</sup> each
+remove one reason for a proxy.</li>
+</ul>
+<h2 id="summary-which-use-cases-justify-a-proxy">5. Summary: Which Use
+Cases Justify a Proxy</h2>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Use case</th>
+<th>When a proxy is worth it</th>
+<th>Native or simpler alternative</th>
+<th>Products</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Connection pooling / admission control</td>
+<td>High connection churn (serverless, PHP, Rails); need to cap and shed
+connections
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">3</a>,
+<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup></td>
+<td>Client driver pooling when the app is long-lived
+<sup>[<a href="https://techcommunity.microsoft.com/t5/sql-server/sql-server-proxies/m-p/2110662">23</a>]</sup></td>
+<td>RDS Proxy, Heimdall</td>
+</tr>
+<tr>
+<td>Failover hold</td>
+<td>Clients that fail badly on reconnect; DNS caching slows failover
+<sup>[<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>]</sup></td>
+<td>AG listener with tuned timeouts
+<sup>[<a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">5</a>,
+<a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/configure-read-only-routing-for-an-availability-group-sql-server">11</a>]</sup></td>
+<td>RDS Proxy, Heimdall, ScaleArc</td>
+</tr>
+<tr>
+<td>Read/write split</td>
+<td>App or connection string can’t be changed; need lag-aware
+per-statement routing
+<sup>[<a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">7</a>,
+<a href="https://aws.amazon.com/blogs/apn/how-heimdalls-database-proxy-improves-website-response-times-with-no-code-changes">9</a>]</sup></td>
+<td><code>ApplicationIntent=ReadOnly</code> with AG read-only routing
+<sup>[<a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/configure-read-only-routing-for-an-availability-group-sql-server">11</a>]</sup></td>
+<td>Heimdall, F5</td>
+</tr>
+<tr>
+<td>Result caching</td>
+<td>Read-heavy, rarely changing data; latency matters
+<sup>[<a href="https://aws.amazon.com/blogs/architecture/offloading-sql-for-amazon-rds-using-the-heimdall-proxy">8</a>]</sup></td>
+<td>Application cache; buffer pool for engine work
+<sup>[<a href="https://techcommunity.microsoft.com/t5/sql-server/sql-server-proxies/m-p/2110662">23</a>]</sup></td>
+<td>Heimdall</td>
+</tr>
+<tr>
+<td>Firewall / masking / injection blocking</td>
+<td>Must change or block results inline
+<sup>[<a href="https://www.datasunrise.com/firewall/ms-sql-server/">14</a>,
+<a href="https://www.datasunrise.com/professional-info/datasunrise-database-proxy/">15</a>]</sup></td>
+<td>Native audit, engine-level masking and permissions</td>
+<td>DataSunrise</td>
+</tr>
+<tr>
+<td>Audit for managed SQL Server</td>
+<td>No host access for agents
+<sup>[<a href="https://imperva.com/blog/?p=19458">16</a>]</sup></td>
+<td>Native audit logs
+<sup>[<a href="https://www.datasunrise.com/professional-info/datasunrise-database-proxy/">15</a>,
+<a href="https://imperva.com/blog/?p=19458">16</a>]</sup></td>
+<td>DataSunrise, Imperva</td>
+</tr>
+<tr>
+<td>Identity brokering</td>
+<td>Short-lived, centrally audited human access via AD
+<sup>[<a href="https://goteleport.com/docs/ver/19.x/enroll-resources/database-access/enrollment/self-hosted/sql-server-ad-pkinit.md">17</a>,
+<a href="https://goteleport.com/docs/enroll-resources/database-access/enrollment/aws/rds/sql-server-ad.md">18</a>]</sup></td>
+<td>SQL logins, AD groups</td>
+<td>Teleport, RDS Proxy (IAM)</td>
+</tr>
+<tr>
+<td>Migration cutover</td>
+<td>Named instances, non-1433 ports, or sessions held during the switch
+<sup>[<a href="https://techcommunity.microsoft.com/t5/azure-sql-blog/minimize-the-downtime-when-migrating-sql-workloads-to-azure-sql/ba-p/3944585">19</a>,
+<a href="https://www.sqlservercentral.com/?p=4562784">20</a>]</sup></td>
+<td>DNS CNAME listener endpoint
+<sup>[<a href="https://techcommunity.microsoft.com/t5/azure-sql-blog/minimize-the-downtime-when-migrating-sql-workloads-to-azure-sql/ba-p/3944585">19</a>]</sup></td>
+<td>ScaleArc, load balancer</td>
+</tr>
+</tbody>
+</table>
+<p>The strongest cases are connection churn with admission control, and
+read/write split for applications whose code or connection strings can’t
+be changed. Those are where managed and commercial products ship real
+features and where native SQL Server has no per-statement equivalent.
+Security and identity proxies form a separate product family with their
+own justification: inline enforcement and access brokering that the
+engine cannot do on its own. Caching, observability, migration and
+multi-tenancy are secondary. Each is either a byproduct of a proxy
+deployed for another reason, served well enough by DNS or the engine, or
+undocumented for SQL Server. Anyone building a new TDS proxy should
+budget most of the engineering for session-state tracking and protocol
+coverage. These are the two places where existing products show their
+limits
+<sup>[<a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html">6</a>,
+<a href="https://github.com/Caripson/SQLumAI/wiki/tds-parser">21</a>]</sup>.</p>
+<h2 class="unlisted" id="sources">Sources</h2>
+<ol type="1">
+<li><a href="https://learn.microsoft.com/en-us/azure/azure-sql/database/connectivity-architecture">Connectivity
+Architecture - Azure SQL Database and SQL database in Fabric | Microsoft
+Learn</a><span class="dom">learn.microsoft.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/azure/azure-sql/managed-instance/connection-types-overview">Connection
+Types - Azure SQL Managed Instance | Microsoft Learn</a><span
+class="dom">learn.microsoft.com</span></li>
+<li><a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html">Amazon
+RDS Proxy - Amazon Relational Database Service</a><span
+class="dom">docs.aws.amazon.com</span></li>
+<li><a href="https://aws.amazon.com/about-aws/whats-new/2022/09/amazon-rds-proxy-rds-sql-server">Amazon
+RDS Proxy now supports Amazon RDS for SQL Server - AWS</a><span
+class="dom">aws.amazon.com</span></li>
+<li><a href="https://aws.amazon.com/blogs/database/scale-modern-serverless-applications-with-amazon-rds-proxy-for-sql-server">Scale
+modern serverless applications with Amazon RDS Proxy for SQL Server |
+AWS Database Blog</a><span class="dom">aws.amazon.com</span></li>
+<li><a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html">Avoiding
+pinning an RDS Proxy - Amazon Relational Database Service</a><span
+class="dom">docs.aws.amazon.com</span></li>
+<li><a href="https://techcommunity.microsoft.com/blog/adforpostgresql/accelerate-sql-performance-with-the-heimdall-proxy/1056945">Accelerate
+SQL Performance with the Heimdall Proxy | Microsoft Community
+Hub</a><span class="dom">techcommunity.microsoft.com</span></li>
+<li><a href="https://aws.amazon.com/blogs/architecture/offloading-sql-for-amazon-rds-using-the-heimdall-proxy">Offloading
+SQL for Amazon RDS using the Heimdall Proxy | AWS Architecture
+Blog</a><span class="dom">aws.amazon.com</span></li>
+<li><a href="https://aws.amazon.com/blogs/apn/how-heimdalls-database-proxy-improves-website-response-times-with-no-code-changes">How
+Heimdall's Database Proxy Improves Website Response Times with No Code
+Changes | AWS Partner Network (APN) Blog</a><span
+class="dom">aws.amazon.com</span></li>
+<li><a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-local-traffic-manager-implementations-14-0-0/16.html">Configuring
+the BIG-IP System as an MS SQL Database Proxy | F5</a><span
+class="dom">techdocs.f5.com</span></li>
+<li><a href="https://learn.microsoft.com/en-us/sql/database-engine/availability-groups/windows/configure-read-only-routing-for-an-availability-group-sql-server">Configure
+read-only routing for an availability group - SQL Server Always On |
+Microsoft Learn</a><span class="dom">learn.microsoft.com</span></li>
+<li><a href="https://discourse.haproxy.org/t/haproxy-with-sql2019-alwayson/6463">HAProxy
+with SQL2019 AlwaysOn - HAProxy community</a><span
+class="dom">discourse.haproxy.org</span></li>
+<li><a href="https://www.casestudies.com/company/scalearc/case-study/financial-services-company-banks-on-scalearc-to-ensure-the-availability-of-its-online-credit-services">Case
+Study: Financial Services Company achieves zero downtime and automated
+failover with ScaleArc for SQL Server | CaseStudies.com</a><span
+class="dom">casestudies.com</span></li>
+<li><a href="https://www.datasunrise.com/firewall/ms-sql-server/">MS SQL
+Server Database Firewall | DataSunrise</a><span
+class="dom">datasunrise.com</span></li>
+<li><a href="https://www.datasunrise.com/professional-info/datasunrise-database-proxy/">DataSunrise
+Database Proxy: Security Enhancement</a><span
+class="dom">datasunrise.com</span></li>
+<li><a href="https://imperva.com/blog/?p=19458">Agentless is a DAM
+Better Option for Securing Cloud Data | Imperva</a><span
+class="dom">imperva.com</span></li>
+<li><a href="https://goteleport.com/docs/ver/19.x/enroll-resources/database-access/enrollment/self-hosted/sql-server-ad-pkinit.md">Microsoft
+SQL Server access with PKINIT authentication | Teleport</a><span
+class="dom">goteleport.com</span></li>
+<li><a href="https://goteleport.com/docs/enroll-resources/database-access/enrollment/aws/rds/sql-server-ad.md">Database
+Access with Amazon RDS for Microsoft SQL Server with Active Directory
+Authentication | Teleport</a><span
+class="dom">goteleport.com</span></li>
+<li><a href="https://techcommunity.microsoft.com/t5/azure-sql-blog/minimize-the-downtime-when-migrating-sql-workloads-to-azure-sql/ba-p/3944585">Minimize
+the downtime when migrating SQL workloads to Azure SQL Managed Instance
+| Microsoft Tech Community</a><span
+class="dom">techcommunity.microsoft.com</span></li>
+<li><a href="https://www.sqlservercentral.com/?p=4562784">SQL Server
+Migration - Redirecting Old Instance Connections to New AG Listener |
+SQLServerCentral Forums</a><span
+class="dom">sqlservercentral.com</span></li>
+<li><a href="https://github.com/Caripson/SQLumAI/wiki/tds-parser">tds
+parser · Caripson/SQLumAI Wiki · GitHub</a><span
+class="dom">github.com</span></li>
+<li><a href="https://github.com/mrhamburg/TDSProxy/blob/master/README.md">TDSProxy
+README · mrhamburg/TDSProxy · GitHub</a><span
+class="dom">github.com</span></li>
+<li><a href="https://techcommunity.microsoft.com/t5/sql-server/sql-server-proxies/m-p/2110662">SQL
+Server Proxies | Microsoft Community Hub</a><span
+class="dom">techcommunity.microsoft.com</span></li>
+</ol>
+<div class="tb">
+  <div><span class="k">Title</span><span class="v">Use Cases for an
+MSSQL Proxy: What SQL Server Proxies Are Used For, Who Ships Them, and
+Where the Evidence Is Thin</span></div>
+  <div><span class="k">Reviewed</span><span class="v">2026-11-22</span></div>
+  <div><span class="k">Sources cited</span><span class="v">23</span></div>
+</div>
+</div></div>
+</body>
+</html>
