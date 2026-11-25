@@ -1,0 +1,2422 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inference Platform · Status (simulated)</title>
+  <style>
+/* ------------------------------------------------------------------ tokens */
+:root {
+  --bg: #0a0c0f;
+  --bg-1: #0f1216;
+  --bg-2: #14181d;
+  --bg-3: #1a1f26;
+  --line: #1f252d;
+  --line-2: #2a313b;
+  --text: #e4e7eb;
+  --text-2: #a7afba;
+  --text-3: #6f7883;
+  --accent: #8ab4ff;
+
+  --ok: #3fb68b;
+  --ok-dim: #1d3a30;
+  --ok-cell: #1b2a25;
+  --warn: #e3a23c;
+  --warn-dim: #3a2c14;
+  --crit: #ef5a5f;
+  --crit-dim: #41191c;
+  --info: #5b93f5;
+  --info-dim: #172745;
+  --muted: #7b8490;
+  --muted-dim: #22272e;
+  --standby: #5fb59a;
+
+  --r1: #7aa2f7; /* region categorical: muted, distinct from status hues */
+  --r2: #b48ead;
+  --r3: #88c0d0;
+  --r4: #d8a47f;
+  --r5: #a3be8c;
+  --r6: #c0a0e0;
+
+  --cell-lo: #1b2129;
+  --cell-hi: #9fb4cc;
+  --font: 'Inter', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  --radius: 4px;
+  --cell: 16px;
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  --bg: #f6f7f9;
+  --bg-1: #ffffff;
+  --bg-2: #f3f4f6;
+  --bg-3: #e9ecef;
+  --line: #e3e6ea;
+  --line-2: #d3d8de;
+  --text: #15191e;
+  --text-2: #4a535e;
+  --text-3: #808893;
+  --accent: #2f6fe0;
+  --ok: #1f8a63;
+  --ok-dim: #dcf1e8;
+  --ok-cell: #e4efe9;
+  --warn: #b8770f;
+  --warn-dim: #fbecd2;
+  --crit: #d23a40;
+  --crit-dim: #fbdfe0;
+  --info: #2f6fe0;
+  --info-dim: #dde8fc;
+  --muted: #8a929c;
+  --muted-dim: #eceef1;
+  --standby: #2d9273;
+  --cell-lo: #e7ebf0;
+  --cell-hi: #3c5a7d;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 var(--font);
+  font-feature-settings: 'tnum' 1, 'cv11' 1;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.dim { color: var(--text-2); }
+.faint { color: var(--text-3); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ------------------------------------------------------------------ shell */
+.app {
+  display: grid;
+  grid-template-rows: 44px 1fr;
+  grid-template-columns: 60px minmax(0, 1fr) 344px;
+  grid-template-areas: 'top top top' 'nav main rail';
+  height: 100vh;
+}
+.app.no-rail { grid-template-columns: 60px minmax(0, 1fr) 0; }
+.top {
+  grid-area: top; display: flex; align-items: center; gap: 14px;
+  padding: 0 12px 0 0; border-bottom: 1px solid var(--line); background: var(--bg-1);
+}
+.brand { width: 60px; display: grid; place-items: center; height: 100%; border-right: 1px solid var(--line); }
+.brand-mark { width: 18px; height: 18px; border: 1.5px solid var(--text); border-radius: 3px; position: relative; }
+.brand-mark::after { content: ''; position: absolute; inset: 4px; background: var(--text); border-radius: 1px; }
+.crumb { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.crumb b { font-weight: 600; letter-spacing: -0.01em; }
+.env { font: 11px var(--mono); color: var(--text-2); border: 1px solid var(--line-2); padding: 1px 6px; border-radius: 3px; }
+.sim-flag { font: 600 10px var(--mono); letter-spacing: 0.06em; color: var(--warn); border: 1px dashed var(--warn); padding: 1px 6px; border-radius: 3px; }
+.top-spacer { flex: 1; }
+.ctl { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: 11px; }
+.ctl label { text-transform: uppercase; letter-spacing: 0.06em; }
+select.sel, .seg {
+  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius); height: 26px; padding: 0 8px; color: var(--text);
+}
+.seg { display: inline-flex; padding: 0; overflow: hidden; }
+.seg button { background: none; border: 0; padding: 0 9px; height: 24px; color: var(--text-2); font-size: 12px; border-right: 1px solid var(--line-2); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed='true'] { background: var(--bg-3); color: var(--text); }
+.fresh { display: flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--text-2); }
+.pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+.icon-btn { background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius); height: 26px; min-width: 26px; padding: 0 7px; color: var(--text-2); }
+.icon-btn:hover { color: var(--text); }
+
+.nav { grid-area: nav; border-right: 1px solid var(--line); background: var(--bg-1); display: flex; flex-direction: column; padding: 8px 0; gap: 2px; }
+.nav button {
+  background: none; border: 0; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  color: var(--text-3); font-size: 10px; position: relative;
+}
+.nav button svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+.nav button:hover { color: var(--text-2); }
+.nav button[aria-current='page'] { color: var(--text); }
+.nav button[aria-current='page']::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; background: var(--text); }
+.nav .badge { position: absolute; top: 6px; right: 12px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; font: 600 9px/15px var(--mono); color: #fff; background: var(--crit); }
+.nav .badge.warn { background: var(--warn); color: #1a1205; }
+.nav .nav-foot { margin-top: auto; }
+
+.main { grid-area: main; overflow: auto; padding: 14px 16px 28px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.rail { grid-area: rail; border-left: 1px solid var(--line); background: var(--bg-1); overflow: auto; min-width: 0; }
+.no-rail .rail { display: none; }
+
+/* ------------------------------------------------------------------ primitives */
+.panel { background: var(--bg-1); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.panel-h { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); min-height: 38px; }
+.panel-h h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.01em; }
+.panel-h .sub { color: var(--text-3); font-size: 12px; }
+.panel-h .grow { flex: 1; }
+.panel-b { padding: 10px 12px; }
+.eyebrow { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-weight: 500; }
+.link { background: none; border: 0; padding: 0; color: var(--text-2); font-size: 12px; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.link:hover { color: var(--text); text-decoration-color: var(--text-3); }
+
+.tone-ok { color: var(--ok); } .tone-warn { color: var(--warn); } .tone-crit { color: var(--crit); }
+.tone-info { color: var(--info); } .tone-muted { color: var(--muted); } .tone-standby { color: var(--standby); } .tone-none { color: var(--ok); }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 3px; font-size: 11.5px; font-weight: 500; white-space: nowrap; border: 1px solid transparent; }
+.pill.ok { color: var(--ok); background: var(--ok-dim); }
+.pill.warn { color: var(--warn); background: var(--warn-dim); }
+.pill.crit { color: var(--crit); background: var(--crit-dim); }
+.pill.info { color: var(--info); background: var(--info-dim); }
+.pill.muted { color: var(--text-2); background: var(--muted-dim); }
+.pill.standby { color: var(--standby); border-color: color-mix(in srgb, var(--standby) 45%, transparent); }
+.pill.ghost { color: var(--text-2); border-color: var(--line-2); }
+.sev { font: 600 10.5px/18px var(--mono); padding: 0 5px; border-radius: 3px; letter-spacing: 0.02em; }
+.sev-1 { background: var(--crit); color: #fff; }
+.sev-2 { background: var(--crit-dim); color: var(--crit); }
+.sev-3 { background: var(--warn-dim); color: var(--warn); }
+.sev-4 { background: var(--muted-dim); color: var(--text-2); }
+
+/* status glyph (shape + colour, never colour alone) */
+.sg { display: inline-grid; place-items: center; width: 14px; height: 14px; font-size: 10px; line-height: 1; flex: none; border-radius: 3px; font-weight: 700; }
+.sg.operational { color: var(--ok); }
+.sg.operational::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.sg.degraded { background: var(--warn); color: #1a1205; } .sg.degraded::before { content: '!'; }
+.sg.unavailable { background: var(--crit); color: #fff; } .sg.unavailable::before { content: '×'; font-size: 13px; }
+.sg.draining { background: repeating-linear-gradient(135deg, var(--info) 0 2px, transparent 2px 4px); border: 1px solid var(--info); }
+.sg.unknown { border: 1px dashed var(--muted); color: var(--muted); } .sg.unknown::before { content: '?'; }
+.sg.standby { border: 1.5px solid var(--standby); border-radius: 50%; width: 11px; height: 11px; }
+.sg.healthy { color: var(--ok); } .sg.healthy::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.sg.down { background: var(--crit); color: #fff; } .sg.down::before { content: '×'; font-size: 13px; }
+
+.meter { display: inline-block; height: 5px; background: var(--bg-3); border-radius: 2px; overflow: hidden; vertical-align: middle; }
+.meter-fill { display: block; height: 100%; border-radius: 2px; }
+.meter-fill.tone-ok { background: var(--text-3); }
+.meter-fill.tone-warn { background: var(--warn); }
+.meter-fill.tone-crit { background: var(--crit); }
+
+.spark { display: block; overflow: visible; }
+.spark-line { fill: none; stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+.spark-area { stroke: none; opacity: 0.12; }
+.spark-line.tone-neutral, .chart-line.tone-neutral { stroke: var(--text-2); } .spark-area.tone-neutral { fill: var(--text-2); }
+.spark-line.tone-ok, .chart-line.tone-ok { stroke: var(--ok); } .spark-area.tone-ok { fill: var(--ok); }
+.spark-line.tone-warn, .chart-line.tone-warn { stroke: var(--warn); } .spark-area.tone-warn { fill: var(--warn); }
+.spark-line.tone-crit, .chart-line.tone-crit { stroke: var(--crit); } .spark-area.tone-crit { fill: var(--crit); }
+.spark-line.tone-info, .chart-line.tone-info { stroke: var(--info); } .spark-area.tone-info { fill: var(--info); }
+.chart { display: block; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { fill: var(--text-3); font: 9.5px var(--mono); }
+.chart .threshold { stroke: var(--text-3); stroke-dasharray: 3 3; }
+.chart .thr-label { fill: var(--text-3); }
+.chart .onset { stroke: var(--crit); stroke-dasharray: 2 3; opacity: 0.7; }
+.chart-line { fill: none; stroke-width: 1.5; }
+.chart-line.dashed { stroke-dasharray: 4 3; }
+
+/* ------------------------------------------------------------------ overview: verdict */
+.verdict { display: grid; grid-template-columns: minmax(280px, 1.15fr) repeat(4, minmax(150px, 1fr)); border: 1px solid var(--line); border-radius: 6px; background: var(--bg-1); overflow: hidden; }
+.verdict-head { padding: 12px 16px; display: flex; gap: 12px; align-items: flex-start; border-right: 1px solid var(--line); position: relative; }
+.verdict-head::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+.verdict-head.ok::before { background: var(--ok); } .verdict-head.warn::before { background: var(--warn); } .verdict-head.crit::before { background: var(--crit); }
+.verdict-head h1 { margin: 0 0 3px; font-size: 16px; font-weight: 600; letter-spacing: -0.015em; }
+.verdict-head p { margin: 0; color: var(--text-2); font-size: 12.5px; }
+.verdict-icon { width: 22px; height: 22px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 700; font-size: 13px; margin-top: 1px; }
+.verdict-icon.ok { background: var(--ok-dim); color: var(--ok); } .verdict-icon.warn { background: var(--warn-dim); color: var(--warn); } .verdict-icon.crit { background: var(--crit); color: #fff; }
+.layer { padding: 10px 14px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.layer:last-child { border-right: 0; }
+.layer .eyebrow { display: flex; align-items: center; gap: 6px; }
+.layer .rank { font: 10px var(--mono); color: var(--text-3); }
+.layer-v { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.layer-d { color: var(--text-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.crit { background: var(--crit); } .dot.muted { background: var(--muted); } .dot.info { background: var(--info); }
+
+/* request path: Clients → Proxy → Pools */
+.path { display: grid; grid-template-columns: 1fr 22px 1.25fr 22px 1.4fr; align-items: stretch; }
+.hop { background: var(--bg-1); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; cursor: pointer; text-align: left; }
+.hop:hover { border-color: var(--line-2); }
+.hop.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.hop.crit { border-color: var(--crit); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--crit) 40%, transparent); }
+.hop-h { display: flex; align-items: center; gap: 8px; }
+.hop-h b { font-size: 12.5px; }
+.hop-h .grow { flex: 1; }
+.hop-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; }
+.kv { display: flex; flex-direction: column; min-width: 0; }
+.kv .k { color: var(--text-3); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kv .v { font: 500 13px var(--mono); white-space: nowrap; }
+.kv .v small { color: var(--text-3); font-size: 10.5px; font-weight: 400; }
+.arrow { display: grid; place-items: center; color: var(--text-3); }
+.arrow svg { width: 22px; height: 12px; }
+.attrib { display: flex; height: 6px; border-radius: 2px; overflow: hidden; background: var(--bg-3); }
+.attrib span { display: block; height: 100%; }
+
+/* metric strip */
+.strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 6px; background: var(--bg-1); }
+.stat { padding: 9px 12px; border-right: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 2px 8px; min-width: 0; }
+.stat:last-child { border-right: 0; }
+.stat .k { grid-column: 1 / -1; color: var(--text-3); font-size: 11px; display: flex; justify-content: space-between; }
+.stat .v { font: 500 17px var(--mono); letter-spacing: -0.02em; white-space: nowrap; }
+.stat .v small { font-size: 11px; color: var(--text-3); margin-left: 2px; }
+.stat .spark { align-self: end; }
+
+.cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+
+/* ------------------------------------------------------------------ tables */
+table.t { width: 100%; border-collapse: collapse; font-size: 12px; }
+.t th { text-align: left; font-weight: 500; color: var(--text-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; background: var(--bg-1); z-index: 1; }
+.t th.r, .t td.r { text-align: right; }
+.t td { padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; }
+.t tr:last-child td { border-bottom: 0; }
+.t tbody tr { cursor: pointer; }
+.t tbody tr:hover td { background: var(--bg-2); }
+.t tr.sel td { background: var(--bg-3); }
+.t tr.attn td:first-child { box-shadow: inset 2px 0 0 var(--warn); }
+.t tr.attn-crit td:first-child { box-shadow: inset 2px 0 0 var(--crit); }
+.t .name { font-weight: 500; }
+.t .sortable { cursor: pointer; } .t .sortable:hover { color: var(--text); }
+
+/* model redundancy pips */
+.pips { display: inline-flex; gap: 3px; align-items: center; }
+.pips .sg { width: 11px; height: 11px; font-size: 8px; }
+.pips .sg.operational::before, .pips .sg.healthy::before { width: 6px; height: 6px; }
+.pips .sg.unavailable::before { font-size: 10px; }
+.region-cell { display: inline-flex; gap: 3px; min-width: 50px; }
+
+/* ------------------------------------------------------------------ fleet matrix */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.search { position: relative; }
+.search input { background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius); height: 26px; padding: 0 8px 0 26px; width: 220px; }
+.search svg { position: absolute; left: 8px; top: 7px; width: 12px; height: 12px; stroke: var(--text-3); fill: none; stroke-width: 2; }
+.search kbd { position: absolute; right: 6px; top: 5px; }
+kbd { font: 10px var(--mono); color: var(--text-3); border: 1px solid var(--line-2); border-radius: 3px; padding: 0 4px; background: var(--bg-1); }
+.chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: var(--radius); border: 1px solid var(--line-2); background: none; color: var(--text-2); font-size: 11.5px; }
+.chip .n { font-family: var(--mono); color: var(--text-3); }
+.chip[aria-pressed='true'] { background: var(--bg-3); color: var(--text); border-color: var(--text-3); }
+.chip:disabled { opacity: 0.4; cursor: default; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-2); cursor: pointer; user-select: none; }
+.toggle input { accent-color: var(--text-2); margin: 0; }
+.tb-sep { width: 1px; height: 18px; background: var(--line); }
+
+.legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 12px 0; color: var(--text-2); font-size: 11.5px; }
+.legend .li { display: inline-flex; align-items: center; gap: 6px; }
+.legend .ramp { display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: 11px; }
+.legend .ramp i { display: inline-block; width: 70px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, var(--cell-lo), var(--cell-hi)); }
+
+.matrix { padding: 6px 0 8px; }
+.grp { display: grid; grid-template-columns: 236px minmax(0, 1fr); align-items: start; padding: 5px 12px; gap: 12px; border-top: 1px solid transparent; }
+.grp + .grp { border-top-color: var(--line); }
+.grp-h { display: flex; align-items: center; gap: 6px; min-width: 0; background: none; border: 0; padding: 2px 0; text-align: left; color: var(--text); }
+.grp-h .caret { width: 10px; color: var(--text-3); font-size: 9px; transition: transform 0.12s; }
+.grp.collapsed .caret { transform: rotate(-90deg); }
+.grp-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grp-meta { margin-left: auto; display: flex; gap: 6px; align-items: center; font: 11px var(--mono); color: var(--text-3); white-space: nowrap; }
+.grp-meta .bad { color: var(--crit); } .grp-meta .warnc { color: var(--warn); }
+.cells { display: flex; flex-wrap: wrap; gap: 3px; padding-top: 1px; min-height: 18px; }
+.cell {
+  width: var(--cell); height: var(--cell); border-radius: 3px; border: 0; padding: 0; position: relative; flex: none;
+  background: var(--ok-cell); display: grid; place-items: center; font-size: 10px; font-weight: 700; line-height: 1;
+}
+.cell:hover { outline: 1px solid var(--text-2); outline-offset: 1px; z-index: 2; }
+.cell.sel { outline: 2px solid var(--text); outline-offset: 1px; z-index: 3; }
+.cell.s-degraded { background: var(--warn); color: #1a1205; } .cell.s-degraded::before { content: '!'; }
+.cell.s-unavailable { background: var(--crit); color: #fff; } .cell.s-unavailable::before { content: '×'; font-size: 13px; }
+.cell.s-draining { background: repeating-linear-gradient(135deg, var(--info) 0 2px, var(--info-dim) 2px 5px); }
+.cell.s-unknown { background: transparent; border: 1px dashed var(--muted); color: var(--muted); } .cell.s-unknown::before { content: '?'; }
+.cell.s-standby { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--standby) 70%, transparent); }
+.cell.hot:not(.s-degraded):not(.s-unavailable)::after { content: ''; position: absolute; right: 2px; top: 2px; width: 4px; height: 4px; border-radius: 50%; background: var(--warn); }
+.cell.dimmed { opacity: 0.14; }
+.cell.metric { color: transparent; }
+.cell.metric.s-degraded, .cell.metric.s-unavailable { color: inherit; }
+.small-cells { --cell: 11px; }
+.small-cells .cell { border-radius: 2px; font-size: 0; }
+.small-cells .cell.s-unavailable::before { font-size: 9px; }
+.small-cells .cells { gap: 2px; }
+.collapsed-bar { display: flex; height: 8px; border-radius: 2px; overflow: hidden; margin-top: 5px; background: var(--bg-3); max-width: 420px; }
+.collapsed-bar span { display: block; height: 100%; }
+.grp-summary { display: flex; gap: 10px; align-items: center; color: var(--text-3); font-size: 11.5px; }
+.empty { padding: 28px 12px; text-align: center; color: var(--text-3); }
+
+/* virtual table */
+.vt { position: relative; overflow: auto; height: calc(100vh - 210px); min-height: 320px; }
+
+/* ------------------------------------------------------------------ incidents rail */
+.rail-h { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
+.rail-h h2 { margin: 0; font-size: 12px; font-weight: 600; }
+.rail-h .grow { flex: 1; }
+.inc { display: block; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); padding: 10px 14px 11px; color: var(--text); }
+.inc:hover { background: var(--bg-2); }
+.inc.sel { background: var(--bg-3); }
+.inc-top { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+.inc-top .id { font: 11px var(--mono); color: var(--text-3); }
+.inc-top .dur { margin-left: auto; font: 11px var(--mono); color: var(--text-3); }
+.inc-title { font-weight: 500; font-size: 12.5px; margin-bottom: 5px; line-height: 1.35; }
+.inc-rows { display: grid; grid-template-columns: 62px 1fr; gap: 2px 8px; font-size: 11.5px; }
+.inc-rows .k { color: var(--text-3); }
+.inc-rows .v { color: var(--text-2); min-width: 0; }
+.inc-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.comp-chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 6px; border-radius: 3px; border: 1px solid var(--line-2); background: var(--bg-2); font: 11px var(--mono); color: var(--text-2); }
+.comp-chip:hover { color: var(--text); border-color: var(--text-3); }
+.comp-chip .sg { width: 10px; height: 10px; font-size: 8px; }
+.ops { border-top: 1px solid var(--line); padding: 10px 14px; }
+.ops-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+.ops-row .grow { flex: 1; min-width: 0; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calm { padding: 18px 14px; color: var(--text-3); font-size: 12px; border-top: 1px solid var(--line); }
+.calm b { color: var(--ok); font-weight: 500; }
+
+/* ------------------------------------------------------------------ inspector */
+.scrim { position: fixed; inset: 44px 0 0 60px; background: transparent; z-index: 20; display: none; }
+.drawer {
+  position: fixed; top: 44px; right: 0; bottom: 0; width: 480px; background: var(--bg-1); border-left: 1px solid var(--line-2);
+  z-index: 30; display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.16s ease-out;
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.28);
+}
+.drawer.open { transform: none; }
+.drawer-h { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: flex-start; }
+.drawer-h h3 { margin: 0; font: 600 14px var(--mono); letter-spacing: -0.01em; }
+.drawer-h .meta { color: var(--text-2); font-size: 12px; margin-top: 2px; }
+.drawer-h .grow { flex: 1; min-width: 0; }
+.drawer-b { overflow: auto; flex: 1; padding: 0 0 20px; }
+.sec { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.sec h4 { margin: 0 0 8px; font-size: 10.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); display: flex; align-items: center; gap: 8px; }
+.sec h4 .grow { flex: 1; }
+.callout { padding: 10px 12px; border-radius: 4px; background: var(--bg-2); border: 1px solid var(--line); font-size: 12.5px; line-height: 1.45; }
+.callout.crit { border-color: color-mix(in srgb, var(--crit) 40%, var(--line)); background: color-mix(in srgb, var(--crit) 7%, var(--bg-2)); }
+.callout.warn { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn) 7%, var(--bg-2)); }
+.callout.info { border-color: color-mix(in srgb, var(--info) 40%, var(--line)); background: color-mix(in srgb, var(--info) 7%, var(--bg-2)); }
+.callout ul { margin: 6px 0 0; padding-left: 16px; color: var(--text-2); }
+.grid-kv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; }
+.grid-kv.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.replicas { display: flex; flex-wrap: wrap; gap: 4px; }
+.rep { width: 48px; height: 34px; border-radius: 3px; background: var(--bg-2); border: 1px solid var(--line); display: flex; flex-direction: column; justify-content: space-between; padding: 3px 4px; font: 9.5px var(--mono); color: var(--text-3); }
+.rep.bad { border-color: var(--crit); color: var(--crit); background: color-mix(in srgb, var(--crit) 8%, var(--bg-2)); }
+.rep.pending { border-style: dashed; border-color: var(--muted); }
+.rep .meter { width: 100%; }
+.share { display: grid; grid-template-columns: 74px 1fr 54px; gap: 4px 8px; align-items: center; font-size: 11.5px; }
+.share .bar { height: 6px; background: var(--bg-3); border-radius: 2px; position: relative; overflow: hidden; }
+.share .bar span { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 2px; }
+.metric-row { display: grid; grid-template-columns: 112px 82px 1fr; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+.metric-row .k { color: var(--text-2); }
+.metric-row .v { font-family: var(--mono); text-align: right; }
+.metric-row .spark { width: 100%; }
+.stale-note { font: 10px var(--mono); color: var(--muted); border: 1px dashed var(--muted); padding: 0 4px; border-radius: 3px; }
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { display: grid; grid-template-columns: 54px 14px 1fr; gap: 6px; padding: 4px 0; font-size: 12px; align-items: start; }
+.timeline .t { font: 11px var(--mono); color: var(--text-3); }
+.timeline .d { color: var(--text-2); }
+.sibling { display: grid; grid-template-columns: 14px 1fr 70px 64px; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 3px; width: 100%; background: none; border: 0; text-align: left; font-size: 12px; }
+.sibling:hover { background: var(--bg-2); }
+.sibling.cur { background: var(--bg-3); }
+
+/* ------------------------------------------------------------------ views */
+.view-h { display: flex; align-items: baseline; gap: 12px; }
+.view-h h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.view-h .sub { color: var(--text-3); font-size: 12px; }
+.view-h .grow { flex: 1; }
+.tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 6px; background: var(--bg-1); }
+.tiles .stat:nth-child(6n) { border-right: 0; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.split3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+
+.dist { display: grid; grid-template-columns: 190px 1fr 120px; gap: 6px 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.dist:last-child { border-bottom: 0; }
+.dist-name { font-weight: 500; font-size: 12px; display: flex; gap: 6px; align-items: center; min-width: 0; }
+.dist-bars { display: flex; flex-direction: column; gap: 3px; }
+.dist-bar { display: flex; height: 10px; border-radius: 2px; overflow: hidden; background: var(--bg-3); }
+.dist-bar.cfg { height: 4px; opacity: 0.75; }
+.dist-bar span { display: block; height: 100%; border-right: 1px solid var(--bg-1); }
+.dist-bar span.hatch { background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.45) 0 2px, transparent 2px 5px) !important; }
+.dist-bar span.bad { box-shadow: inset 0 0 0 1px var(--crit); }
+.dist-meta { font: 11px var(--mono); color: var(--text-3); text-align: right; }
+.reg-key { display: inline-flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-2); }
+.reg-key i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+.flowm { border-collapse: separate; border-spacing: 3px; font-size: 11.5px; }
+.flowm th { font-weight: 500; color: var(--text-3); font-size: 10.5px; padding: 2px 6px; text-align: right; white-space: nowrap; }
+.flowm th.col { text-align: center; }
+.flowm td { width: 92px; height: 34px; text-align: center; font: 11.5px var(--mono); border-radius: 3px; background: var(--bg-2); color: var(--text-2); }
+.flowm td.diag { box-shadow: inset 0 0 0 1px var(--line-2); }
+.flowm td.cross { color: var(--text); }
+.flowm td.dead { background: repeating-linear-gradient(135deg, var(--crit-dim) 0 3px, transparent 3px 6px); color: var(--crit); }
+
+.anom { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--line); font-size: 12px; align-items: center; }
+.anom:last-child { border-bottom: 0; }
+.anom .why { color: var(--text-2); }
+
+.inc-layout { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 12px; align-items: start; }
+.inc-list .inc:first-child { border-top: 0; }
+.alerts { display: flex; flex-wrap: wrap; gap: 4px; }
+.alert-tag { font: 11px var(--mono); padding: 2px 6px; border-radius: 3px; background: var(--bg-2); border: 1px solid var(--line); color: var(--text-2); }
+.facts { display: grid; grid-template-columns: 130px 1fr; gap: 8px 14px; font-size: 12.5px; }
+.facts .k { color: var(--text-3); }
+
+.model-card { border-bottom: 1px solid var(--line); }
+.model-row { display: grid; grid-template-columns: 220px 210px repeat(4, minmax(90px, 1fr)) 130px 110px 120px; gap: 10px; align-items: center; padding: 8px 12px; cursor: pointer; }
+.model-row:hover { background: var(--bg-2); }
+.model-row.head { cursor: default; color: var(--text-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; padding-top: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.model-row.head:hover { background: none; }
+.model-detail { padding: 4px 12px 14px 34px; background: var(--bg-2); }
+
+.tip {
+  position: fixed; z-index: 50; pointer-events: none; background: var(--bg-3); border: 1px solid var(--line-2); border-radius: 5px;
+  padding: 8px 10px; font-size: 12px; min-width: 220px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); display: none;
+}
+.tip .tip-h { display: flex; align-items: center; gap: 6px; font: 600 12px var(--mono); margin-bottom: 5px; }
+.tip .tip-g { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; color: var(--text-2); }
+.tip .tip-g b { color: var(--text); font: 500 11.5px var(--mono); text-align: right; }
+.tip .tip-i { margin-top: 6px; color: var(--warn); font-size: 11.5px; }
+
+.foot-note { color: var(--text-3); font-size: 11px; padding: 4px 2px; }
+
+@media (max-width: 1500px) {
+  .app { grid-template-columns: 60px minmax(0, 1fr) 312px; }
+  .verdict { grid-template-columns: minmax(250px, 1.1fr) repeat(4, minmax(130px, 1fr)); }
+  .grp { grid-template-columns: 180px minmax(0, 1fr); }
+}
+@media (min-width: 2200px) {
+  .app { grid-template-columns: 60px minmax(0, 1fr) 400px; }
+  .cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+}
+.grp-meta > span { display: inline-flex; align-items: center; gap: 3px; }
+.grp-meta .sg { width: 11px; height: 11px; font-size: 8px; }
+.grp-meta .sg.unavailable::before { font-size: 10px; }
+
+.large-cells { --cell: 24px; }
+.large-cells .cell { font-size: 12px; border-radius: 4px; }
+.large-cells .cell.s-unavailable::before { font-size: 16px; }
+.large-cells .cells { gap: 4px; }
+
+.inc-rows .v.tone-crit { color: var(--crit); } .inc-rows .v.tone-warn { color: var(--warn); } .inc-rows .v.tone-ok { color: var(--ok); }
+.chart { max-height: 210px; }
+
+</style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="top"></header>
+    <nav class="nav" aria-label="Primary"></nav>
+    <main class="main"></main>
+    <aside class="rail" aria-label="Incidents"></aside>
+  </div>
+  <aside class="drawer" aria-label="Inspector"></aside>
+  <div class="tip" role="tooltip"></div>
+
+  <script>
+/* Shared helpers: deterministic randomness, formatting, escaping, SVG charts. */
+(function () {
+  const IX = (window.IX = window.IX || {});
+
+  // ---- deterministic pseudo-random -------------------------------------------------
+  function hash(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+  /** Stable value in [0,1) for a key: the same key always gives the same number. */
+  function rand(key) {
+    let x = hash(String(key)) || 1;
+    x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+    return ((x >>> 0) % 100000) / 100000;
+  }
+  const jitter = (key, spread) => 1 + (rand(key) - 0.5) * 2 * spread;
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const sum = (arr, fn = (x) => x) => arr.reduce((acc, x) => acc + fn(x), 0);
+  const groupBy = (arr, fn) =>
+    arr.reduce((acc, x) => {
+      const k = fn(x);
+      return { ...acc, [k]: [...(acc[k] || []), x] };
+    }, {});
+
+  // ---- formatting ---------------------------------------------------------------------
+  const esc = (s) =>
+    String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+  function fmtNum(v, digits = 0) {
+    if (v == null || Number.isNaN(v)) return '—';
+    if (Math.abs(v) < 0.005) v = 0; // avoid "-0.0" from float residue
+    const a = Math.abs(v);
+    if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 1 : 2) + 'M';
+    if (a >= 1e4) return (v / 1e3).toFixed(a >= 1e5 ? 0 : 1) + 'k';
+    return v.toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits });
+  }
+  const fmtPct = (v, digits = 1) => (v == null ? '—' : (v * 100).toFixed(digits) + '%');
+  function fmtSuccess(v) {
+    if (v >= 0.99995) return '100.00%';
+    return (v * 100).toFixed(v > 0.999 ? 3 : 2) + '%';
+  }
+  function fmtMs(v) {
+    if (v == null) return '—';
+    if (v >= 10000) return (v / 1000).toFixed(1) + ' s';
+    if (v >= 1000) return (v / 1000).toFixed(2) + ' s';
+    return Math.round(v) + ' ms';
+  }
+  function fmtDur(min) {
+    if (min < 1) return '<1m';
+    if (min < 60) return Math.round(min) + 'm';
+    return Math.floor(min / 60) + 'h ' + Math.round(min % 60) + 'm';
+  }
+  function fmtAge(sec) {
+    if (sec < 60) return Math.round(sec) + 's';
+    return Math.floor(sec / 60) + 'm ' + String(Math.round(sec % 60)).padStart(2, '0') + 's';
+  }
+
+  // ---- time series ---------------------------------------------------------------------
+  /**
+   * Synthesise a history ending at `current`. Before the onset the metric sits at
+   * `baseline`; it moves to `current` over a short ramp (or `rampMin` for slow drifts).
+   */
+  function series(key, { current, baseline = current, onsetMin = null, rangeMin, points = 60, noise = 0.025, rampMin = 2 }) {
+    const out = [];
+    for (let i = 0; i < points; i++) {
+      const tMinAgo = rangeMin * (1 - i / (points - 1));
+      let v = baseline;
+      if (onsetMin != null && tMinAgo <= onsetMin) {
+        const k = clamp((onsetMin - tMinAgo) / Math.max(rampMin, 0.01), 0, 1);
+        v = baseline + (current - baseline) * k;
+      } else if (onsetMin == null) {
+        v = current;
+      }
+      const n = (rand(key + ':' + i) - 0.5) * 2 * noise;
+      out.push(i === points - 1 ? current : v * (1 + n));
+    }
+    return out;
+  }
+
+  // ---- SVG charts ----------------------------------------------------------------------
+  function pathFor(values, w, h, lo, hi, pad = 1) {
+    const span = hi - lo || 1;
+    return values
+      .map((v, i) => {
+        const x = (i / (values.length - 1)) * w;
+        const y = pad + (1 - (v - lo) / span) * (h - pad * 2);
+        return (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+      })
+      .join('');
+  }
+
+  function sparkline(values, { w = 96, h = 22, tone = 'neutral', lo, hi, area = true } = {}) {
+    const min = lo ?? Math.min(...values);
+    const max = hi ?? Math.max(...values);
+    const pad = (max - min) * 0.15 || Math.abs(max) * 0.05 || 1;
+    const l = lo ?? min - pad;
+    const u = hi ?? max + pad;
+    const d = pathFor(values, w, h, l, u);
+    const fill = area ? `<path d="${d}L${w} ${h}L0 ${h}Z" class="spark-area tone-${tone}"/>` : '';
+    return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" aria-hidden="true">${fill}<path d="${d}" class="spark-line tone-${tone}"/></svg>`;
+  }
+
+  /** Small line chart with y gridlines, an optional threshold and onset marker. */
+  function lineChart(lines, { w = 400, h = 120, fmt = (v) => fmtNum(v), threshold = null, onsetFrac = null, rangeLabel = '1h', lo = null, hi = null } = {}) {
+    const all = lines.flatMap((l) => l.values).concat(threshold != null ? [threshold] : []);
+    let min = lo ?? Math.min(...all);
+    let max = Math.max(...all);
+    if (max === min) { max += Math.abs(max) * 0.1 || 1; min -= Math.abs(min) * 0.1 || 1; }
+    const padY = (max - min) * 0.12;
+    const l = lo ?? Math.max(0, min - padY);
+    const u = hi != null ? Math.min(hi, max + padY) : max + padY;
+    const left = 44, right = 6, top = 8, bottom = 18;
+    const iw = w - left - right, ih = h - top - bottom;
+    const y = (v) => top + (1 - (v - l) / (u - l)) * ih;
+    const ticks = [l, (l + u) / 2, u];
+    const grid = ticks
+      .map((t) => `<line x1="${left}" x2="${w - right}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" class="grid"/><text x="${left - 6}" y="${(y(t) + 3).toFixed(1)}" class="axis" text-anchor="end">${esc(fmt(t))}</text>`)
+      .join('');
+    const thr = threshold != null
+      ? `<line x1="${left}" x2="${w - right}" y1="${y(threshold).toFixed(1)}" y2="${y(threshold).toFixed(1)}" class="threshold"/><text x="${w - right}" y="${(y(threshold) - 3).toFixed(1)}" class="axis thr-label" text-anchor="end">SLO ${esc(fmt(threshold))}</text>`
+      : '';
+    const onset = onsetFrac != null
+      ? `<line x1="${(left + iw * onsetFrac).toFixed(1)}" x2="${(left + iw * onsetFrac).toFixed(1)}" y1="${top}" y2="${top + ih}" class="onset"/>`
+      : '';
+    const paths = lines
+      .map((ln) => {
+        const d = ln.values
+          .map((v, i) => (i ? 'L' : 'M') + (left + (i / (ln.values.length - 1)) * iw).toFixed(1) + ' ' + y(v).toFixed(1))
+          .join('');
+        return `<path d="${d}" class="chart-line tone-${ln.tone || 'neutral'} ${ln.dashed ? 'dashed' : ''}"/>`;
+      })
+      .join('');
+    const xl = `<text x="${left}" y="${h - 4}" class="axis">−${esc(rangeLabel)}</text><text x="${w - right}" y="${h - 4}" class="axis" text-anchor="end">now</text>`;
+    return `<svg class="chart" viewBox="0 0 ${w} ${h}" width="100%" role="img">${grid}${thr}${onset}${paths}${xl}</svg>`;
+  }
+
+  /** Horizontal meter; `warn`/`crit` thresholds tint the fill. */
+  function meter(v, { warn = 0.8, crit = 0.9, w = 64 } = {}) {
+    const tone = v >= crit ? 'crit' : v >= warn ? 'warn' : 'ok';
+    return `<span class="meter" style="width:${w}px"><span class="meter-fill tone-${tone}" style="width:${(clamp(v, 0, 1) * 100).toFixed(1)}%"></span></span>`;
+  }
+
+  Object.assign(IX, { hash, rand, jitter, clamp, sum, groupBy, esc, fmtNum, fmtPct, fmtSuccess, fmtMs, fmtDur, fmtAge, series, sparkline, lineChart, meter });
+})();
+
+</script>
+  <script>
+/* Static catalog (regions, models) and deterministic fleet layout per fleet size. */
+(function () {
+  const IX = window.IX;
+
+  const REGIONS = [
+    { id: 'use1', name: 'US East', code: 'us-east-1', weight: 0.32 },
+    { id: 'usw2', name: 'US West', code: 'us-west-2', weight: 0.22 },
+    { id: 'euw1', name: 'Europe West', code: 'eu-west-1', weight: 0.26 },
+    { id: 'apne1', name: 'Asia Pacific NE', code: 'ap-northeast-1', weight: 0.2 },
+    { id: 'usc1', name: 'US Central', code: 'us-central-1', weight: 0.14 },
+    { id: 'euc1', name: 'Europe Central', code: 'eu-central-1', weight: 0.12 },
+  ];
+
+  // kind: chat models stream tokens; embedding models report request latency only.
+  const MODELS = [
+    { id: 'llama-70b', short: 'l70', name: 'Llama 3.3 70B', kind: 'chat', version: 'v3.3-fp8', ttft: 240, tpot: 26, ttftSlo: 800, rps: 6, gpus: ['H100'], engines: ['vLLM 0.9', 'SGLang 0.4'], replicas: [6, 10], weight: 0.19, inTok: 1400, outTok: 380, mem: 0.62 },
+    { id: 'qwen-32b', short: 'q32', name: 'Qwen 2.5 32B', kind: 'chat', version: 'v2.5-awq', ttft: 150, tpot: 17, ttftSlo: 600, rps: 10, gpus: ['H100', 'A100'], engines: ['vLLM 0.9'], replicas: [6, 8], weight: 0.17, inTok: 1100, outTok: 320, mem: 0.48 },
+    { id: 'deepseek-r1', short: 'dsr1', name: 'DeepSeek R1', kind: 'chat', version: 'r1-0528', ttft: 520, tpot: 38, ttftSlo: 2000, rps: 2.5, gpus: ['H200', 'MI300X'], engines: ['SGLang 0.4'], replicas: [4, 6], weight: 0.08, inTok: 2200, outTok: 1400, mem: 0.71 },
+    { id: 'llama-8b', short: 'l8', name: 'Llama 3.1 8B', kind: 'chat', version: 'v3.1-fp8', ttft: 55, tpot: 7, ttftSlo: 250, rps: 38, gpus: ['L40S', 'A100'], engines: ['vLLM 0.9', 'TensorRT-LLM'], replicas: [4, 8], weight: 0.21, inTok: 800, outTok: 220, mem: 0.34 },
+    { id: 'mixtral', short: 'mx', name: 'Mixtral 8x22B', kind: 'chat', version: 'v0.4.1', ttft: 290, tpot: 22, ttftSlo: 900, rps: 5, gpus: ['H100'], engines: ['vLLM 0.9'], replicas: [4, 8], weight: 0.12, inTok: 1200, outTok: 400, mem: 0.66 },
+    { id: 'bge-m3', short: 'bge', name: 'BGE-M3 Embedding', kind: 'embedding', version: 'm3-1.0', latency: 16, latencySlo: 80, rps: 220, gpus: ['L4', 'L40S'], engines: ['TEI 1.5'], replicas: [2, 4], weight: 0.23, inTok: 420, outTok: 0, mem: 0.22 },
+    // Additional models that appear only in the larger fleets.
+    { id: 'llama-405b', short: 'l405', name: 'Llama 3.1 405B', kind: 'chat', version: 'v3.1-fp8', ttft: 690, tpot: 52, ttftSlo: 2000, rps: 1.6, gpus: ['H200'], engines: ['vLLM 0.9'], replicas: [4, 6], weight: 0.05, inTok: 1800, outTok: 500, mem: 0.82, large: true },
+    { id: 'qwen-coder', short: 'qc', name: 'Qwen 2.5 Coder 32B', kind: 'chat', version: 'v2.5', ttft: 160, tpot: 18, ttftSlo: 600, rps: 9, gpus: ['H100'], engines: ['vLLM 0.9'], replicas: [4, 8], weight: 0.08, inTok: 2600, outTok: 300, mem: 0.5, large: true },
+    { id: 'gemma-27b', short: 'g27', name: 'Gemma 2 27B', kind: 'chat', version: 'v2-it', ttft: 130, tpot: 15, ttftSlo: 500, rps: 12, gpus: ['A100', 'L40S'], engines: ['vLLM 0.9'], replicas: [4, 6], weight: 0.06, inTok: 900, outTok: 280, mem: 0.44, large: true },
+    { id: 'mistral-small', short: 'ms', name: 'Mistral Small 24B', kind: 'chat', version: '2501', ttft: 110, tpot: 12, ttftSlo: 450, rps: 14, gpus: ['L40S'], engines: ['vLLM 0.9'], replicas: [4, 6], weight: 0.06, inTok: 700, outTok: 260, mem: 0.4, large: true },
+    { id: 'phi-4', short: 'phi4', name: 'Phi-4 14B', kind: 'chat', version: 'v4', ttft: 70, tpot: 9, ttftSlo: 300, rps: 24, gpus: ['L4', 'L40S'], engines: ['TensorRT-LLM'], replicas: [3, 6], weight: 0.05, inTok: 600, outTok: 200, mem: 0.3, large: true },
+    { id: 'bge-rerank', short: 'rr', name: 'BGE Reranker v2', kind: 'embedding', version: 'v2-m3', latency: 22, latencySlo: 100, rps: 160, gpus: ['L4'], engines: ['TEI 1.5'], replicas: [2, 4], weight: 0.06, inTok: 900, outTok: 0, mem: 0.18, large: true },
+  ];
+
+  // Hand-tuned 48-pool layout: pools per region [use1, usw2, euw1, apne1]. Standby slots
+  // are marked by index so the design scenario matches the brief exactly.
+  const LAYOUT_48 = {
+    'llama-70b': [3, 2, 2, 2],
+    'qwen-32b': [2, 2, 2, 2],
+    'deepseek-r1': [2, 1, 1, 0],
+    'llama-8b': [3, 3, 2, 2],
+    'mixtral': [2, 1, 2, 1],
+    'bge-m3': [3, 3, 3, 2],
+  };
+  const STANDBY_48 = ['l70-usw2-02', 'l8-euw1-02'];
+
+  const FLEET_SIZES = [10, 48, 100, 250, 500];
+
+  function modelsFor(size) {
+    return size <= 100 ? MODELS.filter((m) => !m.large) : MODELS;
+  }
+  function regionsFor(size) {
+    return size >= 250 ? REGIONS : REGIONS.slice(0, 4);
+  }
+
+  /** Split `total` into integer counts proportional to `weights` (largest remainder). */
+  function apportion(total, weights) {
+    const w = IX.sum(weights);
+    const raw = weights.map((x) => (x / w) * total);
+    const base = raw.map(Math.floor);
+    const order = raw.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0]);
+    const extra = total - IX.sum(base);
+    return base.map((b, i) => b + (order.slice(0, extra).some(([, j]) => j === i) ? 1 : 0));
+  }
+
+  /** [{model, region}] slots, one per pool. Deterministic for a given size. */
+  function layout(size) {
+    const models = modelsFor(size);
+    const regions = regionsFor(size);
+    if (size === 48) {
+      return models.flatMap((m) => LAYOUT_48[m.id].flatMap((n, ri) => Array.from({ length: n }, () => ({ model: m, region: regions[ri] }))));
+    }
+    const perModel = apportion(size - models.length, models.map((m) => m.weight)).map((n) => n + 1);
+    return models.flatMap((m, mi) => {
+      // Rotate region preference per model so small fleets still spread out.
+      const rw = regions.map((r, ri) => r.weight * (ri === mi % regions.length ? 1.6 : 1) * IX.jitter(m.id + r.id, 0.25));
+      const perRegion = apportion(perModel[mi], rw);
+      // DeepSeek keeps two pools in US East whenever the fleet allows it (failover story).
+      if (m.id === 'deepseek-r1' && perModel[mi] >= 2 && perRegion[0] < 2) {
+        const donor = perRegion.findIndex((n, i) => i > 0 && n > 0);
+        if (donor > 0) { perRegion[donor] -= 1; perRegion[0] += 1; }
+      }
+      return perRegion.flatMap((n, ri) => Array.from({ length: n }, () => ({ model: m, region: regions[ri] })));
+    });
+  }
+
+  /** Build the static description of every pool (identity + configuration). */
+  function buildFleet(size) {
+    const counters = {};
+    return layout(size).map((slot, idx) => {
+      const { model: m, region: r } = slot;
+      const key = m.short + '-' + r.id;
+      counters[key] = (counters[key] || 0) + 1;
+      const n = counters[key];
+      const id = `${key}-${String(n).padStart(2, '0')}`;
+      const [lo, hi] = m.replicas;
+      const desired = lo + Math.round(IX.rand(id + 'rep') * (hi - lo));
+      const isStandby = size === 48 ? STANDBY_48.includes(id) : n > 1 && IX.rand(id + 'sb') < 0.05;
+      return {
+        id,
+        idx,
+        model: m.id,
+        region: r.id,
+        cluster: `k8s-${r.id}-${'abc'[(n - 1 + m.short.length) % (size >= 250 ? 3 : 2)]}`,
+        gpu: m.gpus[(n - 1) % m.gpus.length],
+        engine: m.engines[(n - 1) % m.engines.length],
+        version: `${m.version} · r${140 + Math.round(IX.rand(id + 'ver') * 60)}`,
+        desired,
+        ready: desired,
+        perReplicaRps: m.rps * IX.jitter(id + 'cap', 0.08),
+        standby: isStandby,
+        forced: null, // 'unavailable' | 'draining' | 'unknown' set by scenarios
+        cause: null,
+        ttftPenalty: 1,
+        telemetryAge: 6 + IX.rand(id + 'age') * 18,
+        replicaFaults: [],
+      };
+    });
+  }
+
+  Object.assign(IX, { REGIONS, MODELS, FLEET_SIZES, modelsFor, regionsFor, buildFleet });
+})();
+
+</script>
+  <script>
+/* Operational scenarios. Each returns a modified fleet plus the ground-truth fault
+   descriptions; customer impact is NOT declared here — the routing simulation derives it. */
+(function () {
+  const IX = window.IX;
+
+  const byModelRegion = (pools, model, region) => pools.filter((p) => p.model === model && (!region || p.region === region) && !p.standby);
+  const first = (arr) => arr[0];
+  const update = (pools, ids, patch) => pools.map((p) => (ids.includes(p.id) ? { ...p, ...(typeof patch === 'function' ? patch(p) : patch) } : p));
+  const allReplicasDown = (reason) => (p) => ({ forced: 'unavailable', ready: 0, replicaFaults: Array.from({ length: p.desired }, () => reason) });
+
+  const DEFAULT_PROXY = { replicaCount: 12, down: 0, staleConfig: 0, internalErrorRate: 0, routingFailRate: 0, extraLatency: 0, onsetMin: null, cause: null };
+
+  function proxyFor(size, patch = {}) {
+    const replicaCount = size <= 10 ? 6 : size <= 100 ? 12 : size <= 250 ? 24 : 36;
+    return { ...DEFAULT_PROXY, replicaCount, ...patch };
+  }
+
+  // Background intentional operations present in every scenario except "normal".
+  function backgroundOps(pools) {
+    // Only drain when another Mixtral pool can keep the model available.
+    const mixtral = byModelRegion(pools, 'mixtral');
+    const drainTarget = mixtral.length < 2 ? null : first(byModelRegion(pools, 'mixtral', 'usw2')) || mixtral[0];
+    const staleTarget = byModelRegion(pools, 'bge-m3', 'apne1')[1] || first(byModelRegion(pools, 'bge-m3', 'apne1'));
+    let next = pools;
+    if (drainTarget) next = update(next, [drainTarget.id], { forced: 'draining', cause: 'Rolling deploy r188 → r189 · drain 64% · 11 in-flight requests', onsetMin: 6 });
+    if (staleTarget) next = update(next, [staleTarget.id], { forced: 'unknown', telemetryAge: 432, cause: 'Metrics scrape failing (target down). Proxy active health checks still passing.', onsetMin: 7.2 });
+    return { pools: next, drain: drainTarget, stale: staleTarget };
+  }
+
+  const SCENARIOS = [
+    {
+      id: 'normal',
+      label: 'Normal operations',
+      hint: 'All pools serving. Standby pools idle.',
+      apply: (pools, size) => ({ pools, demandMult: {}, proxy: proxyFor(size), incidents: [] }),
+    },
+    {
+      id: 'single',
+      label: 'Single pool failure',
+      hint: 'DeepSeek pool down; proxy fails over. Design reference scenario.',
+      apply: (pools0, size) => {
+        const bg = backgroundOps(pools0);
+        let pools = bg.pools;
+        const ds = first(byModelRegion(pools, 'deepseek-r1', 'use1')) || first(byModelRegion(pools, 'deepseek-r1'));
+        const l70 = first(byModelRegion(pools, 'llama-70b', 'euw1')) || first(byModelRegion(pools, 'llama-70b'));
+        const qw = first(byModelRegion(pools, 'qwen-32b', 'apne1')) || first(byModelRegion(pools, 'qwen-32b'));
+        pools = update(pools, [ds.id], (p) => ({ ...allReplicasDown('NotReady · readiness probe 503')(p), cause: 'All replicas failing readiness after node image rollout (driver 570 → 575)', onsetMin: 14 }));
+        pools = update(pools, [l70.id], { ttftPenalty: 2.9, cause: 'Prefix-cache hit rate fell 71% → 18% after tokenizer config change r212', onsetMin: 41 });
+        pools = update(pools, [qw.id], (p) => ({ ready: p.desired - 3, replicaFaults: ['CrashLoopBackOff · Xid 79 on gpu-apne1-17', 'CrashLoopBackOff · Xid 79 on gpu-apne1-17', 'Pending · node cordoned'], cause: 'GPU fell off bus (Xid 79) on node gpu-apne1-17; node cordoned', onsetMin: 26 }));
+        return {
+          pools,
+          demandMult: {},
+          proxy: proxyFor(size),
+          incidents: [
+            { id: 'INC-4821', primary: [ds.id], related: { model: ds.model, minUtil: 0.9 }, title: `${ds.id} unavailable — traffic failed over`, cause: ds && 'All 6 replicas fail readiness after node image rollout (NVIDIA driver 570 → 575). Proxy ejected the pool at T+40s.', mitigation: 'Auto-mitigated · failover active', mitigationTone: 'ok', onsetMin: 14, alerts: ['PoolUnavailable', 'ReadinessProbeFailed ×6', 'ProxyEjectedBackend', 'FailoverActivated', 'GPUSaturation', 'QueueDepthHigh'] },
+            { id: 'INC-4819', primary: [l70.id], title: `Elevated TTFT on ${l70.id}`, cause: 'Replicas healthy. Prefix-cache hit rate fell 71% → 18% after tokenizer config change r212; prefill recomputation inflates TTFT.', mitigation: 'Investigating · rollback of r212 proposed', mitigationTone: 'warn', onsetMin: 41, alerts: ['TTFTp95AboveSLO', 'PrefixCacheHitRateLow'] },
+            { id: 'INC-4820', primary: [qw.id], title: `${qw.id} running ${qw.desired - 3}/${qw.desired} replicas`, cause: 'GPU Xid 79 (fell off bus) on node gpu-apne1-17. 2 pods CrashLoopBackOff, 1 pending reschedule.', mitigation: 'Node cordoned · awaiting replacement capacity', mitigationTone: 'warn', onsetMin: 26, alerts: ['ReplicasUnavailable', 'GPUXidError', 'PodCrashLooping ×2'] },
+            bg.stale && { id: 'INC-4822', primary: [bg.stale.id], observability: true, title: `Telemetry stale for ${bg.stale.id}`, cause: 'Prometheus scrape target down for 7m. Proxy active health checks still pass, so the pool stays routable.', mitigation: 'Monitoring', mitigationTone: 'muted', onsetMin: 7.2, alerts: ['TargetDown', 'MetricsStale'] },
+          ].filter(Boolean),
+        };
+      },
+    },
+    {
+      id: 'model-outage',
+      label: 'Model outage',
+      hint: 'Every Mixtral pool fails after a bad weights rollout.',
+      apply: (pools0, size) => {
+        const mx = pools0.filter((p) => p.model === 'mixtral');
+        const pools = update(pools0, mx.map((p) => p.id), (p) => ({ ...allReplicasDown('CrashLoopBackOff · weights checksum mismatch')(p), standby: false, cause: 'Model failed to load: safetensors checksum mismatch in rollout v0.4.2', onsetMin: 9 }));
+        return {
+          pools,
+          demandMult: {},
+          proxy: proxyFor(size),
+          incidents: [
+            { id: 'INC-4830', primary: mx.map((p) => p.id), modelOutage: 'mixtral', title: 'Mixtral 8x22B unavailable in every region', cause: 'Rollout v0.4.2 shipped a corrupted weights shard; all replicas crash on load (safetensors checksum mismatch). No healthy pool remains to fail over to.', mitigation: 'Rollback to v0.4.1 in progress · 2/6 pools restarted', mitigationTone: 'crit', onsetMin: 9, alerts: ['ModelUnavailable', `PoolUnavailable ×${mx.length}`, 'NoEligibleBackend', 'CrashLooping', 'SLOBurnRateCritical'] },
+          ],
+        };
+      },
+    },
+    {
+      id: 'proxy',
+      label: 'Central proxy failure',
+      hint: 'Proxy replicas OOM after a config push; pools are healthy.',
+      apply: (pools, size) => {
+        const proxy = proxyFor(size);
+        const down = Math.round(proxy.replicaCount * 0.42);
+        const stale = Math.round(proxy.replicaCount * 0.25);
+        return {
+          pools,
+          demandMult: {},
+          proxy: { ...proxy, down, staleConfig: stale, internalErrorRate: 0.011, routingFailRate: 0.027, extraLatency: 9, onsetMin: 5, cause: 'Routing config push rc-1412 grew the route table 3.1×; replicas OOMKilled.' },
+          incidents: [
+            { id: 'INC-4840', primary: [], proxy: true, title: `Central proxy degraded — ${down}/${proxy.replicaCount} replicas down`, cause: `Routing config push rc-1412 grew the route table 3.1×. ${down} replicas OOMKilled; ${stale} survivors still on rc-1356 and route to stale endpoints. Model pools report healthy.`, mitigation: 'Config rollback to rc-1356 in progress', mitigationTone: 'crit', onsetMin: 5, alerts: ['ProxyReplicasUnavailable', 'OOMKilled ×' + down, 'RoutingConfigDrift', 'RoutingFailures', 'SLOBurnRateCritical'] },
+          ],
+        };
+      },
+    },
+    {
+      id: 'saturation',
+      label: 'Capacity saturation',
+      hint: 'Llama 70B and Qwen 32B demand +40%; nothing has failed yet.',
+      apply: (pools, size) => ({
+        pools,
+        demandMult: { 'llama-70b': 1.5, 'qwen-32b': 1.42 },
+        demandRamp: 50,
+        proxy: proxyFor(size),
+        incidents: [
+          { id: 'INC-4850', primary: [], saturation: ['llama-70b', 'qwen-32b'], title: 'Capacity pressure on Llama 70B and Qwen 32B', cause: 'Demand up 40–46% over 50 min (launch traffic). Pools remain healthy but queues are growing; losing one pool would no longer be absorbable.', mitigation: 'Scale-up requested (+12 replicas) · awaiting H100 quota', mitigationTone: 'warn', onsetMin: 50, alerts: ['GPUUtilizationHigh', 'QueueWaitRising', 'FailoverCapacityInsufficient', 'TTFTp95Rising'] },
+        ],
+      }),
+    },
+    {
+      id: 'region',
+      label: 'Regional failure',
+      hint: 'ap-northeast-1 unreachable; cross-region failover.',
+      apply: (pools0, size) => {
+        const ap = pools0.filter((p) => p.region === 'apne1');
+        const pools = update(pools0, ap.map((p) => p.id), (p) => ({ ...allReplicasDown('Unreachable · network partition')(p), cause: 'Proxy cannot reach k8s-apne1-* (network partition at transit gateway)', onsetMin: 11 }));
+        return {
+          pools,
+          demandMult: {},
+          proxy: proxyFor(size),
+          crossRegionRttMs: 140,
+          incidents: [
+            { id: 'INC-4860', primary: ap.map((p) => p.id), region: 'apne1', title: `ap-northeast-1 unreachable — ${ap.length} pools down`, cause: 'Transit gateway partition between the proxy VPC and k8s-apne1-a/b. Pools are likely healthy but unreachable; all APNE traffic is served cross-region.', mitigation: 'Failover active · network team engaged', mitigationTone: 'warn', onsetMin: 11, alerts: [`PoolUnavailable ×${ap.length}`, 'RegionUnreachable', 'FailoverActivated', 'CrossRegionLatencyHigh'] },
+          ],
+        };
+      },
+    },
+  ];
+
+  const scenarioById = (id) => SCENARIOS.find((s) => s.id === id) || SCENARIOS[1];
+
+  Object.assign(IX, { SCENARIOS, scenarioById });
+})();
+
+</script>
+  <script>
+/* Turns simulated numbers into the four-layer health assessment shown at the top of
+   the dashboard. Ordered by what matters to customers, not by component counts. */
+(function () {
+  const IX = window.IX;
+
+  const STATUS_META = {
+    operational: { label: 'Operational', tone: 'ok', glyph: '●' },
+    degraded: { label: 'Degraded', tone: 'warn', glyph: '▲' },
+    unavailable: { label: 'Unavailable', tone: 'crit', glyph: '✕' },
+    draining: { label: 'Draining', tone: 'info', glyph: '↘' },
+    unknown: { label: 'Unknown', tone: 'muted', glyph: '?' },
+    standby: { label: 'Standby', tone: 'standby', glyph: '○' },
+  };
+  const STATUS_ORDER = ['unavailable', 'degraded', 'unknown', 'draining', 'standby', 'operational'];
+
+  const MODEL_STATUS = {
+    unavailable: { label: 'Unavailable', tone: 'crit' },
+    impaired: { label: 'Partially failing', tone: 'crit' },
+    'at-risk': { label: 'Available · N−1 unsafe', tone: 'warn' },
+    reduced: { label: 'Available · reduced redundancy', tone: 'warn' },
+    available: { label: 'Available', tone: 'ok' },
+  };
+
+  function deriveLayers({ platform, models, statusCounts, proxy, pools }) {
+    const down = models.filter((m) => m.status === 'unavailable');
+    const impaired = models.filter((m) => m.status === 'impaired');
+    const latency = models.filter((m) => m.latencyBreach);
+    const noN1 = models.filter((m) => !m.failoverOk && m.status !== 'unavailable');
+    const failPct = 1 - platform.success;
+
+    const customer = failPct >= 0.001
+      ? { tone: 'crit', value: IX.fmtNum(platform.failed, 1) + ' req/s failing', detail: `${IX.fmtSuccess(platform.success)} success · ${IX.fmtPct(failPct, 2)} of requests failing` }
+      : latency.length
+        ? { tone: 'warn', value: 'Latency impact', detail: `${latency.map((m) => m.name).join(', ')} above latency SLO` }
+        : { tone: 'ok', value: 'No impact', detail: `${IX.fmtSuccess(platform.success)} success · latency within SLO` };
+
+    const modelsLayer = down.length || impaired.length
+      ? { tone: 'crit', value: `${models.length - down.length}/${models.length} available`, detail: [...down, ...impaired].map((m) => `${m.name} ${m.status === 'unavailable' ? 'down' : 'failing'}`).join(' · ') }
+      : models.some((m) => m.status !== 'available')
+        ? { tone: 'warn', value: `${models.length}/${models.length} available`, detail: `${models.filter((m) => m.status !== 'available').length} with reduced redundancy` }
+        : { tone: 'ok', value: `${models.length}/${models.length} available`, detail: 'Full redundancy' };
+
+    const modelsLayerFinal = !proxy.healthy && !down.length && !impaired.length
+      ? { tone: 'warn', value: `${models.length}/${models.length} available`, detail: 'Backends healthy · all models see proxy-origin errors' }
+      : modelsLayer;
+
+    const capacity = platform.shed > 0.05
+      ? { tone: 'crit', value: 'Shedding load', detail: `${IX.fmtNum(platform.shed, 1)} req/s rejected · no capacity` }
+      : noN1.length
+        ? { tone: 'warn', value: `${IX.fmtPct(platform.headroom, 0)} headroom`, detail: `N−1 unsafe for ${noN1.length} model${noN1.length > 1 ? 's' : ''}` }
+        : { tone: 'ok', value: `${IX.fmtPct(platform.headroom, 0)} headroom`, detail: 'Every model survives losing a pool' };
+
+    const bad = statusCounts.unavailable + statusCounts.degraded + statusCounts.unknown;
+    const servingPools = pools.length - statusCounts.draining - statusCounts.standby;
+    const components = !proxy.healthy
+      ? { tone: 'crit', value: `Proxy ${proxy.ready}/${proxy.desired}`, detail: `Shared routing layer degraded · ${bad} pools unhealthy` }
+      : bad
+        ? { tone: 'warn', value: `${servingPools - bad}/${servingPools} pools healthy`, detail: `${statusCounts.unavailable} down · ${statusCounts.degraded} degraded · ${statusCounts.unknown} unknown` }
+        : { tone: 'ok', value: `${servingPools}/${servingPools} pools healthy`, detail: `Proxy ${proxy.ready}/${proxy.desired} healthy` };
+
+    const satOnly = bad > 0 && !statusCounts.unavailable && !statusCounts.unknown
+      && pools.filter((p) => p.status === 'degraded').every((p) => p.util >= 0.8 && p.ready === p.desired && p.ttftPenalty === 1);
+    let verdict;
+    if (!proxy.healthy) verdict = { tone: 'crit', title: 'Routing layer failure', sub: `Failures originate in the central proxy, not in model pools. ${IX.fmtPct(failPct, 2)} of requests failing.` };
+    else if (down.length) verdict = { tone: 'crit', title: `${down.map((m) => m.name).join(', ')} unavailable`, sub: `No eligible pool can serve the model. ${IX.fmtNum(platform.failed, 1)} req/s (${IX.fmtPct(failPct, 2)}) failing.` };
+    else if (failPct >= 0.001) verdict = { tone: 'crit', title: 'Customer-facing errors', sub: `${IX.fmtPct(failPct, 2)} of requests failing.` };
+    else if (satOnly) verdict = { tone: 'warn', title: 'Serving normally · capacity saturating', sub: `No pool has failed, but ${bad} are saturated and queues are growing. ${noN1.length ? `Losing one pool would overload ${noN1.map((m) => m.name).join(', ')}.` : ''}` };
+    else if (bad && customer.tone !== 'crit') verdict = { tone: 'warn', title: latency.length ? 'Serving · latency degraded' : 'Serving normally · infrastructure degraded', sub: `All models available. ${bad} pool${bad > 1 ? 's' : ''} need attention${platform.failoverRps > 0.5 ? `; proxy is failing over ${IX.fmtNum(platform.failoverRps, 0)} req/s` : ''}.` };
+    else if (noN1.length) verdict = { tone: 'warn', title: 'Serving normally · capacity running hot', sub: `No failures yet. Losing one pool would overload ${noN1.map((m) => m.name).join(', ')}.` };
+    else verdict = { tone: 'ok', title: 'All systems operational', sub: `${models.length} models · ${pools.length} pools · ${IX.fmtNum(platform.demand, 0)} req/s served normally.` };
+
+    return { verdict, customer, models: modelsLayerFinal, capacity, components };
+  }
+
+  Object.assign(IX, { STATUS_META, STATUS_ORDER, MODEL_STATUS, deriveLayers });
+})();
+
+</script>
+  <script>
+/* Routing + telemetry simulation. Customer impact comes from simulated request outcomes:
+   demand is routed by the proxy (local first, then failover), anything that cannot be
+   placed is shed, and every aggregate on screen is summed from these pool-level numbers. */
+(function () {
+  const IX = window.IX;
+  const { sum, clamp, jitter } = IX;
+
+  const MAX_UTIL = 0.95; // proxy stops sending to a pool beyond this load (queue guard)
+  const BASE_LOAD = 0.58; // steady-state utilisation the fleet is provisioned for
+  const BASE_RTT_MS = 70;
+  const SLO_AVAILABILITY = 0.999;
+  const BUDGET_MINUTES_30D = 30 * 24 * 60 * (1 - SLO_AVAILABILITY);
+  const BUDGET_REMAINING_BEFORE = 0.78;
+
+  const capOf = (p) => p.ready * p.perReplicaRps;
+  const configuredCap = (p) => p.desired * p.perReplicaRps;
+  const weightOf = (p) => (p.standby ? 0 : configuredCap(p));
+  const isEligible = (p) => p.forced !== 'unavailable' && p.forced !== 'draining' && p.ready > 0;
+
+  // ---- routing ------------------------------------------------------------------------
+  function route(pools, models, regions, demandByModelRegion) {
+    const room = new Map(pools.map((p) => [p.id, isEligible(p) ? capOf(p) * MAX_UTIL : 0]));
+    const alloc = new Map(pools.map((p) => [p.id, 0]));
+    const failoverIn = new Map(pools.map((p) => [p.id, 0]));
+    const flows = new Map(); // `${model}|${from}|${to}` -> rps
+    const addFlow = (m, from, to, v) => flows.set(`${m}|${from}|${to}`, (flows.get(`${m}|${from}|${to}`) || 0) + v);
+
+    // Water-fill `amount` across candidates proportional to weightFn, respecting room.
+    function fill(cands, amount, weightFn, { model, from, failover }) {
+      let left = amount;
+      for (let iter = 0; iter < 10 && left > 1e-6; iter++) {
+        const open = cands.filter((p) => room.get(p.id) > 1e-6);
+        const W = sum(open, weightFn);
+        if (!open.length || W <= 0) break;
+        const placed = open.map((p) => {
+          const take = Math.min((left * weightFn(p)) / W, room.get(p.id));
+          room.set(p.id, room.get(p.id) - take);
+          alloc.set(p.id, alloc.get(p.id) + take);
+          if (failover) failoverIn.set(p.id, failoverIn.get(p.id) + take);
+          addFlow(model, from, p.region, take);
+          return take;
+        });
+        left -= sum(placed);
+      }
+      return left;
+    }
+
+    const leftovers = [];
+    for (const m of models) {
+      const mp = pools.filter((p) => p.model === m.id);
+      for (const r of regions) {
+        const d = demandByModelRegion[m.id][r.id] || 0;
+        if (!d) continue;
+        const local = mp.filter((p) => p.region === r.id && !p.standby);
+        // Affinity routing (prefix-cache, session stickiness) keeps load slightly uneven.
+        const left = fill(local, d, (p) => weightOf(p) * jitter(p.id + 'aff', 0.14), { model: m.id, from: r.id, failover: false });
+        if (left > 1e-6) leftovers.push({ m, r, left, mp });
+      }
+    }
+    const shed = {};
+    for (const { m, r, left, mp } of leftovers) {
+      let rest = fill(mp.filter((p) => p.region === r.id && p.standby), left, configuredCap, { model: m.id, from: r.id, failover: true });
+      rest = fill(mp.filter((p) => p.region !== r.id && !p.standby), rest, (p) => room.get(p.id), { model: m.id, from: r.id, failover: true });
+      rest = fill(mp.filter((p) => p.region !== r.id && p.standby), rest, (p) => room.get(p.id), { model: m.id, from: r.id, failover: true });
+      shed[m.id] = (shed[m.id] || 0) + rest;
+    }
+    return { alloc, failoverIn, flows, shed };
+  }
+
+  // ---- per-pool telemetry ---------------------------------------------------------------
+  function derivePool(p, m, traffic, failover) {
+    const cap = capOf(p);
+    const util = cap > 0 ? traffic / cap : 0;
+    const lf = 1 + 0.35 * util + Math.max(0, util - 0.8) * 9;
+    const j = (k, s = 0.06) => jitter(p.id + k, s);
+    const chat = m.kind === 'chat';
+    const ttftP50 = chat ? m.ttft * lf * p.ttftPenalty * j('ttft') : null;
+    const ttftP95 = chat ? ttftP50 * 1.85 : null;
+    const tpot = chat ? m.tpot * (1 + 0.45 * util * util) * j('tpot') : null;
+    const latP95 = chat ? ttftP95 + tpot * m.outTok * 1.25 : m.latency * lf * 1.7 * j('lat');
+    const kv = chat ? clamp(0.12 + util * 0.78 + (p.ttftPenalty > 1 ? 0.09 : 0), 0, 0.99) : null;
+    const idle = traffic < 1e-6;
+    const gpuUtil = idle ? (p.ready ? 0.03 : 0) : clamp(0.1 + util * 0.88 * j('gpu', 0.03), 0, 0.99);
+    const gpuMem = p.ready ? clamp(m.mem + (kv ?? util * 0.3) * (0.95 - m.mem), 0, 0.98) : 0;
+    const running = traffic * (latP95 / 1000) * 0.55;
+    const hot = Math.max(0, util - 0.82);
+    const queued = idle ? 0 : running * (hot * 6 + 0.01);
+    const queueWait = idle ? 0 : 2 + hot * (chat ? m.ttft : m.latency) * 9;
+    const errRate = idle ? 0 : (p.ready < p.desired ? 0.0016 : 0.0003) + (util > 0.9 ? 0.002 : 0);
+    const timeoutRate = idle ? 0 : util > 0.9 ? 0.004 : 0.0002;
+    const sloMs = chat ? m.ttftSlo : m.latencySlo;
+    const sloMetric = chat ? ttftP95 : latP95;
+
+    const issues = [];
+    if (p.forced === 'unavailable') issues.push(p.ready === 0 ? `0/${p.desired} replicas ready` : 'Not serving');
+    if (p.forced !== 'unavailable' && p.ready < p.desired) issues.push(`${p.ready}/${p.desired} replicas ready`);
+    if (util >= 0.9) issues.push(`Saturated · GPU ${Math.round(gpuUtil * 100)}% · queue ${Math.round(queued)}`);
+    if (!idle && sloMetric > sloMs) issues.push(`${chat ? 'TTFT' : 'Latency'} p95 ${IX.fmtMs(sloMetric)} > ${IX.fmtMs(sloMs)} SLO`);
+    if (p.forced === 'unknown') issues.push(`Telemetry stale ${IX.fmtAge(p.telemetryAge)}`);
+
+    let status;
+    if (p.forced) status = p.forced;
+    else if (issues.length) status = 'degraded';
+    else if (p.standby && idle) status = 'standby';
+    else status = 'operational';
+
+    return {
+      ...p, status, issues, traffic, failoverIn: failover, util, capacity: cap, eligible: isEligible(p),
+      ttftP50, ttftP95, tpot, latP95, kv, gpuUtil, gpuMem, running, queued, queueWait, errRate, timeoutRate,
+      inTokS: traffic * m.inTok, outTokS: traffic * m.outTok, sloMs, sloMetric, hot: util >= 0.8,
+    };
+  }
+
+  // ---- models ---------------------------------------------------------------------------
+  function deriveModel(m, mp, demand, shed, proxyFailFrac, flows, rttMs) {
+    const served = sum(mp, (p) => p.traffic);
+    const backendErr = sum(mp, (p) => p.traffic * p.errRate);
+    const proxyFail = demand * proxyFailFrac;
+    const failed = proxyFail + shed + backendErr;
+    const elig = mp.filter((p) => p.eligible);
+    const capacity = sum(elig, (p) => p.capacity * MAX_UTIL);
+    const largest = Math.max(0, ...elig.map((p) => p.capacity * MAX_UTIL));
+    const failoverOk = elig.length > 1 && capacity - largest >= served * 0.999;
+    const unhealthy = mp.filter((p) => ['unavailable', 'degraded', 'unknown'].includes(p.status));
+    const cross = sum([...flows.entries()].filter(([k]) => k.startsWith(m.id + '|') && k.split('|')[1] !== k.split('|')[2]), ([, v]) => v);
+    const crossFrac = served ? cross / served : 0;
+    const poolMetric = served ? sum(mp, (p) => p.traffic * (p.sloMetric || 0)) / served : null;
+    const clientMetric = poolMetric == null ? null : poolMetric + crossFrac * rttMs;
+    const success = demand ? 1 - failed / demand : 1;
+    const regionsConfigured = [...new Set(mp.map((p) => p.region))];
+    const regionsServing = [...new Set(elig.map((p) => p.region))];
+
+    let status = 'available';
+    if (!elig.length) status = 'unavailable';
+    // Only backend-origin failures make a model "impaired"; proxy-origin errors belong to the proxy.
+    else if (demand && 1 - (shed + backendErr) / demand < 0.99) status = 'impaired';
+    else if (!failoverOk) status = 'at-risk';
+    else if (unhealthy.length) status = 'reduced';
+    return {
+      ...m, pools: mp, demand, served, failed, shed, proxyFail, backendErr, success, capacity,
+      headroom: capacity ? 1 - served / capacity : 0, failoverOk, status, unhealthy, crossRps: cross, crossFrac,
+      clientMetric, slo: m.kind === 'chat' ? m.ttftSlo : m.latencySlo, regionsConfigured, regionsServing,
+      eligibleCount: elig.length, healthyCount: mp.filter((p) => p.status === 'operational' || p.status === 'standby').length,
+      draining: mp.filter((p) => p.status === 'draining').length,
+      latencyBreach: clientMetric != null && clientMetric > (m.kind === 'chat' ? m.ttftSlo : m.latencySlo),
+    };
+  }
+
+  // ---- proxy ----------------------------------------------------------------------------
+  function deriveProxy(px, demand, pools, failoverRps, avgDurS) {
+    const n = px.replicaCount;
+    const downIdx = new Set(Array.from({ length: px.down }, (_, i) => (i * 7 + 2) % n));
+    const up = [...Array(n).keys()].filter((i) => !downIdx.has(i));
+    const staleIdx = new Set(up.filter((_, k) => k % 2 === 1).slice(0, px.staleConfig));
+    const unreachable = pools.filter((p) => p.forced === 'unavailable').length;
+    const upstreamErr = unreachable * 0.06 + (px.down ? demand * 0.002 : 0);
+    const failFrac = px.internalErrorRate + px.routingFailRate;
+    const instances = [...Array(n).keys()].map((i) => {
+      const id = `proxy-7f9c-${String.fromCharCode(97 + (i % 26))}${Math.floor(i / 26) || ''}${(i * 37) % 10}`;
+      const down = downIdx.has(i);
+      const stale = staleIdx.has(i);
+      const rps = down ? 0 : (demand / up.length) * jitter(id + 'rps', 0.05);
+      const extra = down ? 0 : px.extraLatency * (stale ? 1.4 : 0.8);
+      return {
+        id, zone: `use1-az${(i % 3) + 1}`, status: down ? 'down' : stale || px.extraLatency ? 'degraded' : 'healthy',
+        reason: down ? 'OOMKilled · CrashLoopBackOff' : stale ? 'Routing config rc-1356 (expected rc-1412)' : px.extraLatency ? 'Elevated load from failed peers' : null,
+        rps, conns: rps * avgDurS, p50: down ? null : (1.4 + extra * 0.4) * jitter(id + 'p50', 0.08), p99: down ? null : (5.2 + extra * 2.2) * jitter(id + 'p99', 0.1),
+        errRate: down ? null : stale ? px.routingFailRate * (up.length / Math.max(1, staleIdx.size)) + px.internalErrorRate : px.internalErrorRate,
+        upstreamErr: down ? 0 : upstreamErr / up.length, config: stale ? 'rc-1356' : 'rc-1412',
+        cpu: down ? 0 : clamp(0.34 * (demand / up.length) / (demand / n) * jitter(id + 'cpu', 0.1), 0, 0.98),
+        mem: down ? 0 : clamp((px.down ? 0.86 : 0.46) * jitter(id + 'mem', 0.06), 0, 0.99), restarts: down ? 6 + (i % 4) : 0,
+      };
+    });
+    const ready = up.length;
+    const inSync = instances.filter((x) => x.status !== 'down' && x.config === 'rc-1412').length;
+    return {
+      ...px, instances, ready, desired: n, inSync, rps: demand, conns: demand * avgDurS,
+      p50: sum(instances.filter((x) => x.p50), (x) => x.p50) / ready, p99: Math.max(...instances.filter((x) => x.p99).map((x) => x.p99)),
+      upstreamErr, routingFail: demand * px.routingFailRate, internalErr: demand * px.internalErrorRate, failFrac,
+      retryRate: 0.0021 + (failoverRps / Math.max(demand, 1)) * 0.06 + failFrac * 0.5, failoverRate: failoverRps / Math.max(demand, 1),
+      discovered: pools.length, eligible: pools.filter((p) => p.eligible).length,
+      healthy: px.down === 0 && px.staleConfig === 0 && failFrac < 0.001,
+    };
+  }
+
+  // ---- incidents ----------------------------------------------------------------------
+  function deriveIncident(spec, ctx) {
+    const { poolsById, modelsById, platform, pools } = ctx;
+    const primary = spec.primary.map((id) => poolsById[id]).filter(Boolean);
+    const related = spec.related ? pools.filter((p) => p.model === spec.related.model && p.util >= spec.related.minUtil && !spec.primary.includes(p.id)) : [];
+    const sat = spec.saturation ? pools.filter((p) => spec.saturation.includes(p.model) && p.util >= 0.85) : [];
+    const affected = [...primary, ...related, ...sat];
+    const modelIds = spec.proxy ? Object.keys(modelsById) : [...new Set(affected.map((p) => p.model))];
+    const models = modelIds.map((id) => modelsById[id]);
+    // Count only failures above the healthy baseline (background error rate is not impact).
+    const baseFailed = (m) => (ctx.baseline ? ctx.baseline.modelsById[m.id].failed : 0);
+    const failed = spec.proxy ? platform.proxyFail : spec.observability ? 0 : Math.max(0, sum(models, (m) => m.failed - baseFailed(m)));
+    const failedFrac = failed / platform.demand;
+    const lostCap = sum(primary, (p) => configuredCap(p) - p.capacity);
+    const modelCap = sum(models, (m) => sum(m.pools, configuredCap));
+    const breach = models.filter((m) => m.latencyBreach);
+    const failover = sum(primary.length ? models : [], (m) => m.crossRps);
+
+    let severity = 3;
+    if (spec.observability) severity = 4;
+    else if (spec.proxy || spec.modelOutage || failedFrac >= 0.01) severity = 1;
+    else if (failed > 0.5 || models.some((m) => !m.failoverOk)) severity = 2;
+
+    const impactParts = [];
+    if (failed > 0.05) impactParts.push(`${IX.fmtNum(failed, 1)} req/s failing (${IX.fmtPct(failedFrac, 3)} of traffic)`);
+    else impactParts.push('No failed requests');
+    if (breach.length) impactParts.push(`${breach.map((m) => m.name).join(', ')} latency above SLO`);
+    else if (failover > 0.5 && !spec.observability) impactParts.push(`+${Math.round(ctx.rttMs)} ms for ${IX.fmtNum(failover, 0)} req/s served cross-region`);
+    const customer = failed > 0.05 ? 'crit' : breach.length || failover > 0.5 ? 'warn' : 'none';
+
+    return {
+      ...spec, severity, affected, primaryPools: primary, relatedPools: [...related, ...sat], models, failed, failedFrac, customer,
+      impact: impactParts.join(' · '),
+      capacityImpact: spec.proxy ? `Proxy capacity −${Math.round((platform.proxy.down / platform.proxy.desired) * 100)}%` : lostCap > 0 ? `−${IX.fmtPct(lostCap / modelCap, 0)} ${models.length === 1 ? models[0].name : 'model'} capacity` : sat.length ? `${sat.length} pools ≥85% util · N−1 unsafe` : '—',
+      regions: [...new Set(affected.map((p) => p.region))],
+      score: severity * 1e6 - failed * 1e3 - affected.length,
+    };
+  }
+
+  // ---- world ----------------------------------------------------------------------------
+  function buildWorld(size, scenarioId) {
+    const models = IX.modelsFor(size);
+    const regions = IX.regionsFor(size);
+    const sc = IX.scenarioById(scenarioId).apply(IX.buildFleet(size), size);
+    const pools0 = sc.pools;
+    const rttMs = sc.crossRegionRttMs || BASE_RTT_MS;
+
+    const demand = Object.fromEntries(models.map((m) => {
+      const mp = pools0.filter((p) => p.model === m.id);
+      const total = sum(mp, weightOf) * BASE_LOAD * jitter(m.id + 'load', 0.06) * (sc.demandMult[m.id] || 1);
+      const totalW = sum(mp, weightOf) || 1;
+      // Client demand per region is skewed vs. provisioned capacity, then renormalised.
+      const raw = regions.map((r) => (sum(mp.filter((p) => p.region === r.id), weightOf) / totalW) * jitter(m.id + r.id + 'dem', 0.2));
+      const rawSum = sum(raw) || 1;
+      return [m.id, Object.fromEntries(regions.map((r, i) => [r.id, (total * raw[i]) / rawSum]))];
+    }));
+    const px = sc.proxy;
+    const proxyFailFrac = px.internalErrorRate + px.routingFailRate;
+    const routed = Object.fromEntries(Object.entries(demand).map(([m, byR]) => [m, Object.fromEntries(Object.entries(byR).map(([r, d]) => [r, d * (1 - proxyFailFrac)]))]));
+    const { alloc, failoverIn, flows, shed } = route(pools0, models, regions, routed);
+
+    const modelById0 = Object.fromEntries(models.map((m) => [m.id, m]));
+    const pools = pools0.map((p) => derivePool(p, modelById0[p.model], alloc.get(p.id), failoverIn.get(p.id)));
+    const modelList = models.map((m) => deriveModel(m, pools.filter((p) => p.model === m.id), sum(Object.values(demand[m.id])), shed[m.id] || 0, proxyFailFrac, flows, rttMs));
+    const modelsById = Object.fromEntries(modelList.map((m) => [m.id, m]));
+    const poolsById = Object.fromEntries(pools.map((p) => [p.id, p]));
+
+    const totalDemand = sum(modelList, (m) => m.demand);
+    const served = sum(pools, (p) => p.traffic);
+    const failoverRps = sum(pools, (p) => p.failoverIn);
+    const crossRps = sum([...flows.entries()].filter(([k]) => k.split('|')[1] !== k.split('|')[2]), ([, v]) => v);
+    const avgDurS = served ? sum(pools, (p) => p.traffic * (p.latP95 / 1000) * 0.6) / served : 1;
+    const proxy = deriveProxy(px, totalDemand, pools, failoverRps, avgDurS);
+    const proxyFail = sum(modelList, (m) => m.proxyFail);
+    const shedTotal = sum(modelList, (m) => m.shed);
+    const backendErr = sum(modelList, (m) => m.backendErr);
+    const failed = proxyFail + shedTotal + backendErr;
+    const success = 1 - failed / totalDemand;
+    const chat = modelList.filter((m) => m.kind === 'chat' && m.served);
+    const chatServed = sum(chat, (m) => m.served);
+    const ttftP95 = sum(chat, (m) => m.served * (m.clientMetric || 0)) / (chatServed || 1) + px.extraLatency;
+    const eligibleCap = sum(pools.filter((p) => p.eligible), (p) => p.capacity * MAX_UTIL);
+    const platform0 = {
+      demand: totalDemand, served, failed, proxyFail, shed: shedTotal, backendErr, success, ttftP95, failoverRps, crossRps,
+      inTokS: sum(pools, (p) => p.inTokS), outTokS: sum(pools, (p) => p.outTokS), headroom: eligibleCap ? 1 - served / eligibleCap : 0,
+      proxy, sloTarget: SLO_AVAILABILITY, budgetBefore: BUDGET_REMAINING_BEFORE,
+    };
+
+    const baseline = scenarioId === 'normal' ? null : getWorld(size, 'normal');
+    const ctx = { poolsById, modelsById, platform: platform0, pools, rttMs, baseline };
+    const incidents = (sc.incidents || []).map((s) => deriveIncident(s, ctx)).sort((a, b) => a.score - b.score);
+    // History onset = the most severe incident; budget burn accrues over its duration.
+    const onsetMin = incidents.length ? incidents[0].onsetMin : null;
+    const burnRate = (1 - success) / (1 - SLO_AVAILABILITY);
+    const budgetUsed = onsetMin != null ? ((1 - success) * onsetMin) / BUDGET_MINUTES_30D : 0;
+    const platform = { ...platform0, onsetMin, burnRate, budgetRemaining: clamp(BUDGET_REMAINING_BEFORE - budgetUsed, 0, 1) };
+    const statusCounts = ['operational', 'degraded', 'unavailable', 'draining', 'unknown', 'standby'].reduce((acc, s) => ({ ...acc, [s]: pools.filter((p) => p.status === s).length }), {});
+    const stale = pools.filter((p) => p.telemetryAge > 120);
+
+    return {
+      size, scenario: scenarioId, models: modelList, modelsById, regions, pools, poolsById, flows, platform, incidents, statusCounts,
+      stale, rttMs, demand, layers: IX.deriveLayers({ platform, models: modelList, statusCounts, proxy, pools }),
+      poolIncident: Object.fromEntries(incidents.flatMap((inc) => inc.affected.map((p) => [p.id, inc.id]))),
+    };
+  }
+
+  const cache = new Map();
+  function getWorld(size, scenarioId) {
+    const key = size + '|' + scenarioId;
+    if (!cache.has(key)) cache.set(key, buildWorld(size, scenarioId));
+    return cache.get(key);
+  }
+
+  Object.assign(IX, { getWorld, MAX_UTIL, isEligible, configuredCap, weightOf });
+})();
+
+</script>
+  <script>
+/* Reusable render pieces shared by several views. All return HTML strings. */
+(function () {
+  const IX = window.IX;
+  const { esc, fmtNum, fmtPct, fmtMs, STATUS_META, STATUS_ORDER } = IX;
+
+  const SEVERITY_RANK = Object.fromEntries(STATUS_ORDER.map((s, i) => [s, i]));
+  const UNHEALTHY = ['unavailable', 'degraded', 'unknown'];
+  const REGION_VARS = ['--r1', '--r2', '--r3', '--r4', '--r5', '--r6'];
+  const regionColor = (world, rid) => `var(${REGION_VARS[world.regions.findIndex((r) => r.id === rid)] || '--muted'})`;
+  const regionName = (world, rid) => (world.regions.find((r) => r.id === rid) || {}).name || rid;
+
+  const glyph = (status, extra = '') => `<span class="sg ${status}" role="img" aria-label="${esc((STATUS_META[status] || { label: status }).label)}" ${extra}></span>`;
+  const statusPill = (status) => {
+    const m = STATUS_META[status];
+    return `<span class="pill ${m.tone}">${glyph(status)}${m.label}</span>`;
+  };
+
+  // ---- grouping / filtering -----------------------------------------------------------
+  const GROUP_DIMS = [
+    { id: 'model', label: 'Model' },
+    { id: 'region', label: 'Region' },
+    { id: 'cluster', label: 'Cluster' },
+    { id: 'gpu', label: 'GPU' },
+    { id: 'engine', label: 'Engine' },
+    { id: 'version', label: 'Version' },
+    { id: 'status', label: 'Status' },
+  ];
+
+  function groupInfo(p, dim, world) {
+    switch (dim) {
+      case 'model': return { key: p.model, label: world.modelsById[p.model].name, order: world.models.findIndex((m) => m.id === p.model) };
+      case 'region': return { key: p.region, label: `${regionName(world, p.region)}`, sub: (world.regions.find((r) => r.id === p.region) || {}).code, order: world.regions.findIndex((r) => r.id === p.region) };
+      case 'status': return { key: p.status, label: STATUS_META[p.status].label, order: SEVERITY_RANK[p.status] };
+      case 'version': return { key: p.model + ' ' + p.version.split(' · ')[0], label: `${world.modelsById[p.model].name} ${p.version.split(' · ')[0]}`, order: world.models.findIndex((m) => m.id === p.model) };
+      default: return { key: p[dim], label: p[dim], order: 0 };
+    }
+  }
+
+  function matchesFilters(p, f, world) {
+    if (f.search) {
+      const q = f.search.toLowerCase();
+      const hay = `${p.id} ${world.modelsById[p.model].name} ${p.model} ${p.region} ${p.cluster} ${p.gpu}`.toLowerCase();
+      if (!q.split(/\s+/).every((t) => hay.includes(t))) return false;
+    }
+    if (f.statuses.length && !f.statuses.includes(p.status)) return false;
+    if (f.region && p.region !== f.region) return false;
+    if (f.model && p.model !== f.model) return false;
+    if (f.unhealthyOnly && !UNHEALTHY.includes(p.status) && !p.hot) return false;
+    if (f.trafficOnly && p.traffic < 0.01) return false;
+    return true;
+  }
+  const filtersActive = (f) => !!(f.search || f.statuses.length || f.region || f.model || f.unhealthyOnly || f.trafficOnly);
+
+  function poolImpact(p, world) {
+    const m = world.modelsById[p.model];
+    const bad = UNHEALTHY.includes(p.status) ? 1 : p.hot ? 0.3 : 0;
+    return bad * (m.failed * 50 + IX.configuredCap(p) - p.capacity + p.failoverIn + p.traffic * 0.1);
+  }
+  const SORTS = {
+    stable: { label: 'Fixed order', pool: (a, b) => a.idx - b.idx },
+    severity: { label: 'Severity', pool: (a, b) => SEVERITY_RANK[a.status] - SEVERITY_RANK[b.status] || (b.hot - a.hot) || a.idx - b.idx },
+    impact: { label: 'Customer impact', pool: null },
+    traffic: { label: 'Traffic', pool: (a, b) => b.traffic - a.traffic },
+    latency: { label: 'Latency vs SLO', pool: (a, b) => (b.sloMetric / b.sloMs || 0) - (a.sloMetric / a.sloMs || 0) },
+    util: { label: 'Utilization', pool: (a, b) => b.util - a.util },
+  };
+  function sortPools(pools, sort, world) {
+    if (sort === 'impact') return [...pools].sort((a, b) => poolImpact(b, world) - poolImpact(a, world) || SEVERITY_RANK[a.status] - SEVERITY_RANK[b.status] || a.idx - b.idx);
+    return [...pools].sort(SORTS[sort].pool);
+  }
+
+  // ---- metric encoding for cells ---------------------------------------------------------
+  const METRICS = [
+    { id: 'status', label: 'Status' },
+    { id: 'util', label: 'Utilization' },
+    { id: 'latency', label: 'TTFT / latency vs SLO' },
+    { id: 'traffic', label: 'Traffic' },
+    { id: 'kv', label: 'KV cache' },
+  ];
+  function metricNorm(p, metric, maxTraffic) {
+    switch (metric) {
+      case 'util': return { v: p.util, txt: fmtPct(p.util, 0), warn: p.util >= 0.8, crit: p.util >= 0.9 };
+      case 'latency': { const r = p.sloMetric ? p.sloMetric / p.sloMs : 0; return { v: Math.min(1, r), txt: fmtMs(p.sloMetric), warn: r >= 0.8, crit: r > 1 }; }
+      case 'traffic': return { v: maxTraffic ? Math.sqrt(p.traffic / maxTraffic) : 0, txt: fmtNum(p.traffic, 1) + ' rps' };
+      case 'kv': return p.kv == null ? { v: 0, txt: 'n/a (embedding)' } : { v: p.kv, txt: fmtPct(p.kv, 0), warn: p.kv >= 0.85, crit: p.kv >= 0.95 };
+      default: return null;
+    }
+  }
+
+  function cell(p, state, world, maxTraffic, isDimmed) {
+    const metric = state.metric;
+    const mv = metric !== 'status' ? metricNorm(p, metric, maxTraffic) : null;
+    let style = '';
+    const plain = p.status === 'operational' || p.status === 'standby';
+    if (mv && plain && p.traffic > 0) {
+      const tint = mv.crit ? 'var(--crit)' : mv.warn ? 'var(--warn)' : 'var(--cell-hi)';
+      const pct = mv.crit || mv.warn ? 70 : Math.round(8 + mv.v * 80);
+      style = `style="background:color-mix(in srgb, ${tint} ${pct}%, var(--cell-lo))"`;
+    }
+    const cls = ['cell', 's-' + p.status, mv ? 'metric' : '', p.hot && metric === 'status' ? 'hot' : '', state.selection?.id === p.id ? 'sel' : '', isDimmed ? 'dimmed' : ''].join(' ');
+    return `<button class="${cls}" ${style} data-act="pool" data-id="${p.id}" data-tip="${p.id}" tabindex="-1" aria-label="${esc(p.id)}: ${esc(STATUS_META[p.status].label)}"></button>`;
+  }
+
+  function collapsedSummary(pools) {
+    const parts = STATUS_ORDER.map((s) => [s, pools.filter((p) => p.status === s).length]).filter(([, n]) => n);
+    if (parts.length === 1 && parts[0][0] === 'operational') return `${pools.length} pools · all serving normally`;
+    return parts.map(([s, n]) => `${n} ${STATUS_META[s].label.toLowerCase()}`).join(' · ');
+  }
+
+  function statusBar(pools) {
+    const total = pools.length || 1;
+    const segs = STATUS_ORDER.map((s) => [s, pools.filter((p) => p.status === s).length]).filter(([, n]) => n);
+    const colors = { operational: 'var(--ok-dim)', degraded: 'var(--warn)', unavailable: 'var(--crit)', draining: 'var(--info)', unknown: 'var(--muted)', standby: 'color-mix(in srgb, var(--standby) 35%, transparent)' };
+    return `<div class="collapsed-bar">${segs.map(([s, n]) => `<span style="width:${(n / total) * 100}%;background:${colors[s]}" title="${n} ${STATUS_META[s].label}"></span>`).join('')}</div>`;
+  }
+
+  /**
+   * Fleet matrix. Every pool keeps a fixed slot inside its group (stable `idx` order) so
+   * operators learn where things live; filters dim cells instead of reflowing them.
+   */
+  function matrix(world, state, { groupBy, compact = false } = {}) {
+    const dim = groupBy || state.groupBy;
+    const groups = Object.values(world.pools.reduce((acc, p) => {
+      const g = groupInfo(p, dim, world);
+      const cur = acc[g.key] || { ...g, pools: [] };
+      return { ...acc, [g.key]: { ...cur, pools: [...cur.pools, p] } };
+    }, {}));
+    const maxTraffic = Math.max(...world.pools.map((p) => p.traffic));
+    const sortedGroups = [...groups].sort((a, b) => {
+      if (state.sort === 'stable' || dim === 'status') return a.order - b.order || String(a.label).localeCompare(b.label);
+      const ra = sortPools(a.pools, state.sort, world)[0];
+      const rb = sortPools(b.pools, state.sort, world)[0];
+      return sortPools([ra, rb], state.sort, world)[0] === ra ? -1 : 1;
+    });
+    const small = world.pools.length > 160;
+    const fa = filtersActive(state.filters);
+    const rows = sortedGroups.map((g) => {
+      const pools = [...g.pools].sort((a, b) => a.idx - b.idx);
+      const bad = pools.filter((p) => UNHEALTHY.includes(p.status));
+      const crit = pools.filter((p) => p.status === 'unavailable').length;
+      const healthy = !bad.length;
+      const key = dim + ':' + g.key;
+      const collapsed = state.collapsed[key] ?? (state.collapseHealthy && healthy && !fa);
+      const matches = pools.filter((p) => matchesFilters(p, state.filters, world));
+      if (fa && !matches.length && state.filters.unhealthyOnly) return '';
+      const traffic = IX.sum(pools, (p) => p.traffic);
+      const meta = `<span class="grp-meta">${crit ? `<span class="bad" title="${crit} unavailable">${glyph('unavailable')}${crit}</span>` : ''}${bad.length - crit ? `<span class="warnc" title="${bad.length - crit} degraded or unknown">${glyph('degraded')}${bad.length - crit}</span>` : ''}<span title="Traffic">${fmtNum(traffic, 0)} rps</span><span title="Pools">${pools.length}p</span></span>`;
+      const body = collapsed
+        ? `<div><div class="grp-summary"><span>${collapsedSummary(pools)}</span></div>${statusBar(pools)}</div>`
+        : `<div class="cells" role="group" aria-label="${esc(g.label)}">${pools.map((p) => cell(p, state, world, maxTraffic, fa && !matches.includes(p))).join('')}</div>`;
+      return `<div class="grp ${collapsed ? 'collapsed' : ''}"><button class="grp-h" data-act="toggle-group" data-key="${esc(key)}" aria-expanded="${!collapsed}"><span class="caret">▼</span><span class="grp-name">${esc(g.label)}</span>${g.sub ? `<span class="faint mono" style="font-size:10.5px">${esc(g.sub)}</span>` : ''}${meta}</button>${body}</div>`;
+    }).join('');
+    const size = small || compact ? 'small-cells' : world.pools.length <= 120 ? 'large-cells' : '';
+    return `<div class="matrix ${size}" data-matrix>${rows || '<div class="empty">No pools match these filters.</div>'}</div>`;
+  }
+
+  function legend(world, state, { clickable = true } = {}) {
+    const items = STATUS_ORDER.map((s) => {
+      const n = world.statusCounts[s];
+      const on = state.filters.statuses.includes(s);
+      return clickable
+        ? `<button class="chip" data-act="status-filter" data-status="${s}" aria-pressed="${on}" ${n ? '' : 'disabled'}>${glyph(s)}${STATUS_META[s].label}<span class="n">${n}</span></button>`
+        : `<span class="li">${glyph(s)}${STATUS_META[s].label} <span class="faint mono">${n}</span></span>`;
+    }).join('');
+    const ramp = state.metric !== 'status' ? `<span class="ramp">${esc(METRICS.find((m) => m.id === state.metric).label)} <i></i> high · <span class="tone-warn">warn</span> / <span class="tone-crit">crit</span></span>` : `<span class="ramp"><span class="cell hot" style="--cell:10px;display:inline-block;width:10px;height:10px"></span> ≥80% utilisation</span>`;
+    return `<div class="chips">${items}</div>${ramp}`;
+  }
+
+  // ---- model pips / tooltip / incident card ---------------------------------------------
+  function modelPips(m, world, region, maxPips = 12) {
+    const pools = region ? m.pools.filter((p) => p.region === region) : m.pools;
+    if (!pools.length) return '<span class="faint">—</span>';
+    const pip = (p) => `<span data-tip="${p.id}" data-act="pool" data-id="${p.id}" style="cursor:pointer">${glyph(p.status)}</span>`;
+    if (pools.length > maxPips) {
+      // Exception-first: unhealthy pools stay individually clickable, healthy ones collapse to counts.
+      const odd = pools.filter((p) => p.status !== 'operational' && p.status !== 'standby').sort((a, b) => SEVERITY_RANK[a.status] - SEVERITY_RANK[b.status]);
+      const ok = pools.length - odd.length;
+      return `<span class="pips">${odd.slice(0, maxPips - 2).map(pip).join('')}${odd.length > maxPips - 2 ? `<span class="faint mono" style="font-size:10.5px">+${odd.length - maxPips + 2}</span>` : ''}${glyph('operational')}<span class="mono dim" style="font-size:11px">${ok}</span></span>`;
+    }
+    return `<span class="pips">${pools.map((p) => `<span data-tip="${p.id}" data-act="pool" data-id="${p.id}" style="cursor:pointer">${glyph(p.status)}</span>`).join('')}</span>`;
+  }
+
+  function tooltip(p, world) {
+    const m = world.modelsById[p.model];
+    const chat = m.kind === 'chat';
+    const rows = [
+      ['Model', m.name], ['Region', `${regionName(world, p.region)} · ${p.cluster}`], ['Replicas', `${p.ready}/${p.desired} ready`],
+      ['Routing', p.eligible ? (p.standby ? 'Eligible · standby' : 'Eligible') : 'Excluded'], ['Traffic', `${fmtNum(p.traffic, 1)} req/s${p.failoverIn > 0.05 ? ` (${fmtNum(p.failoverIn, 1)} failover)` : ''}`],
+      ['Utilization', fmtPct(p.util, 0)], [chat ? 'TTFT p95' : 'Latency p95', p.traffic ? fmtMs(p.sloMetric) : '—'],
+    ];
+    return `<div class="tip-h">${glyph(p.status)}${esc(p.id)}</div><div class="tip-g">${rows.map(([k, v]) => `<span>${k}</span><b>${esc(v)}</b>`).join('')}</div>${p.issues.length ? `<div class="tip-i">${p.issues.map(esc).join('<br>')}</div>` : ''}`;
+  }
+
+  function compChips(inc, limit = 4) {
+    const chips = inc.proxy
+      ? [`<button class="comp-chip" data-act="goto-proxy">${glyph('degraded')}central-proxy</button>`]
+      : inc.affected.slice(0, limit).map((p) => `<button class="comp-chip" data-act="pool" data-id="${p.id}">${glyph(p.status)}${esc(p.id)}</button>`);
+    const more = !inc.proxy && inc.affected.length > limit ? `<button class="comp-chip" data-act="incident" data-id="${inc.id}">+${inc.affected.length - limit} more</button>` : '';
+    return chips.join('') + more;
+  }
+
+  function incidentCard(inc, state) {
+    const sel = state.selectedIncident === inc.id;
+    return `<div class="inc ${sel ? 'sel' : ''}" role="button" tabindex="0" data-act="incident" data-id="${inc.id}">
+      <div class="inc-top"><span class="sev sev-${inc.severity}">SEV${inc.severity}</span><span class="id">${inc.id}</span><span class="dur" title="Duration">${IX.fmtDur(inc.onsetMin)}</span></div>
+      <div class="inc-title">${esc(inc.title)}</div>
+      <div class="inc-rows">
+        <span class="k">Customers</span><span class="v tone-${inc.customer === 'none' ? 'ok' : inc.customer}">${esc(inc.impact)}</span>
+        <span class="k">Capacity</span><span class="v">${esc(inc.capacityImpact)}</span>
+        <span class="k">Status</span><span class="v tone-${inc.mitigationTone}">${esc(inc.mitigation)}</span>
+      </div>
+      <div class="inc-chips">${compChips(inc)}</div>
+    </div>`;
+  }
+
+  Object.assign(IX, { glyph, statusPill, GROUP_DIMS, METRICS, SORTS, matrix, legend, matchesFilters, filtersActive, sortPools, modelPips, tooltip, incidentCard, compChips, regionColor, regionName, UNHEALTHY, SEVERITY_RANK, metricNorm });
+})();
+
+</script>
+  <script>
+/* Overview: answers the seven five-second questions top-down —
+   verdict → where in the request path → key numbers → models → fleet. */
+(function () {
+  const IX = window.IX;
+  const { esc, fmtNum, fmtPct, fmtMs, fmtSuccess, sparkline, glyph } = IX;
+
+  const RANGE_MIN = { '15m': 15, '1h': 60, '6h': 360, '24h': 1440 };
+  const rangeMin = (state) => RANGE_MIN[state.range];
+
+  /** History for a platform metric, using the healthy (normal) world as the baseline. */
+  function platformSeries(world, state, key, pick, opts = {}) {
+    const base = IX.getWorld(world.size, 'normal').platform;
+    const ramp = world.scenario === 'saturation' ? 50 : 2;
+    return IX.series(`${world.scenario}:${world.size}:${key}:${state.range}`, {
+      current: pick(world.platform), baseline: pick(base), onsetMin: world.platform.onsetMin, rangeMin: rangeMin(state), rampMin: ramp, noise: 0.02, ...opts,
+    });
+  }
+
+  function verdict(world) {
+    const L = world.layers;
+    const v = L.verdict;
+    const icon = { ok: '✓', warn: '!', crit: '!' }[v.tone];
+    const layer = (n, label, l, act) => `<div class="layer" ${act ? `data-act="${act}" role="button" tabindex="0" style="cursor:pointer"` : ''}>
+      <span class="eyebrow"><span class="rank">${n}</span>${label}</span>
+      <span class="layer-v"><span class="dot ${l.tone}"></span>${esc(l.value)}</span>
+      <span class="layer-d" title="${esc(l.detail)}">${esc(l.detail)}</span></div>`;
+    return `<section class="verdict" aria-label="Platform status">
+      <div class="verdict-head ${v.tone}"><span class="verdict-icon ${v.tone}" aria-hidden="true">${icon}</span>
+        <div><h1>${esc(v.title)}</h1><p>${esc(v.sub)}</p></div></div>
+      ${layer(1, 'Customer impact', L.customer, 'goto-incidents')}
+      ${layer(2, 'Model availability', L.models, 'goto-models')}
+      ${layer(3, 'Capacity', L.capacity, 'goto-capacity')}
+      ${layer(4, 'Components', L.components, 'goto-pools')}
+    </section>`;
+  }
+
+  function requestPath(world) {
+    const P = world.platform;
+    const px = P.proxy;
+    const clientsTone = P.failed / P.demand >= 0.001 ? 'crit' : world.models.some((m) => m.latencyBreach) ? 'warn' : '';
+    const proxyTone = !px.healthy ? 'crit' : '';
+    const c = world.statusCounts;
+    const poolsBad = c.unavailable + c.degraded + c.unknown;
+    const poolsTone = world.models.some((m) => m.status === 'unavailable') || P.shed > 0.05 ? 'crit' : poolsBad ? 'warn' : '';
+    const backendFail = P.shed + P.backendErr;
+    const failTotal = P.failed || 1;
+    const arrow = `<div class="arrow" aria-hidden="true"><svg viewBox="0 0 22 12"><path d="M1 6h18M15 2l4 4-4 4" stroke="currentColor" fill="none" stroke-width="1.3"/></svg></div>`;
+    const kv = (k, v, cls = '') => `<div class="kv"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
+    const origin = P.failed / P.demand >= 0.001
+      ? `<div><div class="attrib" title="Failure origin"><span style="width:${(P.proxyFail / failTotal) * 100}%;background:var(--crit)"></span><span style="width:${(backendFail / failTotal) * 100}%;background:var(--warn)"></span></div>
+         <div class="faint" style="font-size:11px;margin-top:4px">Failure origin · <span class="tone-crit">proxy ${fmtPct(P.proxyFail / failTotal, 0)}</span> · <span class="tone-warn">backend ${fmtPct(backendFail / failTotal, 0)}</span></div></div>`
+      : `<div class="faint" style="font-size:11px">Background error rate only (${fmtPct(P.failed / P.demand, 2)}) · nothing to attribute</div>`;
+    return `<section class="path" aria-label="Request path">
+      <button class="hop ${clientsTone}" data-act="goto-incidents">
+        <div class="hop-h">${glyph(clientsTone === 'crit' ? 'unavailable' : clientsTone ? 'degraded' : 'operational')}<b>Clients</b><span class="grow"></span><span class="faint" style="font-size:11px">customer-observed</span></div>
+        <div class="hop-stats">${kv('Requests', `${fmtNum(P.demand, 0)}<small>/s</small>`)}${kv('Success', fmtSuccess(P.success), P.success < 0.999 ? 'tone-crit' : '')}${kv('Failing', `${fmtNum(P.failed, 1)}<small>/s</small>`, P.failed / P.demand >= 0.001 ? 'tone-crit' : '')}</div>
+        ${origin}
+      </button>${arrow}
+      <button class="hop ${proxyTone}" data-act="goto-proxy">
+        <div class="hop-h">${glyph(px.healthy ? 'operational' : 'unavailable')}<b>Central proxy</b><span class="grow"></span><span class="mono faint" style="font-size:11px">${px.ready}/${px.desired} replicas</span></div>
+        <div class="hop-stats">${kv('Overhead p99', `${px.p99.toFixed(1)}<small> ms</small>`, px.p99 > 12 ? 'tone-warn' : '')}${kv('Routing failures', `${fmtNum(px.routingFail + px.internalErr, 1)}<small>/s</small>`, px.failFrac > 0.001 ? 'tone-crit' : '')}${kv('Failover', fmtPct(px.failoverRate, 1), px.failoverRate > 0.01 ? 'tone-warn' : '')}</div>
+        <div class="faint" style="font-size:11px">Config ${px.inSync}/${px.ready} in sync · ${px.eligible}/${px.discovered} pools routing-eligible</div>
+      </button>${arrow}
+      <button class="hop ${poolsTone}" data-act="goto-pools">
+        <div class="hop-h">${glyph(poolsTone === 'crit' ? 'unavailable' : poolsTone ? 'degraded' : 'operational')}<b>Model pools</b><span class="grow"></span><span class="mono faint" style="font-size:11px">${world.pools.length} pools · ${world.regions.length} regions</span></div>
+        <div class="hop-stats">${kv('Healthy', `${world.pools.length - poolsBad - c.draining - c.standby}<small>/${world.pools.length - c.draining - c.standby}</small>`, poolsBad ? 'tone-warn' : '')}${kv('Failed over', `${fmtNum(P.failoverRps, 0)}<small>/s</small>`, P.failoverRps > 1 ? 'tone-warn' : '')}${kv('Shed (no capacity)', `${fmtNum(P.shed, 1)}<small>/s</small>`, P.shed > 0.05 ? 'tone-crit' : '')}</div>
+        <div class="faint" style="font-size:11px">${c.unavailable} unavailable · ${c.degraded} degraded · ${c.unknown} unknown · ${c.draining} draining · ${c.standby} standby</div>
+      </button>
+    </section>`;
+  }
+
+  function metricStrip(world, state) {
+    const P = world.platform;
+    const stat = (k, v, spark, right = '') => `<div class="stat"><span class="k"><span>${k}</span><span>${right}</span></span><span class="v">${v}</span>${spark}</div>`;
+    const succ = platformSeries(world, state, 'succ', (p) => p.success, { noise: 0.00005 });
+    const thr = platformSeries(world, state, 'thr', (p) => p.served);
+    const tok = platformSeries(world, state, 'tok', (p) => p.outTokS);
+    const ttft = platformSeries(world, state, 'ttft', (p) => p.ttftP95);
+    const fo = platformSeries(world, state, 'fo', (p) => p.failoverRps, { noise: 0.06 });
+    const burnTone = P.burnRate >= 14 ? 'crit' : P.burnRate >= 2 ? 'warn' : 'ok';
+    return `<section class="strip" aria-label="Key metrics">
+      ${stat('Success rate', fmtSuccess(P.success), sparkline(succ, { tone: P.success < 0.999 ? 'crit' : 'neutral' }), '<span class="faint">SLO 99.9%</span>')}
+      ${stat('Served', `${fmtNum(P.served, 0)}<small>req/s</small>`, sparkline(thr))}
+      ${stat('Output tokens', `${fmtNum(P.outTokS, 0)}<small>tok/s</small>`, sparkline(tok))}
+      ${stat('TTFT p95 · chat', fmtMs(P.ttftP95), sparkline(ttft, { tone: P.ttftP95 > IX.getWorld(world.size, 'normal').platform.ttftP95 * 1.15 ? 'warn' : 'neutral' }), '<span class="faint">client-observed</span>')}
+      ${stat('Error budget · 30d', `${fmtPct(P.budgetRemaining, 0)}<small>left</small>`, `<span class="mono tone-${burnTone}" style="font-size:11px;align-self:end">${P.burnRate.toFixed(1)}× burn</span>`)}
+      ${stat('Failover traffic', `${fmtNum(P.failoverRps, 0)}<small>req/s</small>`, sparkline(fo, { tone: P.failoverRps > 1 ? 'warn' : 'neutral' }), `<span class="faint">${fmtNum(P.crossRps, 0)} cross-region</span>`)}
+    </section>`;
+  }
+
+  function modelsCompact(world, state) {
+    const rows = world.models.map((m) => {
+      const ms = IX.MODEL_STATUS[m.status];
+      const lat = m.clientMetric != null ? fmtMs(m.clientMetric) : '—';
+      const attn = m.status === 'unavailable' || m.status === 'impaired' ? 'attn-crit' : m.status !== 'available' ? 'attn' : '';
+      return `<tr class="${attn}" data-act="model" data-id="${m.id}">
+        <td><div class="name">${esc(m.name)}</div><div class="tone-${ms.tone}" style="font-size:11px">${esc(ms.label)}</div></td>
+        <td>${IX.modelPips(m, world)}<div class="faint mono" style="font-size:10.5px;margin-top:2px">${m.healthyCount}/${m.pools.length} healthy · ${m.regionsServing.length}/${m.regionsConfigured.length} regions</div></td>
+        <td class="r num ${m.success < 0.999 ? 'tone-crit' : ''}">${fmtSuccess(m.success)}</td>
+        <td class="r num ${m.latencyBreach ? 'tone-warn' : ''}">${lat}<div class="faint" style="font-size:10px">SLO ${fmtMs(m.slo)}</div></td>
+        <td class="r">${IX.meter(1 - m.headroom, { warn: 0.8, crit: 0.92, w: 46 })} <span class="num" style="font-size:11.5px">${fmtPct(Math.max(0, m.headroom), 0)}</span></td>
+        <td class="r">${m.status === 'unavailable' ? '<span class="tone-crit">—</span>' : m.failoverOk ? '<span class="tone-ok" title="Survives losing its largest pool">✓ safe</span>' : '<span class="tone-warn" title="Losing the largest pool would overload the rest">✕ unsafe</span>'}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="panel">
+      <div class="panel-h"><h2>Model availability</h2><span class="sub">customer-facing · ${world.models.length} models</span><span class="grow"></span><button class="link" data-act="goto-models">All models →</button></div>
+      <table class="t"><thead><tr><th>Model</th><th>Pools</th><th class="r">Success</th><th class="r">p95 latency</th><th class="r">Headroom</th><th class="r">N−1</th></tr></thead><tbody>${rows}</tbody></table>
+    </section>`;
+  }
+
+  function fleetPanel(world, state) {
+    const ovState = { ...state, groupBy: state.ovGroup, sort: 'stable' };
+    const seg = ['region', 'model', 'cluster'].map((g) => `<button aria-pressed="${state.ovGroup === g}" data-act="ov-group" data-group="${g}">${g[0].toUpperCase() + g.slice(1)}</button>`).join('');
+    const metricSel = `<select class="sel" data-change="metric" aria-label="Cell metric">${IX.METRICS.map((m) => `<option value="${m.id}" ${state.metric === m.id ? 'selected' : ''}>${m.label}</option>`).join('')}</select>`;
+    return `<section class="panel">
+      <div class="panel-h"><h2>Fleet</h2><span class="sub">${world.pools.length} pools</span><span class="grow"></span><span class="seg">${seg}</span>${metricSel}<button class="link" data-act="goto-pools">Open →</button></div>
+      <div class="legend">${IX.legend(world, ovState)}</div>
+      ${IX.matrix(world, ovState, { groupBy: state.ovGroup, compact: world.pools.length > 60 })}
+    </section>`;
+  }
+
+  function render(world, state) {
+    return `${verdict(world)}${requestPath(world)}${metricStrip(world, state)}
+      <div class="cols">${modelsCompact(world, state)}${fleetPanel(world, state)}</div>
+      <div class="foot-note">All telemetry is simulated. Aggregates are summed from per-pool routing outcomes; customer impact comes from simulated request failures, not from component counts.</div>`;
+  }
+
+  IX.views = { ...(IX.views || {}), overview: render };
+  Object.assign(IX, { platformSeries, RANGE_MIN });
+})();
+
+</script>
+  <script>
+/* Model Pools: full fleet with grouping, filtering, sorting; matrix ⇄ virtualised table. */
+(function () {
+  const IX = window.IX;
+  const { esc, fmtNum, fmtPct, fmtMs, glyph } = IX;
+
+  const ROW_H = 31;
+  const OVERSCAN = 12;
+
+  function toolbar(world, state) {
+    const f = state.filters;
+    const opts = (items, cur) => items.map(([v, l]) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
+    return `<div class="toolbar">
+      <div class="search"><svg viewBox="0 0 12 12"><circle cx="5" cy="5" r="3.6"/><path d="M8 8l3 3"/></svg>
+        <input id="pool-search" type="search" placeholder="Search pool, model, cluster…" value="${esc(f.search)}" data-input="search" aria-label="Search pools" autocomplete="off"><kbd>/</kbd></div>
+      <select class="sel" data-change="filter-region" aria-label="Region filter">${opts([['', 'All regions'], ...world.regions.map((r) => [r.id, r.name])], f.region)}</select>
+      <select class="sel" data-change="filter-model" aria-label="Model filter">${opts([['', 'All models'], ...world.models.map((m) => [m.id, m.name])], f.model)}</select>
+      <label class="toggle"><input type="checkbox" data-change="unhealthy" ${f.unhealthyOnly ? 'checked' : ''}>Needs attention only</label>
+      <label class="toggle"><input type="checkbox" data-change="traffic" ${f.trafficOnly ? 'checked' : ''}>Receiving traffic</label>
+      ${IX.filtersActive(f) ? '<button class="link" data-act="reset-filters">Reset filters</button>' : ''}
+      <span style="flex:1"></span>
+      <span class="ctl"><label>Group</label><select class="sel" data-change="group">${opts(IX.GROUP_DIMS.map((d) => [d.id, d.label]), state.groupBy)}</select></span>
+      <span class="ctl"><label>Sort</label><select class="sel" data-change="sort">${opts(Object.entries(IX.SORTS).map(([k, v]) => [k, v.label]), state.sort)}</select></span>
+      <span class="ctl"><label>Color</label><select class="sel" data-change="metric">${opts(IX.METRICS.map((m) => [m.id, m.label]), state.metric)}</select></span>
+      <span class="seg" role="group" aria-label="View mode"><button data-act="mode" data-mode="matrix" aria-pressed="${state.fleetMode === 'matrix'}">Matrix</button><button data-act="mode" data-mode="table" aria-pressed="${state.fleetMode === 'table'}">Table</button></span>
+    </div>`;
+  }
+
+  function shares(world) {
+    return Object.fromEntries(world.models.map((m) => {
+      const W = IX.sum(m.pools, IX.weightOf) || 1;
+      return [m.id, Object.fromEntries(m.pools.map((p) => [p.id, { cfg: IX.weightOf(p) / W, act: m.served ? p.traffic / m.served : 0 }]))];
+    }));
+  }
+
+  function rowHtml(p, world, state, sh) {
+    const m = world.modelsById[p.model];
+    const s = sh[p.model][p.id];
+    const attn = p.status === 'unavailable' ? 'attn-crit' : IX.UNHEALTHY.includes(p.status) ? 'attn' : '';
+    const share = `${fmtPct(s.act, 0)} <span class="faint">/ ${fmtPct(s.cfg, 0)}</span>`;
+    const drift = Math.abs(s.act - s.cfg) > 0.08 ? 'tone-warn' : '';
+    return `<tr class="${attn} ${state.selection?.id === p.id ? 'sel' : ''}" data-act="pool" data-id="${p.id}" style="height:${ROW_H}px">
+      <td>${glyph(p.status)}</td><td class="mono name">${esc(p.id)}</td><td>${esc(m.name)}</td><td>${esc(IX.regionName(world, p.region))}</td>
+      <td class="mono dim">${esc(p.cluster)}</td><td class="dim">${esc(p.gpu)} · ${esc(p.engine)}</td>
+      <td class="r num ${p.ready < p.desired ? 'tone-warn' : ''}">${p.ready}/${p.desired}</td>
+      <td>${p.eligible ? (p.standby ? '<span class="tone-standby">standby</span>' : '<span class="dim">eligible</span>') : '<span class="tone-crit">excluded</span>'}</td>
+      <td class="r num">${fmtNum(p.traffic, 1)}</td><td class="r num ${drift}">${share}</td>
+      <td class="r">${IX.meter(p.util, { w: 40 })} <span class="num">${fmtPct(p.util, 0)}</span></td>
+      <td class="r num ${p.sloMetric > p.sloMs ? 'tone-warn' : ''}">${p.traffic ? fmtMs(p.sloMetric) : '—'}</td>
+      <td class="r num">${m.kind === 'chat' && p.traffic ? fmtMs(p.tpot) : '—'}</td>
+      <td class="r num ${p.queued > 50 ? 'tone-warn' : ''}">${fmtNum(p.queued, 0)}</td>
+      <td class="dim" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(p.issues[0] || '')}</td></tr>`;
+  }
+
+  const COLS = [['', 30], ['Pool', 130], ['Model', 140], ['Region', 120], ['Cluster', 110], ['GPU · engine', 160], ['Ready', 60, 'r'], ['Routing', 80], ['Req/s', 70, 'r'], ['Share act/cfg', 100, 'r'], ['Util', 100, 'r'], ['p95', 80, 'r'], ['TPOT', 64, 'r'], ['Queue', 60, 'r'], ['Issue', 260]];
+
+  function visibleRows(world, state) {
+    const pools = world.pools.filter((p) => IX.matchesFilters(p, state.filters, world));
+    return IX.sortPools(pools, state.sort === 'stable' ? 'severity' : state.sort, world);
+  }
+
+  function tableBody(rows, world, state, scrollTop, viewH) {
+    const sh = shares(world);
+    const start = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+    const end = Math.min(rows.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN);
+    const top = `<tr aria-hidden="true" style="height:${start * ROW_H}px"><td colspan="${COLS.length}" style="padding:0;border:0"></td></tr>`;
+    const bottom = `<tr aria-hidden="true" style="height:${(rows.length - end) * ROW_H}px"><td colspan="${COLS.length}" style="padding:0;border:0"></td></tr>`;
+    return top + rows.slice(start, end).map((p) => rowHtml(p, world, state, sh)).join('') + bottom;
+  }
+
+  function table(world, state) {
+    const rows = visibleRows(world, state);
+    const head = COLS.map(([l, , c]) => `<th class="${c || ''}">${l}</th>`).join('');
+    const cols = COLS.map(([, w]) => `<col style="width:${w}px">`).join('');
+    return `<div class="vt" data-vt><table class="t" style="table-layout:fixed;min-width:1600px"><colgroup>${cols}</colgroup><thead><tr>${head}</tr></thead>
+      <tbody data-vt-body>${tableBody(rows, world, state, 0, 900)}</tbody></table></div>
+      <div class="foot-note" style="padding:6px 12px">${rows.length} of ${world.pools.length} pools · virtualised rows (only visible rows are in the DOM)</div>`;
+  }
+
+  /** Re-render only the visible window while scrolling the table. */
+  function attach(world, state) {
+    const vt = document.querySelector('[data-vt]');
+    if (!vt) return;
+    const rows = visibleRows(world, state);
+    const body = vt.querySelector('[data-vt-body]');
+    let raf = 0;
+    vt.addEventListener('scroll', () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => { body.innerHTML = tableBody(rows, world, state, vt.scrollTop, vt.clientHeight); });
+    });
+  }
+
+  function render(world, state) {
+    const f = state.filters;
+    const matching = world.pools.filter((p) => IX.matchesFilters(p, f, world)).length;
+    const big = world.pools.length >= 250;
+    return `<div class="view-h"><h1>Model pools</h1><span class="sub">${world.pools.length} pools · ${world.models.length} models · ${world.regions.length} regions${IX.filtersActive(f) ? ` · ${matching} match` : ''}</span><span class="grow"></span>
+        ${state.fleetMode === 'matrix' ? `<button class="link" data-act="expand-all">Expand all</button><button class="link" data-act="collapse-all">Collapse all</button><label class="toggle"><input type="checkbox" data-change="collapse-healthy" ${state.collapseHealthy ? 'checked' : ''}>Collapse healthy groups</label>` : ''}</div>
+      <section class="panel">${toolbar(world, state)}
+        ${state.fleetMode === 'matrix'
+          ? `<div class="legend" style="padding-bottom:4px">${IX.legend(world, state)}</div>${IX.matrix(world, state)}<div class="foot-note" style="padding:4px 12px 10px">Cells keep fixed positions inside each group; filters dim non-matching pools rather than reflowing the grid. ${big ? 'Healthy groups collapse to a status bar at this fleet size.' : ''} Arrow keys move, Enter inspects.</div>`
+          : table(world, state)}
+      </section>`;
+  }
+
+  IX.views = { ...(IX.views || {}), pools: render };
+  IX.attachPools = attach;
+  IX.poolShares = shares;
+})();
+
+</script>
+  <script>
+/* Models: availability is a property of a model, not of a pool. Shows redundancy per
+   region and whether failover capacity is sufficient (N−1). */
+(function () {
+  const IX = window.IX;
+  const { esc, fmtNum, fmtPct, fmtMs, fmtSuccess, glyph } = IX;
+
+  function failoverAnalysis(m) {
+    const elig = m.pools.filter((p) => p.eligible);
+    if (!elig.length) return `<b class="tone-crit">No eligible pool.</b> All ${fmtNum(m.demand, 1)} req/s of demand fail with “no eligible backend”.`;
+    const largest = [...elig].sort((a, b) => b.capacity - a.capacity)[0];
+    const remaining = m.capacity - largest.capacity * IX.MAX_UTIL;
+    const gap = m.served - remaining;
+    return gap > 0
+      ? `If <span class="mono">${esc(largest.id)}</span> (largest eligible pool) fails, remaining capacity is <b>${fmtNum(remaining, 1)} req/s</b> against <b>${fmtNum(m.served, 1)} req/s</b> demand — a <b class="tone-warn">${fmtNum(gap, 1)} req/s shortfall</b> would be shed.`
+      : `If <span class="mono">${esc(largest.id)}</span> (largest eligible pool) fails, the remaining <b>${fmtNum(remaining, 1)} req/s</b> of capacity covers the <b>${fmtNum(m.served, 1)} req/s</b> demand with ${fmtPct(1 - m.served / remaining, 0)} to spare.`;
+  }
+
+  function detail(m, world) {
+    const sh = IX.poolShares(world)[m.id];
+    const rows = [...m.pools].sort((a, b) => a.idx - b.idx).map((p) => `<tr data-act="pool" data-id="${p.id}" class="${p.status === 'unavailable' ? 'attn-crit' : IX.UNHEALTHY.includes(p.status) ? 'attn' : ''}">
+      <td>${glyph(p.status)}</td><td class="mono name">${esc(p.id)}</td><td>${esc(IX.regionName(world, p.region))}</td><td class="dim">${esc(p.gpu)}</td>
+      <td class="r num">${p.ready}/${p.desired}</td><td class="r num">${fmtNum(p.traffic, 1)}</td><td class="r num">${fmtPct(sh[p.id].act, 0)} <span class="faint">/ ${fmtPct(sh[p.id].cfg, 0)}</span></td>
+      <td class="r num ${p.failoverIn > 0.05 ? 'tone-warn' : 'faint'}">${fmtNum(p.failoverIn, 1)}</td><td class="r">${IX.meter(p.util, { w: 46 })} <span class="num">${fmtPct(p.util, 0)}</span></td>
+      <td class="dim">${esc(p.issues[0] || '')}</td></tr>`).join('');
+    return `<div class="model-detail"><div class="callout" style="margin:8px 0 10px">${failoverAnalysis(m)}${m.crossRps > 0.5 ? ` <span class="dim">${fmtNum(m.crossRps, 1)} req/s currently served cross-region (+${world.rttMs} ms).</span>` : ''}</div>
+      <table class="t"><thead><tr><th></th><th>Pool</th><th>Region</th><th>GPU</th><th class="r">Ready</th><th class="r">Req/s</th><th class="r">Share act/cfg</th><th class="r">Failover in</th><th class="r">Util</th><th>Issue</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function render(world, state) {
+    const regions = world.regions;
+    const cols = `220px 200px repeat(${regions.length}, minmax(64px, 1fr)) 150px 110px 100px`;
+    const head = `<div class="model-row head" style="grid-template-columns:${cols}"><span>Model</span><span>Availability</span>${regions.map((r) => `<span>${esc(r.name)}</span>`).join('')}<span>Capacity · headroom</span><span style="text-align:right">p95 vs SLO</span><span style="text-align:right">Success</span></div>`;
+    const rows = world.models.map((m) => {
+      const ms = IX.MODEL_STATUS[m.status];
+      const open = state.selectedModel === m.id;
+      return `<div class="model-card"><div class="model-row" style="grid-template-columns:${cols}" data-act="model" data-id="${m.id}" aria-expanded="${open}">
+        <span><span class="caret faint" style="display:inline-block;width:12px;transform:rotate(${open ? 0 : -90}deg)">▼</span><b>${esc(m.name)}</b><div class="faint mono" style="font-size:10.5px;padding-left:12px">${m.kind} · ${m.pools.length} pools · ${m.eligibleCount} eligible</div></span>
+        <span><span class="tone-${ms.tone}">${esc(ms.label)}</span><div class="faint" style="font-size:11px">${m.healthyCount}/${m.pools.length} healthy · ${m.regionsServing.length}/${m.regionsConfigured.length} regions serving${m.draining ? ` · ${m.draining} draining` : ''}</div></span>
+        ${regions.map((r) => `<span>${IX.modelPips(m, world, r.id, 8)}</span>`).join('')}
+        <span>${IX.meter(1 - Math.max(0, m.headroom), { warn: 0.8, crit: 0.92, w: 60 })} <span class="num">${fmtPct(Math.max(0, m.headroom), 0)}</span><div class="faint mono" style="font-size:10.5px">${fmtNum(m.served, 0)} / ${fmtNum(m.capacity, 0)} req/s · N−1 ${m.failoverOk ? '<span class="tone-ok">safe</span>' : '<span class="tone-warn">unsafe</span>'}</div></span>
+        <span class="num" style="text-align:right"><span class="${m.latencyBreach ? 'tone-warn' : ''}">${m.clientMetric != null ? fmtMs(m.clientMetric) : '—'}</span><div class="faint" style="font-size:10.5px">${fmtMs(m.slo)}</div></span>
+        <span class="num ${m.success < 0.999 ? 'tone-crit' : ''}" style="text-align:right">${fmtSuccess(m.success)}<div class="faint" style="font-size:10.5px">${fmtNum(m.failed, 1)} failing/s</div></span>
+      </div>${open ? detail(m, world) : ''}</div>`;
+    }).join('');
+    return `<div class="view-h"><h1>Models</h1><span class="sub">A model stays available while any eligible pool can serve it. Redundancy and N−1 show how close it is to not being available.</span></div>
+      <section class="panel">${head}${rows}</section>
+      <div class="foot-note">Region columns show each pool serving the model in that region. Click a model for its failover analysis and per-pool routing.</div>`;
+  }
+
+  IX.views = { ...(IX.views || {}), models: render };
+})();
+
+</script>
+  <script>
+/* Routing: what the proxy is actually doing — configured vs actual distribution,
+   cross-region flows, exclusions and routing anomalies. */
+(function () {
+  const IX = window.IX;
+  const { esc, fmtNum, fmtPct, glyph } = IX;
+
+  const MAX_SEGMENTS = 14; // beyond this, per-pool segments become unreadable → aggregate by region
+
+  function distribution(world, state) {
+    const byRegion = state.routingSeg === 'region' || world.models.some((m) => m.pools.length > MAX_SEGMENTS) && state.routingSeg !== 'pool';
+    const rows = world.models.map((m) => {
+      const W = IX.sum(m.pools, IX.weightOf) || 1;
+      const served = m.served || 1;
+      const units = byRegion
+        ? world.regions.map((r) => {
+          const ps = m.pools.filter((p) => p.region === r.id);
+          return { id: r.id, label: r.name, color: IX.regionColor(world, r.id), cfg: IX.sum(ps, IX.weightOf) / W, act: IX.sum(ps, (p) => p.traffic) / served, bad: ps.some((p) => !p.eligible), dead: ps.length > 0 && ps.every((p) => !p.eligible) };
+        }).filter((u) => u.cfg > 0 || u.act > 0)
+        : [...m.pools].sort((a, b) => a.idx - b.idx).map((p) => ({ id: p.id, label: p.id, color: IX.regionColor(world, p.region), cfg: IX.weightOf(p) / W, act: p.traffic / served, bad: !p.eligible, dead: !p.eligible, pool: true }));
+      const seg = (u, key) => (u[key] > 0 ? `<span class="${u.dead && key === 'cfg' ? 'hatch bad' : ''}" style="width:${u[key] * 100}%;background:${u.color}" title="${esc(u.label)}: ${key === 'cfg' ? 'configured' : 'actual'} ${fmtPct(u[key], 1)}" ${u.pool ? `data-act="pool" data-id="${u.id}"` : ''}></span>` : '');
+      const drift = IX.sum(units, (u) => Math.abs(u.act - u.cfg)) / 2;
+      return `<div class="dist"><span class="dist-name">${glyph(m.status === 'unavailable' ? 'unavailable' : m.unhealthy.length ? 'degraded' : 'operational')}${esc(m.name)}</span>
+        <div class="dist-bars"><div class="dist-bar cfg">${units.map((u) => seg(u, 'cfg')).join('')}</div><div class="dist-bar">${m.served ? units.map((u) => seg(u, 'act')).join('') : '<span style="width:100%;background:var(--crit-dim)"></span>'}</div></div>
+        <span class="dist-meta">${m.served ? `${fmtNum(m.served, 0)}/s · <span class="${drift > 0.08 ? 'tone-warn' : ''}">${fmtPct(drift, 0)} moved</span>` : '<span class="tone-crit">no traffic served</span>'}</span></div>`;
+    }).join('');
+    const key = world.regions.map((r) => `<span><i style="background:${IX.regionColor(world, r.id)}"></i>${esc(r.name)}</span>`).join('');
+    const seg = ['pool', 'region'].map((s) => `<button data-act="routing-seg" data-seg="${s}" aria-pressed="${(s === 'region') === byRegion}">${s === 'pool' ? 'Per pool' : 'Per region'}</button>`).join('');
+    return `<section class="panel"><div class="panel-h"><h2>Traffic distribution by model</h2><span class="sub">thin bar = configured weight · thick bar = actual share · hatched = excluded</span><span class="grow"></span><span class="seg">${seg}</span></div>
+      <div style="padding:8px 12px 0"><span class="reg-key">${key}</span></div>${rows}</section>`;
+  }
+
+  function flowMatrix(world) {
+    const regions = world.regions;
+    const flow = (from, to) => IX.sum([...world.flows.entries()].filter(([k]) => { const [, f, t] = k.split('|'); return f === from && t === to; }), ([, v]) => v);
+    const max = Math.max(1, ...regions.flatMap((a) => regions.map((b) => (a.id === b.id ? 0 : flow(a.id, b.id)))));
+    const dead = (rid) => world.pools.filter((p) => p.region === rid).every((p) => !p.eligible);
+    const rows = regions.map((a) => `<tr><th>${esc(a.name)}</th>${regions.map((b) => {
+      const v = flow(a.id, b.id);
+      const diag = a.id === b.id;
+      if (diag && dead(b.id)) return `<td class="dead diag" title="Region unavailable">✕ 0</td>`;
+      const style = !diag && v > 0.05 ? `style="background:color-mix(in srgb, var(--warn) ${Math.round(12 + (v / max) * 55)}%, var(--bg-2))"` : '';
+      return `<td class="${diag ? 'diag' : v > 0.05 ? 'cross' : ''}" ${style} title="${esc(a.name)} clients → ${esc(b.name)} pools">${v > 0.05 ? fmtNum(v, v < 10 ? 1 : 0) : '·'}</td>`;
+    }).join('')}</tr>`).join('');
+    return `<section class="panel"><div class="panel-h"><h2>Client region → serving region</h2><span class="sub">req/s · off-diagonal = cross-region (+${world.rttMs} ms)</span></div>
+      <div class="panel-b" style="overflow:auto"><table class="flowm"><thead><tr><th></th>${regions.map((r) => `<th class="col">${esc(r.name)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></section>`;
+  }
+
+  function anomalies(world) {
+    const items = [];
+    world.pools.filter((p) => !p.eligible).forEach((p) => items.push({ p, tone: p.status === 'draining' ? 'info' : 'crit', kind: p.status === 'draining' ? 'Excluded · draining' : 'Excluded · not ready', why: p.cause || p.issues[0] || '' }));
+    world.pools.filter((p) => p.eligible && p.util >= 0.9).forEach((p) => items.push({ p, tone: 'warn', kind: 'Saturated, still receiving traffic', why: `${fmtPct(p.util, 0)} util · ${fmtNum(p.traffic, 1)} req/s · queue ${fmtNum(p.queued, 0)}` }));
+    const sh = IX.poolShares(world);
+    world.pools.filter((p) => p.eligible && !p.standby && p.status !== 'unavailable' && sh[p.model][p.id].cfg > 0.02 && sh[p.model][p.id].act < sh[p.model][p.id].cfg * 0.4).forEach((p) => items.push({ p, tone: 'warn', kind: 'Healthy but under-receiving', why: `actual ${fmtPct(sh[p.model][p.id].act, 0)} vs configured ${fmtPct(sh[p.model][p.id].cfg, 0)}` }));
+    world.pools.filter((p) => p.standby && p.traffic > 0.05).forEach((p) => items.push({ p, tone: 'info', kind: 'Standby absorbing failover', why: `${fmtNum(p.traffic, 1)} req/s` }));
+    const list = items.slice(0, 60).map((a) => `<div class="anom" data-act="pool" data-id="${a.p.id}" style="cursor:pointer">${glyph(a.p.status)}<span><span class="mono">${esc(a.p.id)}</span> <span class="tone-${a.tone}">${esc(a.kind)}</span><div class="why" style="font-size:11.5px">${esc(a.why)}</div></span><span class="faint mono" style="font-size:11px">${esc(IX.regionName(world, a.p.region))}</span></div>`).join('');
+    return `<section class="panel"><div class="panel-h"><h2>Routing exceptions</h2><span class="sub">${items.length} pools</span></div>${list || '<div class="calm"><b>No routing exceptions.</b> Every eligible pool receives its configured share.</div>'}</section>`;
+  }
+
+  function tiles(world) {
+    const P = world.platform;
+    const px = P.proxy;
+    const excl = world.pools.filter((p) => !p.eligible).length;
+    const stat = (k, v, sub = '') => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="faint" style="font-size:11px;grid-column:1/-1">${sub}</span></div>`;
+    return `<section class="tiles">
+      ${stat('Routing-eligible', `${px.eligible}<small>/${px.discovered}</small>`, `${excl} excluded`)}
+      ${stat('Routed', `${fmtNum(P.served, 0)}<small>req/s</small>`, `${fmtNum(P.demand, 0)} req/s incoming`)}
+      ${stat('Failover', `${fmtNum(P.failoverRps, 0)}<small>req/s</small>`, fmtPct(px.failoverRate, 1) + ' of traffic')}
+      ${stat('Cross-region', `${fmtNum(P.crossRps, 0)}<small>req/s</small>`, `+${world.rttMs} ms RTT`)}
+      ${stat('Retries', fmtPct(px.retryRate, 2), 'of requests')}
+      ${stat('Unroutable', `${fmtNum(P.shed + px.routingFail, 1)}<small>req/s</small>`, `${fmtNum(P.shed, 1)} no capacity · ${fmtNum(px.routingFail, 1)} stale routes`)}
+    </section>`;
+  }
+
+  function render(world, state) {
+    return `<div class="view-h"><h1>Routing</h1><span class="sub">How the central proxy distributes traffic right now. Local region first, then cross-region failover, then standby.</span></div>
+      ${tiles(world)}${distribution(world, state)}<div class="split">${flowMatrix(world)}${anomalies(world)}</div>`;
+  }
+
+  IX.views = { ...(IX.views || {}), routing: render };
+})();
+
+</script>
+  <script>
+/* Central proxy: the shared routing layer. Makes "is it the proxy or the backends?"
+   answerable by splitting failures by origin. */
+(function () {
+  const IX = window.IX;
+  const { esc, fmtNum, fmtPct, glyph } = IX;
+
+  function render(world, state) {
+    const P = world.platform;
+    const px = P.proxy;
+    const range = IX.RANGE_MIN[state.range];
+    const ser = (key, cur, base, o = {}) => IX.series(`${world.scenario}:${world.size}:px:${key}:${state.range}`, { current: cur, baseline: base, onsetMin: px.onsetMin ?? P.onsetMin, rangeMin: range, noise: 0.05, ...o });
+    const onsetFrac = (px.onsetMin ?? P.onsetMin) != null && (px.onsetMin ?? P.onsetMin) < range ? 1 - (px.onsetMin ?? P.onsetMin) / range : null;
+    const stat = (k, v, sub, tone = '') => `<div class="stat"><span class="k">${k}</span><span class="v ${tone}">${v}</span><span class="faint" style="font-size:11px;grid-column:1/-1">${sub}</span></div>`;
+    const backendFail = P.shed + P.backendErr;
+    const tiles = `<section class="tiles">
+      ${stat('Replicas', `${px.ready}<small>/${px.desired}</small>`, px.ready < px.desired ? `${px.desired - px.ready} down` : 'all ready', px.ready < px.desired ? 'tone-crit' : '')}
+      ${stat('Incoming', `${fmtNum(px.rps, 0)}<small>req/s</small>`, `${fmtNum(px.conns, 0)} active connections`)}
+      ${stat('Proxy overhead', `${px.p50.toFixed(1)}<small> / ${px.p99.toFixed(1)} ms</small>`, 'p50 / p99 added latency', px.p99 > 12 ? 'tone-warn' : '')}
+      ${stat('Proxy-origin failures', `${fmtNum(px.routingFail + px.internalErr, 1)}<small>/s</small>`, `${fmtNum(px.routingFail, 1)} routing · ${fmtNum(px.internalErr, 1)} internal`, px.failFrac > 0.001 ? 'tone-crit' : '')}
+      ${stat('Upstream conn errors', `${fmtNum(px.upstreamErr, 1)}<small>/s</small>`, 'to model pools')}
+      ${stat('Retry · failover', `${fmtPct(px.retryRate, 2)}<small> · ${fmtPct(px.failoverRate, 1)}</small>`, 'of requests')}
+    </section>`;
+
+    const errChart = IX.lineChart([
+      { values: ser('perr', px.routingFail + px.internalErr, 0, { noise: 0.08 }), tone: 'crit' },
+      { values: ser('berr', backendFail, IX.getWorld(world.size, 'normal').platform.backendErr, { noise: 0.08 }), tone: 'warn' },
+    ], { w: 560, h: 150, fmt: (v) => fmtNum(v, v < 10 ? 1 : 0), onsetFrac, rangeLabel: state.range });
+    const latChart = IX.lineChart([{ values: ser('p99', px.p99, 5.4), tone: px.p99 > 12 ? 'warn' : 'neutral' }, { values: ser('p50', px.p50, 1.5), tone: 'neutral', dashed: true }], { w: 560, h: 150, fmt: (v) => v.toFixed(1) + 'ms', onsetFrac, rangeLabel: state.range, lo: 0 });
+
+    const origin = `<div class="callout ${px.healthy ? '' : 'crit'}" style="margin:10px 12px">${px.healthy
+      ? `Proxy healthy. ${P.failed > 0.05 && backendFail > 0.05 ? `All ${fmtNum(backendFail, 1)} req/s of current failures originate in model pools, not in the proxy.` : 'No proxy-origin failures.'}`
+      : `<b>Failures originate in the proxy.</b> ${esc(px.cause || '')} Model pools report healthy; backend-origin failures are ${fmtNum(backendFail, 1)} req/s.`}</div>`;
+
+    const rows = px.instances.map((x) => {
+      const status = x.status === 'down' ? 'unavailable' : x.status === 'degraded' ? 'degraded' : 'operational';
+      return `<tr class="${x.status === 'down' ? 'attn-crit' : x.status === 'degraded' ? 'attn' : ''} ${state.selection?.id === x.id ? 'sel' : ''}" data-act="proxy-inst" data-id="${x.id}">
+        <td>${glyph(status)}</td><td class="mono name">${esc(x.id)}</td><td class="dim">${x.zone}</td>
+        <td class="r num">${x.status === 'down' ? '—' : fmtNum(x.rps, 0)}</td><td class="r num">${x.status === 'down' ? '—' : fmtNum(x.conns, 0)}</td>
+        <td class="r num">${x.p50 ? x.p50.toFixed(1) : '—'}</td><td class="r num ${x.p99 > 12 ? 'tone-warn' : ''}">${x.p99 ? x.p99.toFixed(1) : '—'}</td>
+        <td class="r num ${x.errRate > 0.001 ? 'tone-crit' : ''}">${x.errRate == null ? '—' : fmtPct(x.errRate, 2)}</td>
+        <td class="mono ${x.config !== 'rc-1412' ? 'tone-warn' : 'dim'}">${x.config}</td><td class="r">${IX.meter(x.cpu, { w: 40 })}</td><td class="r">${IX.meter(x.mem, { w: 40, warn: 0.8 })}</td>
+        <td class="r num ${x.restarts ? 'tone-crit' : 'faint'}">${x.restarts}</td><td class="dim">${esc(x.reason || '')}</td></tr>`;
+    }).join('');
+
+    const sync = `<section class="panel"><div class="panel-h"><h2>Routing configuration</h2></div><div class="panel-b"><div class="grid-kv two">
+      <div class="kv"><span class="k">Desired config</span><span class="v">rc-1412</span></div>
+      <div class="kv"><span class="k">In sync</span><span class="v ${px.inSync < px.ready ? 'tone-warn' : ''}">${px.inSync}/${px.ready} live replicas</span></div>
+      <div class="kv"><span class="k">Discovered pools</span><span class="v">${px.discovered}</span></div>
+      <div class="kv"><span class="k">Routing-eligible</span><span class="v">${px.eligible}</span></div>
+      <div class="kv"><span class="k">Excluded</span><span class="v">${px.discovered - px.eligible}</span></div>
+      <div class="kv"><span class="k">Last sync</span><span class="v">${px.staleConfig ? '<span class="tone-warn">drift 6m</span>' : '12s ago'}</span></div></div></div></section>`;
+
+    return `<div class="view-h"><h1>Central proxy</h1><span class="sub">Shared routing layer · deployment <span class="mono">inference-proxy</span> · us-east-1</span></div>
+      ${tiles}
+      <div class="split"><section class="panel"><div class="panel-h"><h2>Failures by origin</h2><span class="sub"><span class="tone-crit">━ proxy</span> · <span class="tone-warn">━ backend</span> · req/s</span></div>${origin}<div class="panel-b">${errChart}</div></section>
+        <section class="panel"><div class="panel-h"><h2>Proxy overhead latency</h2><span class="sub">━ p99 · ┅ p50</span></div><div class="panel-b">${latChart}</div>${sync}</section></div>
+      <section class="panel"><div class="panel-h"><h2>Instances</h2><span class="sub">${px.desired} replicas · click to inspect</span></div>
+        <table class="t"><thead><tr><th></th><th>Instance</th><th>Zone</th><th class="r">Req/s</th><th class="r">Conns</th><th class="r">p50 ms</th><th class="r">p99 ms</th><th class="r">Errors</th><th>Config</th><th class="r">CPU</th><th class="r">Mem</th><th class="r">Restarts</th><th>Note</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+  }
+
+  IX.views = { ...(IX.views || {}), proxy: render };
+})();
+
+</script>
+  <script>
+/* Incidents: impact-ordered list + response view. The rail renders the same cards. */
+(function () {
+  const IX = window.IX;
+  const { esc, fmtNum, fmtPct, glyph } = IX;
+
+  function intentionalOps(world) {
+    const standby = world.pools.filter((p) => p.status === 'standby');
+    const ops = [...world.pools.filter((p) => p.status === 'draining'), ...(standby.length <= 3 ? standby : [])];
+    if (!ops.length && !standby.length) return '';
+    const shown = ops.slice(0, 8);
+    const standbyRow = standby.length > 3 ? `<div class="ops-row">${glyph('standby')}<span class="grow">${standby.length} standby pools · healthy failover targets, zero configured weight</span></div>` : '';
+    return `<div class="ops"><div class="eyebrow" style="margin-bottom:6px">Intentional · not incidents</div>
+      ${shown.map((p) => `<div class="ops-row" data-act="pool" data-id="${p.id}" style="cursor:pointer">${glyph(p.status)}<span class="mono">${esc(p.id)}</span><span class="grow">${p.status === 'draining' ? esc(p.cause || 'Draining') : 'Standby · failover target'}</span></div>`).join('')}
+      ${ops.length > shown.length ? `<div class="faint" style="font-size:11px">+${ops.length - shown.length} more</div>` : ''}${standbyRow}</div>`;
+  }
+
+  function rail(world, state) {
+    const incs = world.incidents;
+    const stale = world.stale.length;
+    const head = `<div class="rail-h"><h2>Active incidents</h2><span class="pill ${incs.some((i) => i.severity <= 1) ? 'crit' : incs.length ? 'warn' : 'ok'}">${incs.length}</span><span class="grow"></span><button class="link" data-act="goto-incidents">Respond →</button></div>
+      <div class="faint" style="padding:0 14px 8px;font-size:11px">Ordered by customer impact, then capacity impact</div>`;
+    const body = incs.length ? incs.map((i) => IX.incidentCard(i, state)).join('') : `<div class="calm"><b>No active incidents.</b><br>${world.pools.length} pools and the central proxy are within thresholds.</div>`;
+    const fresh = `<div class="ops"><div class="eyebrow" style="margin-bottom:6px">Telemetry</div><div class="ops-row"><span class="dot ${stale ? 'warn' : 'ok'}"></span><span class="grow">${world.pools.length - stale}/${world.pools.length} pools reporting${stale ? ` · ${stale} stale` : ''}</span></div><div class="ops-row"><span class="dot ok"></span><span class="grow">Proxy metrics live · simulated feed</span></div></div>`;
+    return head + body + intentionalOps(world) + fresh;
+  }
+
+  function timeline(inc) {
+    const o = inc.onsetMin;
+    const steps = [[o, 'First symptom', inc.alerts[0]], [o - 0.5, 'Alert grouped', `${inc.alerts.length} signals correlated into ${inc.id}`]];
+    if (inc.mitigationTone === 'ok') steps.push([o - 0.7, 'Auto-mitigation', 'Proxy ejected unhealthy backends; failover engaged']);
+    if (inc.proxy) steps.push([o - 1.5, 'Escalation', 'Paged on-call (proxy SLO burn 30×)']);
+    steps.push([Math.max(0.3, o * 0.4), 'Current', inc.mitigation]);
+    return `<ul class="timeline">${steps.map(([t, k, d]) => `<li><span class="t">−${t < 1 ? '<1' : Math.round(t)}m</span><span class="dot ${k === 'Current' ? 'info' : 'muted'}" style="margin-top:5px"></span><span class="d"><b style="color:var(--text);font-weight:500">${k}</b> · ${esc(d)}</span></li>`).join('')}</ul>`;
+  }
+
+  function detail(inc, world, state) {
+    if (!inc) return `<section class="panel"><div class="calm"><b>No active incidents.</b> Select a scenario in the top bar to simulate one.</div></section>`;
+    const range = IX.RANGE_MIN[state.range];
+    const onsetFrac = inc.onsetMin < range ? 1 - inc.onsetMin / range : null;
+    const pickers = { success: (p) => p.success };
+    const succ = IX.platformSeries(world, state, 'succ', pickers.success, { noise: 0.00005 });
+    const primary = inc.primaryPools[0] || inc.relatedPools[0];
+    const chartTitle = inc.proxy || inc.modelOutage || inc.failed > 0.05 ? 'Platform success rate' : primary ? `${primary.id} · ${inc.saturation ? 'utilisation' : 'traffic'}` : 'Platform success rate';
+    const chart = inc.proxy || inc.modelOutage || inc.failed > 0.05 || !primary
+      ? IX.lineChart([{ values: succ, tone: 'crit' }], { w: 1000, h: 200, fmt: (v) => (v * 100).toFixed(2) + '%', threshold: 0.999, onsetFrac, rangeLabel: state.range, hi: 1 })
+      : IX.lineChart(inc.affected.slice(0, 6).map((p, i) => ({ values: IX.series(`${world.scenario}:${p.id}:inc:${state.range}`, { current: inc.saturation ? p.util : p.traffic, baseline: inc.saturation ? IX.getWorld(world.size, 'normal').poolsById[p.id].util : IX.getWorld(world.size, 'normal').poolsById[p.id].traffic, onsetMin: inc.onsetMin, rangeMin: range, rampMin: inc.saturation ? 50 : 2, noise: 0.04 }), tone: i === 0 ? (p.status === 'unavailable' ? 'crit' : 'warn') : 'neutral' })), { w: 1000, h: 200, fmt: (v) => (inc.saturation ? fmtPct(v, 0) : fmtNum(v, 0)), onsetFrac, rangeLabel: state.range, threshold: inc.saturation ? 0.9 : null });
+    const chips = IX.compChips(inc, 40);
+    return `<section class="panel"><div class="panel-h"><span class="sev sev-${inc.severity}">SEV${inc.severity}</span><h2 style="font-size:14px">${esc(inc.title)}</h2><span class="grow"></span><span class="mono faint">${inc.id} · open ${IX.fmtDur(inc.onsetMin)}</span></div>
+      <div class="panel-b"><div class="facts">
+        <span class="k">Customer impact</span><span class="tone-${inc.customer === 'none' ? 'ok' : inc.customer}">${esc(inc.impact)}</span>
+        <span class="k">Capacity impact</span><span>${esc(inc.capacityImpact)}</span>
+        <span class="k">Mitigation</span><span class="tone-${inc.mitigationTone}">${esc(inc.mitigation)}</span>
+        <span class="k">Probable cause</span><span>${esc(inc.cause)}</span>
+        <span class="k">Models</span><span>${inc.proxy ? 'All models (shared routing layer)' : inc.models.map((m) => `<button class="link" data-act="goto-model" data-id="${m.id}">${esc(m.name)}</button> <span class="faint">${esc(IX.MODEL_STATUS[m.status].label)}</span>`).join(' · ')}</span>
+        <span class="k">Regions</span><span>${inc.proxy ? 'us-east-1 (proxy)' : inc.regions.map((r) => esc(IX.regionName(world, r))).join(', ')}</span>
+        <span class="k">Components</span><span class="inc-chips" style="margin:0">${chips}</span>
+        <span class="k">Grouped signals</span><span class="alerts">${inc.alerts.map((a) => `<span class="alert-tag">${esc(a)}</span>`).join('')}</span>
+      </div></div>
+      <div class="panel-h" style="border-top:1px solid var(--line)"><h2>${esc(chartTitle)}</h2><span class="sub">last ${state.range} · dashed line = incident start</span></div><div class="panel-b">${chart}</div>
+      <div class="panel-h" style="border-top:1px solid var(--line)"><h2>Timeline</h2></div><div class="panel-b">${timeline(inc)}</div></section>`;
+  }
+
+  function render(world, state) {
+    const sel = world.incidents.find((i) => i.id === state.selectedIncident) || world.incidents[0];
+    const list = world.incidents.length ? world.incidents.map((i) => IX.incidentCard(i, { ...state, selectedIncident: sel && sel.id })).join('') : '<div class="calm"><b>No active incidents.</b></div>';
+    return `<div class="view-h"><h1>Incident response</h1><span class="sub">Related alerts are grouped into one incident per cause. Draining and standby pools are tracked separately.</span></div>
+      <div class="inc-layout"><section class="panel inc-list">${list}${intentionalOps(world)}</section>${detail(sel, world, state)}</div>`;
+  }
+
+  IX.views = { ...(IX.views || {}), incidents: render };
+  IX.renderRail = rail;
+})();
+
+</script>
+  <script>
+/* Right-hand inspector drawer. Opens over the incident rail so the fleet stays visible. */
+(function () {
+  const IX = window.IX;
+  const { esc, fmtNum, fmtPct, fmtMs, fmtAge, sparkline, glyph, meter } = IX;
+
+  function poolSeries(world, state, p, key, pick, opts = {}) {
+    const base = IX.getWorld(world.size, 'normal').poolsById[p.id];
+    return IX.series(`${world.scenario}:${p.id}:${key}:${state.range}`, {
+      current: pick(p), baseline: base ? pick(base) : pick(p), onsetMin: p.onsetMin ?? world.platform.onsetMin, rangeMin: IX.RANGE_MIN[state.range],
+      rampMin: world.scenario === 'saturation' ? 50 : 2, noise: 0.04, ...opts,
+    });
+  }
+
+  function statusExplain(p, world) {
+    const m = world.modelsById[p.model];
+    const siblings = m.pools.filter((x) => x.id !== p.id && x.traffic > 0);
+    switch (p.status) {
+      case 'unavailable':
+        return { tone: 'crit', text: `Cannot serve requests: no ready replicas. The proxy has ejected the pool; ${m.status === 'unavailable' ? `<b>no other pool can serve ${esc(m.name)}</b>, so its requests fail.` : `its traffic is being served by ${siblings.length} sibling pool${siblings.length === 1 ? '' : 's'} (${fmtNum(IX.sum(siblings, (x) => x.failoverIn), 1)} req/s failover).`}` };
+      case 'degraded':
+        return { tone: 'warn', text: 'Still serving traffic with reduced capacity or performance.' };
+      case 'draining':
+        return { tone: 'info', text: 'Intentionally not accepting new requests; in-flight requests are completing. Not an incident.' };
+      case 'unknown':
+        return { tone: 'warn', text: `Engine telemetry is stale (${fmtAge(p.telemetryAge)}). The proxy's active health checks still pass, so the pool remains routable. Engine metrics below are <b>last known values</b>; traffic and routing numbers are proxy-observed and current.` };
+      case 'standby':
+        return { tone: 'info', text: 'Healthy and routing-eligible with zero configured weight. Receives traffic only when the proxy fails over.' };
+      default:
+        return p.failoverIn > 0.05
+          ? { tone: 'info', text: `Operational. Absorbing ${fmtNum(p.failoverIn, 1)} req/s of failover traffic from other pools.` }
+          : { tone: '', text: 'Operational. Serving traffic within thresholds.' };
+    }
+  }
+
+  function routingSection(p, world) {
+    const sh = IX.poolShares(world)[p.model][p.id];
+    const bar = (v, color) => `<div class="bar"><span style="width:${Math.min(100, v * 100)}%;background:${color}"></span></div>`;
+    return `<div class="sec"><h4>Routing</h4>
+      <div class="grid-kv" style="margin-bottom:10px">
+        <div class="kv"><span class="k">Eligibility</span><span class="v ${p.eligible ? '' : 'tone-crit'}">${p.eligible ? (p.standby ? 'Standby' : 'Eligible') : 'Excluded'}</span></div>
+        <div class="kv"><span class="k">Traffic</span><span class="v">${fmtNum(p.traffic, 1)}<small> req/s</small></span></div>
+        <div class="kv"><span class="k">Failover in</span><span class="v ${p.failoverIn > 0.05 ? 'tone-warn' : ''}">${fmtNum(p.failoverIn, 1)}<small> req/s</small></span></div>
+      </div>
+      <div class="share"><span class="dim">Configured</span>${bar(sh.cfg, 'var(--text-3)')}<span class="num r">${fmtPct(sh.cfg, 1)}</span>
+        <span class="dim">Actual</span>${bar(sh.act, Math.abs(sh.act - sh.cfg) > 0.05 ? 'var(--warn)' : 'var(--text-2)')}<span class="num r">${fmtPct(sh.act, 1)}</span></div>
+      <div class="faint" style="font-size:11px;margin-top:6px">Share of ${esc(world.modelsById[p.model].name)} traffic · weight ${fmtNum(IX.weightOf(p), 0)} (capacity-proportional)</div></div>`;
+  }
+
+  function replicasSection(p) {
+    const cells = Array.from({ length: p.desired }, (_, i) => {
+      const faultIdx = i - p.ready;
+      if (faultIdx >= 0) {
+        const fault = p.replicaFaults[faultIdx] || 'NotReady';
+        const pending = /Pending/.test(fault);
+        return `<div class="rep ${pending ? 'pending' : 'bad'}" title="${esc(fault)}"><span>r${i}</span><span>${pending ? 'pend' : 'fail'}</span></div>`;
+      }
+      const u = IX.clamp(p.gpuUtil * IX.jitter(p.id + 'r' + i, 0.05), 0, 0.99);
+      return `<div class="rep" title="replica ${i}: Ready · GPU ${Math.round(u * 100)}%"><span>r${i}</span>${meter(u, { w: 38 })}</div>`;
+    }).join('');
+    const faults = [...new Set(p.replicaFaults)];
+    return `<div class="sec"><h4>Replicas <span class="grow"></span><span class="mono ${p.ready < p.desired ? 'tone-warn' : 'faint'}" style="text-transform:none;letter-spacing:0">${p.ready}/${p.desired} ready</span></h4>
+      <div class="replicas">${cells}</div>${faults.length ? `<div class="faint" style="font-size:11.5px;margin-top:8px">${faults.map(esc).join('<br>')}</div>` : ''}</div>`;
+  }
+
+  function perfSection(p, world, state) {
+    const m = world.modelsById[p.model];
+    const stale = p.status === 'unknown' ? '<span class="stale-note">stale</span>' : '';
+    const idle = p.traffic < 1e-6;
+    const row = (k, v, values, tone, isStale) => `<div class="metric-row"><span class="k">${k} ${isStale ? stale : ''}</span><span class="v ${tone || ''}">${idle && isStale ? '—' : v}</span>${sparkline(values, { w: 200, h: 20, tone: tone ? tone.replace('tone-', '') : 'neutral' })}</div>`;
+    const s = (key, pick, o) => poolSeries(world, state, p, key, pick, o);
+    const rows = [];
+    if (m.kind === 'chat') {
+      rows.push(row('TTFT p50', fmtMs(p.ttftP50), s('ttft50', (x) => x.ttftP50 || 0), '', true));
+      rows.push(row('TTFT p95', fmtMs(p.ttftP95), s('ttft95', (x) => x.ttftP95 || 0), p.ttftP95 > m.ttftSlo ? 'tone-warn' : '', true));
+      rows.push(row('TPOT', fmtMs(p.tpot), s('tpot', (x) => x.tpot || 0), '', true));
+    }
+    rows.push(row('E2E p95', fmtMs(p.latP95), s('e2e', (x) => x.latP95), m.kind !== 'chat' && p.latP95 > m.latencySlo ? 'tone-warn' : '', true));
+    rows.push(row('Requests', `${fmtNum(p.traffic, 1)}/s`, s('rps', (x) => x.traffic), ''));
+    rows.push(row(m.kind === 'chat' ? 'Output tokens' : 'Input tokens', `${fmtNum(m.kind === 'chat' ? p.outTokS : p.inTokS, 0)}/s`, s('tok', (x) => (m.kind === 'chat' ? x.outTokS : x.inTokS)), ''));
+    rows.push(row('Running / queued', `${fmtNum(p.running, 0)} / ${fmtNum(p.queued, 0)}`, s('queue', (x) => x.queued, { noise: 0.1 }), p.queued > 50 ? 'tone-warn' : '', true));
+    rows.push(row('Queue wait', fmtMs(p.queueWait), s('qwait', (x) => x.queueWait, { noise: 0.1 }), p.queueWait > 200 ? 'tone-warn' : '', true));
+    rows.push(row('Errors · timeouts', `${fmtPct(p.errRate, 2)} · ${fmtPct(p.timeoutRate, 2)}`, s('err', (x) => x.errRate, { noise: 0.15 }), p.errRate > 0.001 ? 'tone-warn' : ''));
+    const res = (k, v, tone) => `<div class="kv"><span class="k">${k} ${stale}</span><span class="v">${v == null ? 'n/a' : fmtPct(v, 0)}</span>${v == null ? '' : meter(v, { w: 120 })}</div>`;
+    return `<div class="sec"><h4>Resources</h4><div class="grid-kv">${res('GPU utilisation', p.gpuUtil)}${res('GPU memory', p.gpuMem)}${res('KV cache', p.kv)}</div></div>
+      <div class="sec"><h4>Performance <span class="grow"></span><span class="faint" style="text-transform:none;letter-spacing:0">last ${state.range}</span></h4>${rows.join('')}</div>`;
+  }
+
+  function timelineSection(p, world) {
+    const ev = [];
+    const ago = (min) => (min < 60 ? `−${Math.round(min)}m` : `−${(min / 60).toFixed(1)}h`);
+    if (p.onsetMin != null) {
+      const o = p.onsetMin;
+      if (p.status === 'unavailable') ev.push([o, 'unavailable', 'Readiness failing on all replicas'], [o - 0.7, 'unavailable', 'Proxy ejected pool from routing'], [o - 0.8, 'operational', 'Failover to sibling pools activated']);
+      else if (p.status === 'draining') ev.push([o, 'draining', 'Drain started for rolling deploy r189']);
+      else if (p.status === 'unknown') ev.push([o, 'unknown', 'Metrics scrape target down']);
+      else ev.push([o, 'degraded', p.cause || 'Health degraded']);
+    }
+    if (p.failoverIn > 0.05 && p.status !== 'unavailable') ev.push([world.platform.onsetMin || 0, p.status, `Began absorbing failover (${fmtNum(p.failoverIn, 1)} req/s)`]);
+    ev.push([180 + IX.rand(p.id + 'dep') * 2000, 'operational', `Deployed ${p.version}`]);
+    ev.sort((a, b) => a[0] - b[0]);
+    return `<div class="sec"><h4>Health transitions &amp; deploys</h4><ul class="timeline">${ev.map(([t, s, d]) => `<li><span class="t">${ago(t)}</span>${glyph(s)}<span class="d">${esc(d)}</span></li>`).join('')}</ul></div>`;
+  }
+
+  function siblingsSection(p, world) {
+    const m = world.modelsById[p.model];
+    const sh = IX.poolShares(world)[p.model];
+    const rows = [...m.pools].sort((a, b) => IX.SEVERITY_RANK[a.status] - IX.SEVERITY_RANK[b.status] || a.idx - b.idx).map((x) => `<button class="sibling ${x.id === p.id ? 'cur' : ''}" data-act="pool" data-id="${x.id}">${glyph(x.status)}<span class="mono">${esc(x.id)} <span class="faint">${esc(IX.regionName(world, x.region))}</span></span><span class="num r dim">${fmtNum(x.traffic, 1)}/s</span><span class="num r">${fmtPct(sh[x.id].act, 0)}</span></button>`).join('');
+    const ms = IX.MODEL_STATUS[m.status];
+    return `<div class="sec"><h4>Pools serving ${esc(m.name)} <span class="grow"></span><span class="tone-${ms.tone}" style="text-transform:none;letter-spacing:0">${esc(ms.label)}</span></h4>${rows}</div>`;
+  }
+
+  function poolDrawer(p, world, state) {
+    const m = world.modelsById[p.model];
+    const ex = statusExplain(p, world);
+    const inc = world.incidents.filter((i) => i.affected.some((x) => x.id === p.id));
+    const sibs = m.pools;
+    const i = sibs.findIndex((x) => x.id === p.id);
+    const prev = sibs[(i - 1 + sibs.length) % sibs.length];
+    const next = sibs[(i + 1) % sibs.length];
+    return `<div class="drawer-h">${glyph(p.status)}<div class="grow"><h3>${esc(p.id)}</h3><div class="meta">${esc(m.name)} · ${esc(IX.regionName(world, p.region))} · <span class="mono">${esc(p.cluster)}</span></div>
+        <div class="meta faint mono" style="font-size:11px">${esc(p.gpu)} · ${esc(p.engine)} · ${esc(p.version)}</div></div>
+        <button class="icon-btn" data-act="pool" data-id="${prev.id}" title="Previous ${esc(m.name)} pool">‹</button><button class="icon-btn" data-act="pool" data-id="${next.id}" title="Next ${esc(m.name)} pool">›</button>
+        <button class="icon-btn" data-act="close" title="Close (Esc)">✕</button></div>
+      <div class="drawer-b">
+        <div class="sec">${IX.statusPill(p.status)}<div class="callout ${ex.tone}" style="margin-top:8px">${ex.text}${p.cause ? `<div style="margin-top:6px"><span class="faint">Probable cause:</span> ${esc(p.cause)}</div>` : ''}${p.issues.length ? `<ul>${p.issues.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
+          ${inc.map((x) => `<div style="margin-top:8px"><button class="comp-chip" data-act="incident" data-id="${x.id}"><span class="sev sev-${x.severity}" style="line-height:14px">SEV${x.severity}</span>${x.id} · ${esc(x.title)}</button></div>`).join('')}</div>
+        ${routingSection(p, world)}${replicasSection(p)}${perfSection(p, world, state)}${timelineSection(p, world)}${siblingsSection(p, world)}
+      </div>`;
+  }
+
+  function proxyDrawer(inst, world, state) {
+    const px = world.platform.proxy;
+    const s = (key, cur, base) => IX.series(`${world.scenario}:${inst.id}:${key}:${state.range}`, { current: cur, baseline: base, onsetMin: px.onsetMin, rangeMin: IX.RANGE_MIN[state.range], noise: 0.05 });
+    const baseRps = world.platform.demand / px.desired;
+    const status = inst.status === 'down' ? 'unavailable' : inst.status === 'degraded' ? 'degraded' : 'operational';
+    const row = (k, v, values, tone) => `<div class="metric-row"><span class="k">${k}</span><span class="v ${tone || ''}">${v}</span>${sparkline(values, { w: 200, h: 20, tone: tone ? tone.replace('tone-', '') : 'neutral' })}</div>`;
+    return `<div class="drawer-h">${glyph(status)}<div class="grow"><h3>${esc(inst.id)}</h3><div class="meta">Central proxy instance · ${esc(inst.zone)}</div></div><button class="icon-btn" data-act="close" title="Close (Esc)">✕</button></div>
+      <div class="drawer-b">
+        <div class="sec">${IX.statusPill(status)}${inst.reason ? `<div class="callout ${status === 'unavailable' ? 'crit' : 'warn'}" style="margin-top:8px">${esc(inst.reason)}</div>` : ''}</div>
+        <div class="sec"><h4>Instance</h4><div class="grid-kv">
+          <div class="kv"><span class="k">Routing config</span><span class="v ${inst.config !== 'rc-1412' ? 'tone-warn' : ''}">${inst.config}</span></div>
+          <div class="kv"><span class="k">Restarts (1h)</span><span class="v ${inst.restarts ? 'tone-crit' : ''}">${inst.restarts}</span></div>
+          <div class="kv"><span class="k">Upstream errors</span><span class="v">${fmtNum(inst.upstreamErr, 2)}<small>/s</small></span></div>
+          <div class="kv"><span class="k">CPU</span><span class="v">${fmtPct(inst.cpu, 0)}</span></div>
+          <div class="kv"><span class="k">Memory</span><span class="v ${inst.mem > 0.8 ? 'tone-warn' : ''}">${fmtPct(inst.mem, 0)}</span></div>
+          <div class="kv"><span class="k">Active conns</span><span class="v">${fmtNum(inst.conns, 0)}</span></div></div></div>
+        <div class="sec"><h4>Traffic</h4>
+          ${row('Requests', `${fmtNum(inst.rps, 0)}/s`, s('rps', inst.rps, baseRps))}
+          ${row('Overhead p50', inst.p50 ? inst.p50.toFixed(1) + ' ms' : '—', s('p50', inst.p50 || 0, 1.4))}
+          ${row('Overhead p99', inst.p99 ? inst.p99.toFixed(1) + ' ms' : '—', s('p99', inst.p99 || 0, 5.2), inst.p99 > 12 ? 'tone-warn' : '')}
+          ${row('Error rate', inst.errRate == null ? '—' : fmtPct(inst.errRate, 2), s('err', inst.errRate || 0, 0.0001), inst.errRate > 0.001 ? 'tone-crit' : '')}</div>
+      </div>`;
+  }
+
+  function render(world, state) {
+    const sel = state.selection;
+    if (!sel) return '';
+    if (sel.kind === 'pool' && world.poolsById[sel.id]) return poolDrawer(world.poolsById[sel.id], world, state);
+    if (sel.kind === 'proxy') {
+      const inst = world.platform.proxy.instances.find((x) => x.id === sel.id);
+      if (inst) return proxyDrawer(inst, world, state);
+    }
+    return '';
+  }
+
+  IX.renderInspector = render;
+})();
+
+</script>
+  <script>
+/* App shell: immutable state, top bar, navigation, event delegation, keyboard, tooltip. */
+(function () {
+  const IX = window.IX;
+  const { esc } = IX;
+
+  const VIEWS = [
+    { id: 'overview', label: 'Overview', icon: '<path d="M3 3h6v6H3zM11 3h6v4h-6zM11 9h6v8h-6zM3 11h6v6H3z"/>' },
+    { id: 'models', label: 'Models', icon: '<path d="M10 2l7 4v8l-7 4-7-4V6z"/><path d="M3 6l7 4 7-4M10 10v8"/>' },
+    { id: 'pools', label: 'Pools', icon: '<rect x="3" y="3" width="4" height="4"/><rect x="8" y="3" width="4" height="4"/><rect x="13" y="3" width="4" height="4"/><rect x="3" y="8" width="4" height="4"/><rect x="8" y="8" width="4" height="4"/><rect x="13" y="8" width="4" height="4"/><rect x="3" y="13" width="4" height="4"/><rect x="8" y="13" width="4" height="4"/>' },
+    { id: 'routing', label: 'Routing', icon: '<path d="M3 10h4l3-6h7M10 10h7M7 10l3 6h7"/>' },
+    { id: 'proxy', label: 'Proxy', icon: '<circle cx="10" cy="10" r="3"/><path d="M2 10h5M13 10h5M10 2v5M10 13v5"/>' },
+    { id: 'incidents', label: 'Incidents', icon: '<path d="M10 3l8 14H2z"/><path d="M10 8v4M10 14.5v.5"/>' },
+  ];
+  const RANGES = ['15m', '1h', '6h', '24h'];
+  const EMPTY_FILTERS = { search: '', statuses: [], region: '', model: '', unhealthyOnly: false, trafficOnly: false };
+
+  let state = {
+    view: 'overview', size: 48, scenario: 'single', range: '1h', theme: 'dark',
+    groupBy: 'model', ovGroup: 'model', metric: 'status', sort: 'stable', fleetMode: 'matrix', routingSeg: 'auto',
+    filters: EMPTY_FILTERS, collapsed: {}, collapseHealthy: false,
+    selection: null, selectedIncident: null, selectedModel: null,
+  };
+
+  const world = () => IX.getWorld(state.size, state.scenario);
+
+  function setState(patch) {
+    state = { ...state, ...(typeof patch === 'function' ? patch(state) : patch) };
+    render();
+  }
+  const setFilters = (patch) => setState((s) => ({ filters: { ...s.filters, ...patch } }));
+
+  // ---- shell rendering --------------------------------------------------------------
+  function topBar(w) {
+    const sizes = IX.FLEET_SIZES.map((n) => `<button data-act="size" data-size="${n}" aria-pressed="${state.size === n}">${n}</button>`).join('');
+    const ranges = RANGES.map((r) => `<button data-act="range" data-range="${r}" aria-pressed="${state.range === r}">${r}</button>`).join('');
+    const scen = IX.SCENARIOS.map((s) => `<option value="${s.id}" ${state.scenario === s.id ? 'selected' : ''}>${esc(s.label)}</option>`).join('');
+    return `<div class="brand"><span class="brand-mark" aria-hidden="true"></span></div>
+      <div class="crumb"><b>Inference Platform</b><span class="faint">/</span><span class="dim">Status</span><span class="env">prod</span><span class="sim-flag" title="All telemetry on this page is simulated">SIMULATED DATA</span></div>
+      <span class="top-spacer"></span>
+      <span class="ctl"><label for="scenario">Scenario</label><select id="scenario" class="sel" data-change="scenario" title="${esc(IX.scenarioById(state.scenario).hint)}">${scen}</select></span>
+      <span class="ctl"><label>Pools</label><span class="seg" role="group" aria-label="Simulated fleet size">${sizes}</span></span>
+      <span class="ctl"><label>Range</label><span class="seg" role="group" aria-label="Time range">${ranges}</span></span>
+      <span class="fresh" title="Simulated scrape cycle"><span class="pulse"></span><span id="fresh-age">updated 2s ago</span></span>
+      <button class="icon-btn" data-act="theme" title="Toggle light/dark theme">${state.theme === 'dark' ? '☀' : '☾'}</button>`;
+  }
+
+  function nav(w) {
+    const bad = w.statusCounts.unavailable + w.statusCounts.degraded + w.statusCounts.unknown;
+    const badges = {
+      incidents: w.incidents.length ? `<span class="badge ${w.incidents.some((i) => i.severity <= 2) ? '' : 'warn'}">${w.incidents.length}</span>` : '',
+      proxy: w.platform.proxy.healthy ? '' : '<span class="badge">!</span>',
+      pools: bad ? `<span class="badge warn">${bad}</span>` : '',
+      models: w.models.some((m) => m.status === 'unavailable' || m.status === 'impaired') ? '<span class="badge">!</span>' : '',
+    };
+    return VIEWS.map((v, i) => `<button data-act="view" data-view="${v.id}" ${state.view === v.id ? 'aria-current="page"' : ''} title="${v.label} (${i + 1})"><svg viewBox="0 0 20 20" aria-hidden="true">${v.icon}</svg>${v.label}${badges[v.id] || ''}</button>`).join('')
+      + `<span class="nav-foot"></span>`;
+  }
+
+  let lastView = null;
+  function render() {
+    const w = world();
+    if (state.selection?.kind === 'pool' && !w.poolsById[state.selection.id]) state = { ...state, selection: null };
+    document.documentElement.dataset.theme = state.theme;
+    const app = document.getElementById('app');
+    app.classList.toggle('no-rail', state.view === 'incidents');
+
+    const active = document.activeElement;
+    const focusId = active && active.id;
+    const caret = focusId && active.selectionStart;
+    const main = document.querySelector('.main');
+    const scroll = lastView === state.view ? main.scrollTop : 0;
+
+    document.querySelector('.top').innerHTML = topBar(w);
+    document.querySelector('.nav').innerHTML = nav(w);
+    main.innerHTML = IX.views[state.view](w, state);
+    document.querySelector('.rail').innerHTML = state.view === 'incidents' ? '' : IX.renderRail(w, state);
+    const drawer = document.querySelector('.drawer');
+    drawer.innerHTML = IX.renderInspector(w, state);
+    drawer.classList.toggle('open', !!state.selection);
+
+    main.scrollTop = scroll;
+    lastView = state.view;
+    if (focusId) {
+      const el = document.getElementById(focusId);
+      if (el) { el.focus(); if (caret != null && el.setSelectionRange) el.setSelectionRange(caret, caret); }
+    }
+    if (state.view === 'pools' && state.fleetMode === 'table') IX.attachPools(w, state);
+    document.querySelectorAll('[data-matrix]').forEach((m) => {
+      const first = m.querySelector('.cell.sel') || m.querySelector('.cell');
+      if (first) first.tabIndex = 0;
+    });
+  }
+
+  // ---- actions ------------------------------------------------------------------------
+  const ACTIONS = {
+    view: (d) => setState({ view: d.view }),
+    size: (d) => { const size = Number(d.size); setState({ size, collapsed: {}, collapseHealthy: size >= 250 }); },
+    range: (d) => setState({ range: d.range }),
+    theme: () => setState({ theme: state.theme === 'dark' ? 'light' : 'dark' }),
+    pool: (d) => setState({ selection: { kind: 'pool', id: d.id } }),
+    'proxy-inst': (d) => setState({ selection: { kind: 'proxy', id: d.id } }),
+    close: () => setState({ selection: null }),
+    incident: (d) => setState({ view: 'incidents', selectedIncident: d.id }),
+    model: (d) => setState({ view: 'models', selectedModel: state.view === 'models' && state.selectedModel === d.id ? null : d.id }),
+    'goto-model': (d) => setState({ view: 'models', selectedModel: d.id }),
+    'goto-incidents': () => setState({ view: 'incidents' }),
+    'goto-models': () => setState({ view: 'models' }),
+    'goto-capacity': () => setState({ view: 'models' }),
+    'goto-pools': () => setState({ view: 'pools' }),
+    'goto-proxy': () => setState({ view: 'proxy' }),
+    'ov-group': (d) => setState({ ovGroup: d.group }),
+    mode: (d) => setState({ fleetMode: d.mode }),
+    'routing-seg': (d) => setState({ routingSeg: d.seg }),
+    'status-filter': (d) => setFilters({ statuses: state.filters.statuses.includes(d.status) ? state.filters.statuses.filter((s) => s !== d.status) : [...state.filters.statuses, d.status] }),
+    'reset-filters': () => setState({ filters: EMPTY_FILTERS }),
+    'toggle-group': (d) => {
+      const el = document.querySelector(`[data-key="${CSS.escape(d.key)}"]`);
+      const isOpen = el && el.getAttribute('aria-expanded') === 'true';
+      setState((s) => ({ collapsed: { ...s.collapsed, [d.key]: isOpen } }));
+    },
+    'expand-all': () => setState({ collapsed: Object.fromEntries([...document.querySelectorAll('[data-act="toggle-group"]')].map((b) => [b.dataset.key, false])) }),
+    'collapse-all': () => setState({ collapsed: Object.fromEntries([...document.querySelectorAll('[data-act="toggle-group"]')].map((b) => [b.dataset.key, true])) }),
+  };
+
+  const CHANGES = {
+    scenario: (v) => setState({ scenario: v, selectedIncident: null }),
+    metric: (v) => setState({ metric: v }),
+    group: (v) => setState({ groupBy: v }),
+    sort: (v) => setState({ sort: v }),
+    'filter-region': (v) => setFilters({ region: v }),
+    'filter-model': (v) => setFilters({ model: v }),
+    unhealthy: (v, el) => setFilters({ unhealthyOnly: el.checked }),
+    traffic: (v, el) => setFilters({ trafficOnly: el.checked }),
+    'collapse-healthy': (v, el) => setState({ collapseHealthy: el.checked, collapsed: {} }),
+  };
+
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-act]');
+    if (!el || !ACTIONS[el.dataset.act]) return;
+    e.stopPropagation();
+    hideTip();
+    ACTIONS[el.dataset.act](el.dataset);
+  });
+  document.addEventListener('change', (e) => {
+    const el = e.target.closest('[data-change]');
+    if (el && CHANGES[el.dataset.change]) CHANGES[el.dataset.change](el.value, el);
+  });
+  document.addEventListener('input', (e) => {
+    if (e.target.dataset.input === 'search') setFilters({ search: e.target.value });
+  });
+
+  // ---- keyboard -----------------------------------------------------------------------
+  function moveInMatrix(cell, key) {
+    const cells = [...cell.closest('[data-matrix]').querySelectorAll('.cell')];
+    const i = cells.indexOf(cell);
+    let target = null;
+    if (key === 'ArrowRight') target = cells[i + 1];
+    if (key === 'ArrowLeft') target = cells[i - 1];
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      const r = cell.getBoundingClientRect();
+      const down = key === 'ArrowDown';
+      const rows = cells.map((c) => [c, c.getBoundingClientRect()]).filter(([, b]) => (down ? b.top > r.top + 2 : b.top < r.top - 2));
+      if (rows.length) {
+        const rowTop = down ? Math.min(...rows.map(([, b]) => b.top)) : Math.max(...rows.map(([, b]) => b.top));
+        target = rows.filter(([, b]) => Math.abs(b.top - rowTop) < 2).sort((a, b) => Math.abs(a[1].left - r.left) - Math.abs(b[1].left - r.left))[0][0];
+      }
+    }
+    if (target) { cell.tabIndex = -1; target.tabIndex = 0; target.focus(); showTipFor(target); }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
+    if (e.key === 'Escape') {
+      if (typing) { document.activeElement.blur(); return; }
+      if (state.selection) setState({ selection: null });
+      return;
+    }
+    if (typing) return;
+    if (e.target.classList && e.target.classList.contains('cell') && e.key.startsWith('Arrow')) { e.preventDefault(); moveInMatrix(e.target, e.key); return; }
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.getAttribute('role') === 'button') { e.preventDefault(); e.target.click(); return; }
+    if (e.key === '/') { e.preventDefault(); setState({ view: 'pools' }); document.getElementById('pool-search')?.focus(); return; }
+    const n = Number(e.key);
+    if (n >= 1 && n <= VIEWS.length && !e.metaKey && !e.ctrlKey) setState({ view: VIEWS[n - 1].id });
+  });
+
+  // ---- tooltip ------------------------------------------------------------------------
+  const tip = () => document.querySelector('.tip');
+  function hideTip() { tip().style.display = 'none'; }
+  function placeTip(x, y) {
+    const t = tip();
+    const w = t.offsetWidth, h = t.offsetHeight;
+    t.style.left = Math.min(window.innerWidth - w - 8, x + 14) + 'px';
+    t.style.top = (y + h + 20 > window.innerHeight ? y - h - 10 : y + 14) + 'px';
+  }
+  function showTipFor(el, x, y) {
+    const p = world().poolsById[el.dataset.tip];
+    if (!p) return;
+    const t = tip();
+    t.innerHTML = IX.tooltip(p, world());
+    t.style.display = 'block';
+    const r = el.getBoundingClientRect();
+    placeTip(x ?? r.right, y ?? r.bottom);
+  }
+  document.addEventListener('mouseover', (e) => { const el = e.target.closest('[data-tip]'); if (el) showTipFor(el, e.clientX, e.clientY); });
+  document.addEventListener('mousemove', (e) => { if (tip().style.display === 'block' && e.target.closest('[data-tip]')) placeTip(e.clientX, e.clientY); });
+  document.addEventListener('mouseout', (e) => { if (e.target.closest('[data-tip]') && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-tip]'))) hideTip(); });
+  document.addEventListener('focusout', hideTip);
+
+  // ---- freshness ticker (simulated 15 s scrape cycle) -------------------------------------
+  let age = 2;
+  setInterval(() => {
+    age = (age + 1) % 15;
+    const el = document.getElementById('fresh-age');
+    if (el) el.textContent = `updated ${age}s ago`;
+  }, 1000);
+
+  render();
+})();
+
+</script>
+</body>
+</html>
